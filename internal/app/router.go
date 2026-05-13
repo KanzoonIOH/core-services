@@ -21,6 +21,7 @@ func AppRouter(conn *pgxpool.Pool) http.Handler {
 	agentHandler := handler.NewAgentHandler(conn)
 	mcpHandler := handler.NewMcpHandler(conn)
 	knowledgeHandler := handler.NewKnowledgeHandler(conn)
+	agentKnowledgeHandler := handler.NewAgentKnowledgeHandler(conn)
 
 	r.Get("/health", handler.Health)
 	r.Route("/api", func(r chi.Router) {
@@ -49,8 +50,12 @@ func AppRouter(conn *pgxpool.Pool) http.Handler {
 				r.Patch("/{id}", mcpHandler.Update)
 				r.Delete("/{id}", mcpHandler.Delete)
 			})
-			// r.Route("/lookup", func(r chi.Router) {
-			// })
+			r.Route("/agent-knowledges", func(r chi.Router) {
+				r.Post("/agent/{id}", agentKnowledgeHandler.CreateByAgentId)
+				r.Get("/agent/{id}", agentKnowledgeHandler.ReadByAgentId)
+				r.Patch("/{id}", agentKnowledgeHandler.Update)
+				r.Delete("/{id}", agentKnowledgeHandler.Delete)
+			})
 		})
 	})
 

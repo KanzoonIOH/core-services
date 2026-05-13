@@ -53,8 +53,6 @@ CREATE TABLE knowledges (
 
 CREATE TABLE agent_knowledges (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name TEXT NOT NULL,
-    description TEXT,
     is_active_prod BOOLEAN NOT NULL DEFAULT false,
     is_active_dev BOOLEAN NOT NULL DEFAULT false,
     --
@@ -70,6 +68,9 @@ CREATE INDEX idx_agent_knowledges_agent_id ON agent_knowledges (agent_id);
 CREATE INDEX idx_agent_knowledges_knowledge_id ON agent_knowledges (
     knowledge_id
 );
+CREATE UNIQUE INDEX idx_agent_knowledge_unique
+ON agent_knowledges (agent_id, knowledge_id)
+WHERE deleted_at IS null;
 
 CREATE TABLE mcps (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

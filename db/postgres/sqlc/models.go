@@ -68,8 +68,6 @@ type Agent struct {
 
 type AgentKnowledge struct {
 	ID           uuid.UUID  `json:"id"`
-	Name         string     `json:"name"`
-	Description  *string    `json:"description"`
 	IsActiveProd bool       `json:"is_active_prod"`
 	IsActiveDev  bool       `json:"is_active_dev"`
 	AgentID      uuid.UUID  `json:"agent_id"`
