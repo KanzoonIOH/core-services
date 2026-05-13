@@ -22,10 +22,14 @@ func AppRouter(conn *pgxpool.Pool) http.Handler {
 	mcpHandler := handler.NewMcpHandler(conn)
 	knowledgeHandler := handler.NewKnowledgeHandler(conn)
 	agentKnowledgeHandler := handler.NewAgentKnowledgeHandler(conn)
+	authHandler := handler.NewAuthHandler(conn)
 
 	r.Get("/health", handler.Health)
 	r.Route("/api", func(r chi.Router) {
-		r.Route("/auth", func(r chi.Router) {})
+		r.Route("/auth", func(r chi.Router) {
+			r.Post("/register", authHandler.Register)
+			r.Post("/login", authHandler.Login)
+		})
 		r.Group(func(r chi.Router) {
 			r.Route("/account", func(r chi.Router) {})
 			r.Route("/users", func(r chi.Router) {})
