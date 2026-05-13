@@ -12,10 +12,11 @@ import (
 
 type AuthHandler struct {
 	Queries db.Querier
+	Signer  *lib.JWTSigner
 }
 
-func NewAuthHandler(conn *pgxpool.Pool) *AuthHandler {
-	return &AuthHandler{Queries: db.New(conn)}
+func NewAuthHandler(conn *pgxpool.Pool, signer *lib.JWTSigner) *AuthHandler {
+	return &AuthHandler{Queries: db.New(conn), Signer: signer}
 }
 
 type registerAuthRequest struct {
@@ -64,7 +65,17 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, user)
+	token, err := h.Signer.Issue(user.ID, string(user.Role))
+	if err != nil {
+		fmt.Printf("%v", err)
+		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to issue token")
+		return
+	}
+
+	lib.ResponseJSON(w, http.StatusOK, map[string]any{
+		"user":  user,
+		"token": token,
+	})
 }
 
 type loginAuthRequest struct {
@@ -103,5 +114,15 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, user)
+	token, err := h.Signer.Issue(user.ID, string(user.Role))
+	if err != nil {
+		fmt.Printf("%v", err)
+		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to issue token")
+		return
+	}
+
+	lib.ResponseJSON(w, http.StatusOK, map[string]any{
+		"user":  user,
+		"token": token,
+	})
 }
