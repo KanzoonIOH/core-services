@@ -74,3 +74,12 @@ func ParseQueryBool(params url.Values, name string) *bool {
 
 	return v
 }
+
+func ParseParamsString(params url.Values, name string) *string {
+	var v *string
+	if s := params.Get(name); s != "" {
+		v = &s
+	}
+
+	return v
+}

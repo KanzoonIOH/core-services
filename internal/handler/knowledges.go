@@ -1,0 +1,175 @@
+package handler
+
+import (
+	db "aiac-service/db/postgres/sqlc"
+	"aiac-service/internal/lib"
+	"errors"
+	"net/http"
+	"strings"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type KnowledgeHandler struct {
+	Queries db.Querier
+}
+
+func NewKnowledgeHandler(conn *pgxpool.Pool) *KnowledgeHandler {
+	return &KnowledgeHandler{Queries: db.New(conn)}
+}
+
+type createKnowledgeRequest struct {
+	Name        string  `json:"name"`
+	Description *string `json:"description"`
+	SourceType  string  `json:"source_type"`
+	SourceUri   *string `json:"source_uri"`
+}
+
+func (h *KnowledgeHandler) Create(w http.ResponseWriter, r *http.Request) {
+	var req createKnowledgeRequest
+
+	if !lib.ParseJSONBody(w, r, &req) {
+		return
+	}
+
+	req.Name = strings.TrimSpace(req.Name)
+	req.SourceType = strings.TrimSpace(req.SourceType)
+	if req.Name == "" {
+		lib.ResponseJSON(w, http.StatusBadRequest, "name are required")
+		return
+	}
+	if req.SourceType == "" {
+		lib.ResponseJSON(w, http.StatusBadRequest, "source_type are required")
+		return
+	}
+
+	// TODO: Insert the knowledge to milvus
+
+	knowledge, err := h.Queries.InsertKnowledge(r.Context(), db.InsertKnowledgeParams{
+		Name:        req.Name,
+		Description: req.Description,
+		SourceType:  req.SourceType,
+		SourceUri:   req.SourceUri,
+	})
+	if err != nil {
+		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to create knowledge")
+		return
+	}
+
+	lib.ResponseJSON(w, http.StatusOK, knowledge)
+}
+
+func (h *KnowledgeHandler) Read(w http.ResponseWriter, r *http.Request) {
+	params := r.URL.Query()
+
+	pagination := lib.ParsePaginationParams(params)
+	sourceType := lib.ParseParamsString(params, "source_type")
+
+	knowledges, err := h.Queries.SelectKnowledges(r.Context(), db.SelectKnowledgesParams{
+		SourceType: sourceType,
+		Sort:       pagination.Sort,
+		Limit:      pagination.Limit,
+		Offset:     pagination.Offset,
+	})
+	if err != nil {
+		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to get knowledges")
+		return
+	}
+
+	lib.ResponseJSON(w, http.StatusOK, knowledges)
+}
+
+func (h *KnowledgeHandler) ReadById(w http.ResponseWriter, r *http.Request) {
+	id, ok := lib.ParseID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	knowledge, err := h.Queries.SelectKnowledgeById(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			lib.ResponseJSON(w, http.StatusNotFound, "knowledge not found")
+			return
+		}
+
+		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to get knowledge")
+		return
+	}
+
+	lib.ResponseJSON(w, http.StatusOK, knowledge)
+}
+
+type updateKnowledgeRequest struct {
+	Name        string  `json:"name"`
+	Description *string `json:"description"`
+}
+
+func (h *KnowledgeHandler) Update(w http.ResponseWriter, r *http.Request) {
+	id, ok := lib.ParseID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var req updateKnowledgeRequest
+	if !lib.ParseJSONBody(w, r, &req) {
+		return
+	}
+
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		lib.ResponseJSON(w, http.StatusBadRequest, "name are required")
+		return
+	}
+
+	knowledge, err := h.Queries.UpdateKnowledge(r.Context(), db.UpdateKnowledgeParams{
+		Name:        req.Name,
+		Description: req.Description,
+		ID:          id,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			lib.ResponseJSON(w, http.StatusNotFound, "knowledge not found")
+			return
+		}
+
+		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to update knowledge")
+		return
+	}
+
+	lib.ResponseJSON(w, http.StatusOK, knowledge)
+}
+
+func (h *KnowledgeHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id, ok := lib.ParseID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	rowsAffected, err := h.Queries.DeleteKnowledge(r.Context(), id)
+	if err != nil {
+		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to delete knowledge")
+		return
+	}
+	if rowsAffected == 0 {
+		lib.ResponseJSON(w, http.StatusNotFound, "knowledge not found")
+		return
+	}
+
+	lib.ResponseJSON(w, http.StatusNoContent, nil)
+}
+
+// func (h *KnowledgeHandler) ReadIdAgents(w http.ResponseWriter, r *http.Request) {
+// 	id, ok := lib.ParseID(w, r, "id")
+// 	if !ok {
+// 		return
+// 	}
+
+// 	agents, err := h.Queries.GetKnowledgeAgents(r.Context(), id)
+// 	if err != nil {
+// 		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to get knowledge agents")
+// 		return
+// 	}
+
+// 	lib.ResponseJSON(w, http.StatusOK, agents)
+// }
