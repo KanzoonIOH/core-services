@@ -1,0 +1,174 @@
+package handler
+
+import (
+	db "aiac-service/db/postgres/sqlc"
+	"aiac-service/internal/lib"
+	"errors"
+	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+type McpHandler struct {
+	Queries db.Querier
+}
+
+func NewMcpHandler(conn *pgxpool.Pool) *McpHandler {
+	return &McpHandler{Queries: db.New(conn)}
+}
+
+type mcpCreateRequest struct {
+	AgentId     uuid.UUID `json:"agent_id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description"`
+	Uri         string    `json:"uri"`
+}
+
+func (h *McpHandler) Create(w http.ResponseWriter, r *http.Request) {
+	var req mcpCreateRequest
+
+	if !lib.ParseJSONBody(w, r, &req) {
+		return
+	}
+
+	req.Name = strings.TrimSpace(req.Name)
+	req.Uri = strings.TrimSpace(req.Uri)
+	if req.Name == "" {
+		lib.ResponseJSON(w, http.StatusBadRequest, "name are required")
+		return
+	}
+	if req.Uri == "" {
+		lib.ResponseJSON(w, http.StatusBadRequest, "uri are required")
+		return
+	}
+
+	mcp, err := h.Queries.InsertMcp(r.Context(), db.InsertMcpParams{
+		AgentID:     req.AgentId,
+		Name:        req.Name,
+		Description: req.Description,
+		Uri:         req.Uri,
+	})
+	if err != nil {
+		fmt.Printf("%v\n", err)
+		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to create mcp")
+		return
+	}
+
+	lib.ResponseJSON(w, http.StatusOK, mcp)
+}
+
+func (h *McpHandler) Read(w http.ResponseWriter, r *http.Request) {
+	params := r.URL.Query()
+
+	pagination := lib.ParsePaginationParams(params)
+
+	mcps, err := h.Queries.SelectMcps(r.Context(), db.SelectMcpsParams{
+		Sort:   pagination.Sort,
+		Limit:  pagination.Limit,
+		Offset: pagination.Offset,
+	})
+	if err != nil {
+		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to get mcps")
+		return
+	}
+
+	lib.ResponseJSON(w, http.StatusOK, mcps)
+}
+
+func (h *McpHandler) ReadById(w http.ResponseWriter, r *http.Request) {
+	id, ok := lib.ParseID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	mcp, err := h.Queries.SelectMcpById(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			lib.ResponseJSON(w, http.StatusNotFound, "mcp not found")
+			return
+		}
+
+		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to get mcp")
+		return
+	}
+
+	lib.ResponseJSON(w, http.StatusOK, mcp)
+}
+
+type mcpUpdateRequest struct {
+	Name        string  `json:"name"`
+	Description *string `json:"description"`
+}
+
+func (h *McpHandler) Update(w http.ResponseWriter, r *http.Request) {
+	id, ok := lib.ParseID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var req mcpUpdateRequest
+	if !lib.ParseJSONBody(w, r, &req) {
+		return
+	}
+
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		lib.ResponseJSON(w, http.StatusBadRequest, "name are required")
+		return
+	}
+
+	mcp, err := h.Queries.UpdateMcp(r.Context(), db.UpdateMcpParams{
+		Name:        req.Name,
+		Description: req.Description,
+		ID:          id,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			lib.ResponseJSON(w, http.StatusNotFound, "mcp not found")
+			return
+		}
+
+		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to update mcp")
+		return
+	}
+
+	lib.ResponseJSON(w, http.StatusOK, mcp)
+}
+
+func (h *McpHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id, ok := lib.ParseID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	rowsAffected, err := h.Queries.DeleteMcp(r.Context(), id)
+	if err != nil {
+		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to delete mcp")
+		return
+	}
+	if rowsAffected == 0 {
+		lib.ResponseJSON(w, http.StatusNotFound, "mcp not found")
+		return
+	}
+
+	lib.ResponseJSON(w, http.StatusNoContent, nil)
+}
+
+// func (h *McpHandler) ReadIdFunctions(w http.ResponseWriter, r *http.Request) {
+// 	id, ok := lib.ParseID(w, r, "id")
+// 	if !ok {
+// 		return
+// 	}
+
+// 	functions, err := h.Queries.GetMcpFunctions(r.Context(), id)
+// 	if err != nil {
+// 		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to get mcp functions")
+// 		return
+// 	}
+
+// 	lib.ResponseJSON(w, http.StatusOK, functions)
+// }

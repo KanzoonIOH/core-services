@@ -12,10 +12,15 @@ import (
 
 type Querier interface {
 	DeleteAgent(ctx context.Context, id uuid.UUID) (int64, error)
+	DeleteMcp(ctx context.Context, id uuid.UUID) (int64, error)
 	InsertAgent(ctx context.Context, arg InsertAgentParams) (Agent, error)
+	InsertMcp(ctx context.Context, arg InsertMcpParams) (Mcp, error)
 	SelectAgentById(ctx context.Context, id uuid.UUID) (Agent, error)
 	SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]Agent, error)
+	SelectMcpById(ctx context.Context, id uuid.UUID) (Mcp, error)
+	SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]Mcp, error)
 	UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Agent, error)
+	UpdateMcp(ctx context.Context, arg UpdateMcpParams) (Mcp, error)
 }
 
 var _ Querier = (*Queries)(nil)
