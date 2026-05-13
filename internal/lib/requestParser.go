@@ -51,10 +51,7 @@ func ParsePaginationParams(params url.Values) paginationParams {
 		offset = defaultOffset
 	}
 
-	var sort *string
-	if s := params.Get("sort"); s != "" {
-		sort = &s
-	}
+	sort := ParseParamsString(params, "sort")
 
 	return paginationParams{
 		Limit:  int32(limit),
@@ -63,7 +60,7 @@ func ParsePaginationParams(params url.Values) paginationParams {
 	}
 }
 
-func ParseQueryBool(params url.Values, name string) *bool {
+func ParseParamsBool(params url.Values, name string) *bool {
 	var v *bool
 	if s := params.Get(name); s != "" {
 		b, err := strconv.ParseBool(s)

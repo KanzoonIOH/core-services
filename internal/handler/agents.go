@@ -20,7 +20,7 @@ func NewAgentHandler(conn *pgxpool.Pool) *AgentHandler {
 	return &AgentHandler{Queries: db.New(conn)}
 }
 
-type createRequest struct {
+type createAgentRequest struct {
 	Name        string  `json:"name"`
 	Description *string `json:"description"`
 	IsActive    *bool   `json:"is_active"`
@@ -28,7 +28,7 @@ type createRequest struct {
 }
 
 func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
-	var req createRequest
+	var req createAgentRequest
 
 	if !lib.ParseJSONBody(w, r, &req) {
 		return
@@ -67,7 +67,7 @@ func (h *AgentHandler) Read(w http.ResponseWriter, r *http.Request) {
 	params := r.URL.Query()
 
 	pagination := lib.ParsePaginationParams(params)
-	isActive := lib.ParseQueryBool(params, "is_active")
+	isActive := lib.ParseParamsBool(params, "is_active")
 
 	agents, err := h.Queries.SelectAgents(r.Context(), db.SelectAgentsParams{
 		IsActive: isActive,
@@ -104,9 +104,11 @@ func (h *AgentHandler) ReadById(w http.ResponseWriter, r *http.Request) {
 	lib.ResponseJSON(w, http.StatusOK, agent)
 }
 
-type updateRequest struct {
-	createRequest
-	IsActive bool `json:"is_active"`
+type updateAgentRequest struct {
+	Name        string  `json:"name"`
+	Description *string `json:"description"`
+	IsActive    bool    `json:"is_active"`
+	WebhookUri  string  `json:"webhook_uri"`
 }
 
 func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -115,7 +117,7 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req updateRequest
+	var req updateAgentRequest
 	if !lib.ParseJSONBody(w, r, &req) {
 		return
 	}
