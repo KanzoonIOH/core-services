@@ -1,1 +1,5 @@
 build
+vault
+tmp
+
+.env

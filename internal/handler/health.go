@@ -1,12 +1,10 @@
 package handler
 
 import (
-	"encoding/json"
+	"aiac-service/internal/lib"
 	"net/http"
 )
 
 func Health(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	lib.ResponseJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

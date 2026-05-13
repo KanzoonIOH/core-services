@@ -1,0 +1,11 @@
+[sqlfluff]
+dialect = postgres
+templater = raw
+
+[sqlfluff:indentation]
+indent_unit = space
+tab_space_size = 4
+
+[sqlfluff:rules:layout.newlines]
+maximum_empty_lines_inside_statements = 0
+maximum_empty_lines_between_statements = 1

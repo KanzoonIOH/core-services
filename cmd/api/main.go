@@ -3,24 +3,31 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
 
-	"aiac-service/internal/handler"
+	"aiac-service/internal/app"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	"github.com/joho/godotenv"
 )
 
 func main() {
-	r := chi.NewRouter()
+	_ = godotenv.Load()
 
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
-	r.Use(middleware.RequestID)
+	serverPort := os.Getenv("SERVER_PORT")
+	if serverPort == "" {
+		log.Fatal("SERVER_PORT is required")
+	}
 
-	r.Get("/health", handler.Health)
+	conn, err := app.DB()
+	if err != nil {
+		log.Fatalf("open db: %v", err)
+	}
+	defer conn.Close()
 
-	log.Println("Starting server on :6767")
-	if err := http.ListenAndServe(":6767", r); err != nil {
+	r := app.AppRouter(conn)
+
+	log.Printf("Starting server on :%v", serverPort)
+	if err := http.ListenAndServe(":"+serverPort, r); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }
