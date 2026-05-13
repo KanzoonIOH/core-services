@@ -18,13 +18,21 @@ func AppRouter(conn *pgxpool.Pool) http.Handler {
 	r.Use(chimiddleware.RequestID)
 	r.Use(middleware.Cors)
 
+	agentHandler := handler.NewAgentHandler(conn)
+
 	r.Get("/health", handler.Health)
 	r.Route("/api", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {})
 		r.Group(func(r chi.Router) {
 			r.Route("/account", func(r chi.Router) {})
 			r.Route("/users", func(r chi.Router) {})
-			r.Route("/agents", func(r chi.Router) {})
+			r.Route("/agents", func(r chi.Router) {
+				r.Post("/", agentHandler.Create)
+				r.Get("/", agentHandler.Read)
+				r.Get("/{id}", agentHandler.ReadById)
+				r.Patch("/{id}", agentHandler.Update)
+				r.Delete("/{id}", agentHandler.Delete)
+			})
 			r.Route("/knowledges", func(r chi.Router) {})
 			r.Route("/mcps", func(r chi.Router) {})
 			// r.Route("/lookup", func(r chi.Router) {
