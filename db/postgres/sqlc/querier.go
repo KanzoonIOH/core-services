@@ -27,11 +27,13 @@ type Querier interface {
 	SelectKnowledges(ctx context.Context, arg SelectKnowledgesParams) ([]Knowledge, error)
 	SelectMcpById(ctx context.Context, id uuid.UUID) (Mcp, error)
 	SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]Mcp, error)
+	SelectUserById(ctx context.Context, id uuid.UUID) (User, error)
 	SelectUserByLoginId(ctx context.Context, loginID string) (User, error)
 	UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Agent, error)
 	UpdateAgentKnowledge(ctx context.Context, arg UpdateAgentKnowledgeParams) (AgentKnowledge, error)
 	UpdateKnowledge(ctx context.Context, arg UpdateKnowledgeParams) (Knowledge, error)
 	UpdateMcp(ctx context.Context, arg UpdateMcpParams) (Mcp, error)
+	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
 }
 
 var _ Querier = (*Queries)(nil)

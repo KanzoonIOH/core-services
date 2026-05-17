@@ -126,3 +126,41 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		"token": token,
 	})
 }
+
+type forgotPasswordRequest struct {
+	LoginID string `json:"login_id"`
+}
+
+func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	lib.ResponseJSON(w, http.StatusOK, "under construction")
+	return
+
+	var req forgotPasswordRequest
+
+	if !lib.ParseJSONBody(w, r, &req) {
+		return
+	}
+
+	req.LoginID = strings.TrimSpace(req.LoginID)
+	if req.LoginID == "" {
+		lib.ResponseJSON(w, http.StatusBadRequest, "login_id are required")
+		return
+	}
+
+	_, err := h.Queries.SelectUserByLoginId(r.Context(), req.LoginID)
+	if err != nil {
+		fmt.Printf("%v", err)
+		lib.ResponseJSON(w, http.StatusInternalServerError, "user not found")
+		return
+	}
+
+	// TODO: verification on email.
+	// 1. insert to change_queue table, forgot_password
+	// 2. send smtp confirmation
+	// 3. user click link via email
+	// 4. user insert new password
+	// 5. password changed
+	// 6. signout from all device (need user_session table)
+
+	lib.ResponseJSON(w, http.StatusOK, "Password change link has been sent to your email")
+}

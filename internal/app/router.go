@@ -30,16 +30,28 @@ func AppRouter(conn *pgxpool.Pool) http.Handler {
 	knowledgeHandler := handler.NewKnowledgeHandler(conn)
 	agentKnowledgeHandler := handler.NewAgentKnowledgeHandler(conn)
 	authHandler := handler.NewAuthHandler(conn, signer)
+	meHandler := handler.NewMeHandler(conn)
+	execHandler := handler.NewExecQHandler(conn)
 
 	r.Get("/health", handler.Health)
 	r.Route("/api", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
 			r.Post("/register", authHandler.Register)
 			r.Post("/login", authHandler.Login)
+			r.Post("/forgot-password", authHandler.ForgotPassword)
+		})
+		r.Route("/exec", func(r chi.Router) {
+			r.Post("/password", execHandler.Password)
+			r.Post("/email", execHandler.Password)
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(signer))
-			r.Route("/account", func(r chi.Router) {})
+			r.Route("/me", func(r chi.Router) {
+				r.Get("/", meHandler.Read)
+				r.Patch("/", meHandler.UpdateDetails)
+				r.Patch("/change-password", meHandler.UpdatePassword)
+				r.Patch("/change-email", meHandler.UpdateEmail)
+			})
 			r.Route("/users", func(r chi.Router) {})
 			r.Route("/agents", func(r chi.Router) {
 				r.Post("/", agentHandler.Create)
