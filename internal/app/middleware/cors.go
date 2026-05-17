@@ -2,13 +2,31 @@ package middleware
 
 import (
 	"net/http"
+	"os"
 	"strings"
 )
 
+func allowedOrigins() map[string]struct{} {
+	set := map[string]struct{}{}
+
+	if raw := os.Getenv("ALLOWED_ORIGINS"); raw != "" {
+		for _, o := range strings.Split(raw, ",") {
+			o = strings.TrimSpace(o)
+			if o != "" {
+				set[o] = struct{}{}
+			}
+		}
+	}
+
+	return set
+}
+
 func Cors(next http.Handler) http.Handler {
+	origins := allowedOrigins()
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		if isLocalhostOrigin(origin) {
+		if isAllowedOrigin(origin, origins) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
@@ -24,13 +42,11 @@ func Cors(next http.Handler) http.Handler {
 	})
 }
 
-func isLocalhostOrigin(origin string) bool {
-	if origin == "http://localhost" || origin == "http://127.0.0.1" || origin == "http://[::1]" {
-		return true
+func isAllowedOrigin(origin string, allowed map[string]struct{}) bool {
+	if origin == "" {
+		return false
 	}
 
-	return strings.HasPrefix(origin, "http://localhost:") ||
-		strings.HasPrefix(origin, "http://127.0.0.1:") ||
-		strings.HasPrefix(origin, "http://[::1]:") ||
-		strings.HasPrefix(origin, "http://172.")
+	_, ok := allowed[origin]
+	return ok
 }
