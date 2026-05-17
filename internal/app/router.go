@@ -34,6 +34,7 @@ func AppRouter(conn *pgxpool.Pool) http.Handler {
 	execHandler := handler.NewExecQHandler(conn)
 
 	r.Get("/health", handler.Health)
+	r.Get("/all-functions", handler.AllFunctions(r))
 	r.Route("/api", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
 			r.Post("/register", authHandler.Register)
