@@ -1,0 +1,45 @@
+services:
+    aiac-postgres:
+        image: postgres:18
+        container_name: ${DB_CONTAINER:-aiac-postgres}
+        restart: unless-stopped
+        environment:
+            POSTGRES_USER: ${DB_USER:-postgres}
+            POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+            POSTGRES_DB: ${DB_NAME:-aiac}
+        volumes:
+            - aiac-postgres-data:/var/lib/postgresql/data
+        ports:
+            - "${DB_PORT:-5550}:5432"
+        networks:
+            - shared-net
+        healthcheck:
+            test:
+                [
+                    "CMD-SHELL",
+                    "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-aiac}",
+                ]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 10s
+
+    aiac-service:
+        build: .
+        container_name: aiac-service
+        env_file: .env
+        ports:
+            - "${SERVER_PORT:-6767}:${SERVER_PORT:-6767}"
+        restart: unless-stopped
+        depends_on:
+            aiac-postgres:
+                condition: service_healthy
+        networks:
+            - shared-net
+
+volumes:
+    aiac-postgres-data:
+
+networks:
+    shared-net:
+        external: true
