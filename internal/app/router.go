@@ -24,6 +24,7 @@ func AppRouter(conn *pgxpool.Pool) http.Handler {
 	r.Use(middleware.Cors)
 
 	signer := newJWTSigner()
+	mailer := newMailer()
 
 	agentHandler := handler.NewAgentHandler(conn)
 	mcpHandler := handler.NewMcpHandler(conn)
@@ -31,10 +32,10 @@ func AppRouter(conn *pgxpool.Pool) http.Handler {
 	agentKnowledgeHandler := handler.NewAgentKnowledgeHandler(conn)
 	authHandler := handler.NewAuthHandler(conn, signer)
 	meHandler := handler.NewMeHandler(conn)
-	execHandler := handler.NewExecQHandler(conn)
 
 	r.Get("/health", handler.Health)
 	r.Get("/all-functions", handler.AllFunctions(r))
+	r.Get("/email-tester", handler.MailerDummy(r, mailer))
 	r.Route("/api", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
 			r.Post("/register", authHandler.Register)
@@ -42,8 +43,6 @@ func AppRouter(conn *pgxpool.Pool) http.Handler {
 			r.Post("/forgot-password", authHandler.ForgotPassword)
 		})
 		r.Route("/exec", func(r chi.Router) {
-			r.Post("/password", execHandler.Password)
-			r.Post("/email", execHandler.Password)
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(signer))
@@ -106,4 +105,16 @@ func newJWTSigner() *lib.JWTSigner {
 	}
 
 	return lib.NewJWTSigner(secret, issuer, time.Duration(ttlDays)*24*time.Hour)
+}
+
+func newMailer() *lib.Mailer {
+	apiKey := os.Getenv("RESEND_API_KEY")
+	if apiKey == "" {
+		log.Fatal("RESEND_API_KEY is required")
+	}
+	from := os.Getenv("RESEND_FROM")
+	if from == "" {
+		log.Fatal("RESEND_FROM is required")
+	}
+	return lib.NewMailer(apiKey, from)
 }
