@@ -30,8 +30,8 @@ func AppRouter(conn *pgxpool.Pool) http.Handler {
 	mcpHandler := handler.NewMcpHandler(conn)
 	knowledgeHandler := handler.NewKnowledgeHandler(conn)
 	agentKnowledgeHandler := handler.NewAgentKnowledgeHandler(conn)
-	authHandler := handler.NewAuthHandler(conn, signer)
-	meHandler := handler.NewMeHandler(conn)
+	authHandler := handler.NewAuthHandler(conn, signer, mailer)
+	meHandler := handler.NewMeHandler(conn, mailer)
 
 	r.Get("/health", handler.Health)
 	r.Get("/all-functions", handler.AllFunctions(r))
@@ -40,9 +40,8 @@ func AppRouter(conn *pgxpool.Pool) http.Handler {
 		r.Route("/auth", func(r chi.Router) {
 			r.Post("/register", authHandler.Register)
 			r.Post("/login", authHandler.Login)
-			r.Post("/forgot-password", authHandler.ForgotPassword)
-		})
-		r.Route("/exec", func(r chi.Router) {
+			r.Post("/password/forgot", authHandler.ForgotPassword)
+			r.Post("/password/reset", authHandler.ResetPassword)
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(signer))
@@ -91,9 +90,9 @@ func newJWTSigner() *lib.JWTSigner {
 	if secret == "" {
 		log.Fatal("JWT_SECRET is required")
 	}
-	issuer := os.Getenv("JWT_ISSUER")
+	issuer := os.Getenv("SECRET_ISSUER")
 	if issuer == "" {
-		log.Fatal("JWT_ISSUER is required")
+		log.Fatal("SECRET_ISSUER is required")
 	}
 	ttlDaysStr := os.Getenv("ACCESS_TOKEN_TTL_DAYS")
 	if ttlDaysStr == "" {
@@ -116,5 +115,9 @@ func newMailer() *lib.Mailer {
 	if from == "" {
 		log.Fatal("RESEND_FROM is required")
 	}
-	return lib.NewMailer(apiKey, from)
+	appUrl := os.Getenv("APP_URL")
+	if appUrl == "" {
+		log.Fatal("APP_URL is required")
+	}
+	return lib.NewMailer(apiKey, from, appUrl)
 }

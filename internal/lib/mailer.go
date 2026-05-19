@@ -10,12 +10,14 @@ import (
 type Mailer struct {
 	client *resend.Client
 	from   string
+	appUrl string
 }
 
-func NewMailer(apiKey, from string) *Mailer {
+func NewMailer(apiKey, from string, appUrl string) *Mailer {
 	return &Mailer{
 		client: resend.NewClient(apiKey),
 		from:   from,
+		appUrl: appUrl,
 	}
 }
 
@@ -32,4 +34,9 @@ func (m *Mailer) Send(ctx context.Context, to, subject, text string) error {
 		return fmt.Errorf("mailer send: %w", err)
 	}
 	return nil
+}
+
+func (m *Mailer) IssueURL(token string) string {
+	url := fmt.Sprintf("%s?token=%s", m.appUrl, token)
+	return url
 }

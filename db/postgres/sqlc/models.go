@@ -12,6 +12,49 @@ import (
 	"github.com/google/uuid"
 )
 
+type UpcomingChangesType string
+
+const (
+	UpcomingChangesTypeEmail          UpcomingChangesType = "email"
+	UpcomingChangesTypePassword       UpcomingChangesType = "password"
+	UpcomingChangesTypeForgotPassword UpcomingChangesType = "forgot-password"
+)
+
+func (e *UpcomingChangesType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = UpcomingChangesType(s)
+	case string:
+		*e = UpcomingChangesType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for UpcomingChangesType: %T", src)
+	}
+	return nil
+}
+
+type NullUpcomingChangesType struct {
+	UpcomingChangesType UpcomingChangesType `json:"upcoming_changes_type"`
+	Valid               bool                `json:"valid"` // Valid is true if UpcomingChangesType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullUpcomingChangesType) Scan(value interface{}) error {
+	if value == nil {
+		ns.UpcomingChangesType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.UpcomingChangesType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullUpcomingChangesType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.UpcomingChangesType), nil
+}
+
 type UserRole string
 
 const (
@@ -108,6 +151,17 @@ type McpTool struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 	DeletedAt   *time.Time `json:"deleted_at"`
+}
+
+type UpcomingChange struct {
+	ID            uuid.UUID           `json:"id"`
+	Token         string              `json:"token"`
+	Type          UpcomingChangesType `json:"type"`
+	UpcomingValue *string             `json:"upcoming_value"`
+	UserID        uuid.UUID           `json:"user_id"`
+	CreatedAt     time.Time           `json:"created_at"`
+	ExpiredAt     time.Time           `json:"expired_at"`
+	RevokedAt     *time.Time          `json:"revoked_at"`
 }
 
 type User struct {

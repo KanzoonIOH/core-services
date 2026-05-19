@@ -13,10 +13,11 @@ import (
 
 type MeHandler struct {
 	Queries db.Querier
+	Mailer  *lib.Mailer
 }
 
-func NewMeHandler(conn *pgxpool.Pool) *MeHandler {
-	return &MeHandler{Queries: db.New(conn)}
+func NewMeHandler(conn *pgxpool.Pool, mailer *lib.Mailer) *MeHandler {
+	return &MeHandler{Queries: db.New(conn), Mailer: mailer}
 }
 
 func (h *MeHandler) Read(w http.ResponseWriter, r *http.Request) {
@@ -153,9 +154,6 @@ type updateEmailRequest struct {
 }
 
 func (h *MeHandler) UpdateEmail(w http.ResponseWriter, r *http.Request) {
-	lib.ResponseJSON(w, http.StatusOK, "under construction")
-	return
-
 	claims, ok := middleware.ClaimsFromContext(r.Context())
 	if !ok {
 		lib.ResponseJSON(w, http.StatusUnauthorized, "unauthorized")
@@ -184,22 +182,25 @@ func (h *MeHandler) UpdateEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: verification on old email.
-	// 1. insert to change_queue table, old email and new email
-	// 2. send smtp confirmation
-	// 3. user confirm via email
-	// 4. email changed
-	// 5. signout from all device (need user_session table)
-
-	user, err := h.Queries.UpdateUser(r.Context(), db.UpdateUserParams{
-		Email: &req.NewEmail,
-		ID:    userID,
-	})
+	user, err := h.Queries.SelectUserById(r.Context(), userID)
 	if err != nil {
 		fmt.Printf("%v", err)
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to update user")
+		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to get user")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, user)
+	if user.Email != req.OldEmail {
+		lib.ResponseJSON(w, http.StatusBadRequest, "old email does not match")
+		return
+	}
+
+	// confirmLink := fmt.Sprintf("%s/confirm-email?queue_id=%s", os.Getenv("APP_URL"), queue.ID.String())
+	// body := fmt.Sprintf("Hi %s,\n\nClick the link below to confirm your email change:\n\n%s\n\nThis link expires in 1 hour.", user.Name, confirmLink)
+	// if err := h.Mailer.Send(r.Context(), user.Email, "Confirm Your Email Change", body); err != nil {
+	// 	fmt.Printf("%v", err)
+	// 	lib.ResponseJSON(w, http.StatusInternalServerError, "failed to send confirmation email")
+	// 	return
+	// }
+
+	// lib.ResponseJSON(w, http.StatusOK, "A confirmation link has been sent to your current email address")
 }

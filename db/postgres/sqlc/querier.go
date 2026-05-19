@@ -19,7 +19,9 @@ type Querier interface {
 	InsertAgentKnowledge(ctx context.Context, arg InsertAgentKnowledgeParams) (AgentKnowledge, error)
 	InsertKnowledge(ctx context.Context, arg InsertKnowledgeParams) (Knowledge, error)
 	InsertMcp(ctx context.Context, arg InsertMcpParams) (Mcp, error)
+	InsertUpcomingChange(ctx context.Context, arg InsertUpcomingChangeParams) (UpcomingChange, error)
 	InsertUserRegister(ctx context.Context, arg InsertUserRegisterParams) (User, error)
+	RevokeUpcomingChangeByID(ctx context.Context, id uuid.UUID) error
 	SelectAgentById(ctx context.Context, id uuid.UUID) (Agent, error)
 	SelectAgentKnowledgesByAgentId(ctx context.Context, arg SelectAgentKnowledgesByAgentIdParams) ([]SelectAgentKnowledgesByAgentIdRow, error)
 	SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]Agent, error)
@@ -27,6 +29,7 @@ type Querier interface {
 	SelectKnowledges(ctx context.Context, arg SelectKnowledgesParams) ([]Knowledge, error)
 	SelectMcpById(ctx context.Context, id uuid.UUID) (Mcp, error)
 	SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]Mcp, error)
+	SelectUpcomingChangeByToken(ctx context.Context, token string) (UpcomingChange, error)
 	SelectUserById(ctx context.Context, id uuid.UUID) (User, error)
 	SelectUserByLoginId(ctx context.Context, loginID string) (User, error)
 	UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Agent, error)

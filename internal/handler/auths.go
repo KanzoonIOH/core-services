@@ -13,10 +13,15 @@ import (
 type AuthHandler struct {
 	Queries db.Querier
 	Signer  *lib.JWTSigner
+	Mailer  *lib.Mailer
 }
 
-func NewAuthHandler(conn *pgxpool.Pool, signer *lib.JWTSigner) *AuthHandler {
-	return &AuthHandler{Queries: db.New(conn), Signer: signer}
+func NewAuthHandler(conn *pgxpool.Pool, signer *lib.JWTSigner, mailer *lib.Mailer) *AuthHandler {
+	return &AuthHandler{
+		Queries: db.New(conn),
+		Signer:  signer,
+		Mailer:  mailer,
+	}
 }
 
 type registerAuthRequest struct {
@@ -132,9 +137,6 @@ type forgotPasswordRequest struct {
 }
 
 func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
-	lib.ResponseJSON(w, http.StatusOK, "under construction")
-	return
-
 	var req forgotPasswordRequest
 
 	if !lib.ParseJSONBody(w, r, &req) {
@@ -147,20 +149,85 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := h.Queries.SelectUserByLoginId(r.Context(), req.LoginID)
+	const safeResponse = "If an account exists for that login, a password reset link has been sent"
+
+	user, err := h.Queries.SelectUserByLoginId(r.Context(), req.LoginID)
 	if err != nil {
-		fmt.Printf("%v", err)
-		lib.ResponseJSON(w, http.StatusInternalServerError, "user not found")
+		lib.ResponseJSON(w, http.StatusOK, safeResponse)
 		return
 	}
 
-	// TODO: verification on email.
-	// 1. insert to change_queue table, forgot_password
-	// 2. send smtp confirmation
-	// 3. user click link via email
-	// 4. user insert new password
-	// 5. password changed
-	// 6. signout from all device (need user_session table)
+	upc, err := h.Queries.InsertUpcomingChange(r.Context(), db.InsertUpcomingChangeParams{
+		Type:   db.UpcomingChangesTypeForgotPassword,
+		UserID: user.ID,
+	})
+	if err != nil {
+		fmt.Printf("forgot-password: insert upcoming change: %v\n", err)
+		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to request changes")
+		return
+	}
 
-	lib.ResponseJSON(w, http.StatusOK, "Password change link has been sent to your email")
+	url := h.Mailer.IssueURL(upc.Token)
+	body := fmt.Sprintf(
+		"Hi %s,\n\nClick the link below to reset your password:\n\n%s\n\nThis link expires in 1 hour.\n\nIf it is not you, please ignore this message.",
+		user.Name, url,
+	)
+
+	if err := h.Mailer.Send(r.Context(), user.Email, "Confirm Your Forgot Password Request", body); err != nil {
+		fmt.Printf("forgot-password: send email: %v\n", err)
+	}
+
+	lib.ResponseJSON(w, http.StatusOK, safeResponse)
+}
+
+type resetPasswordRequest struct {
+	Token    string `json:"token"`
+	Password string `json:"new_password"`
+}
+
+func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req resetPasswordRequest
+
+	if !lib.ParseJSONBody(w, r, &req) {
+		return
+	}
+
+	req.Token = strings.TrimSpace(req.Token)
+	req.Password = strings.TrimSpace(req.Password)
+	if req.Token == "" {
+		lib.ResponseJSON(w, http.StatusBadRequest, "token are required")
+		return
+	}
+	if req.Password == "" {
+		lib.ResponseJSON(w, http.StatusBadRequest, "new_password are required")
+		return
+	}
+
+	upc, err := h.Queries.SelectUpcomingChangeByToken(r.Context(), req.Token)
+	if err != nil {
+		lib.ResponseJSON(w, http.StatusInternalServerError, "invalid request")
+		return
+	}
+
+	hashedPassword, err := lib.HashPassword(req.Password)
+	if err != nil {
+		lib.ResponseJSON(w, http.StatusBadRequest, err)
+		return
+	}
+
+	user, err := h.Queries.UpdateUser(r.Context(), db.UpdateUserParams{
+		HashedPassword: &hashedPassword,
+		ID:             upc.UserID,
+	})
+	if err != nil {
+		lib.ResponseJSON(w, http.StatusInternalServerError, "invalid request")
+		return
+	}
+
+	if err := h.Queries.RevokeUpcomingChangeByID(r.Context(), upc.ID); err != nil {
+		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to revoke")
+		return
+	}
+
+	lib.ResponseJSON(w, http.StatusOK, user)
 }
