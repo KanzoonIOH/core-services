@@ -149,11 +149,10 @@ func (h *MeHandler) UpdateDetails(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateEmailRequest struct {
-	OldEmail string `json:"old_email"`
-	NewEmail string `json:"new_email"`
+	Email string `json:"new_email"`
 }
 
-func (h *MeHandler) UpdateEmail(w http.ResponseWriter, r *http.Request) {
+func (h *MeHandler) UpdateEmailRequest(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.ClaimsFromContext(r.Context())
 	if !ok {
 		lib.ResponseJSON(w, http.StatusUnauthorized, "unauthorized")
@@ -167,18 +166,9 @@ func (h *MeHandler) UpdateEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req.OldEmail = strings.TrimSpace(req.OldEmail)
-	req.NewEmail = strings.TrimSpace(req.NewEmail)
-	if req.OldEmail == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "old email are required")
-		return
-	}
-	if req.NewEmail == "" {
+	req.Email = strings.TrimSpace(req.Email)
+	if req.Email == "" {
 		lib.ResponseJSON(w, http.StatusBadRequest, "new email are required")
-		return
-	}
-	if req.OldEmail == req.NewEmail {
-		lib.ResponseJSON(w, http.StatusBadRequest, "new email has to be different")
 		return
 	}
 
@@ -189,18 +179,31 @@ func (h *MeHandler) UpdateEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if user.Email != req.OldEmail {
-		lib.ResponseJSON(w, http.StatusBadRequest, "old email does not match")
+	if user.Email == req.Email {
+		lib.ResponseJSON(w, http.StatusBadRequest, "email not changed")
 		return
 	}
 
-	// confirmLink := fmt.Sprintf("%s/confirm-email?queue_id=%s", os.Getenv("APP_URL"), queue.ID.String())
-	// body := fmt.Sprintf("Hi %s,\n\nClick the link below to confirm your email change:\n\n%s\n\nThis link expires in 1 hour.", user.Name, confirmLink)
-	// if err := h.Mailer.Send(r.Context(), user.Email, "Confirm Your Email Change", body); err != nil {
-	// 	fmt.Printf("%v", err)
-	// 	lib.ResponseJSON(w, http.StatusInternalServerError, "failed to send confirmation email")
-	// 	return
-	// }
+	upc, err := h.Queries.InsertUpcomingChange(r.Context(), db.InsertUpcomingChangeParams{
+		Type:          db.UpcomingChangesTypeEmail,
+		UpcomingValue: &req.Email,
+		UserID:        user.ID,
+	})
+	if err != nil {
+		fmt.Printf("change email request: insert upcoming change: %v\n", err)
+		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to request changes")
+		return
+	}
 
-	// lib.ResponseJSON(w, http.StatusOK, "A confirmation link has been sent to your current email address")
+	url := h.Mailer.IssueURL(upc.Token)
+	body := fmt.Sprintf(
+		"Hi %s,\n\nClick the link below to confirm your email change:\n\n%s\n\nThis link expires in 1 hour.\n\nIf it is not you, please ignore this message.",
+		user.Name, url,
+	)
+
+	if err := h.Mailer.Send(r.Context(), user.Email, "Confirm Your Email Change", body); err != nil {
+		fmt.Printf("change-email: send email: %v\n", err)
+	}
+
+	lib.ResponseJSON(w, http.StatusOK, "email change confirmation has been sent to your email")
 }
