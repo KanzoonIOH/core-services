@@ -23,13 +23,13 @@ func (h *ConfirmHandler) UpdateEmailConfirm(w http.ResponseWriter, r *http.Reque
 
 	token := lib.ParseParamsString(params, "token")
 	if token == nil {
-		lib.ResponseJSON(w, http.StatusBadRequest, "Can't parse token")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "Can't parse token")
 		return
 	}
 
 	upc, err := h.Queries.SelectUpcomingChangeByToken(r.Context(), *token)
 	if err != nil {
-		lib.ResponseJSON(w, http.StatusInternalServerError, "invalid request")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "invalid request")
 		return
 	}
 
@@ -38,14 +38,14 @@ func (h *ConfirmHandler) UpdateEmailConfirm(w http.ResponseWriter, r *http.Reque
 		ID:    upc.UserID,
 	})
 	if err != nil {
-		lib.ResponseJSON(w, http.StatusInternalServerError, "invalid request")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "invalid request")
 		return
 	}
 
 	if err := h.Queries.RevokeUpcomingChangeByID(r.Context(), upc.ID); err != nil {
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to revoke")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to revoke")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, user)
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, user, nil)
 }

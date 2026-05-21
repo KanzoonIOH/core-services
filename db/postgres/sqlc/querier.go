@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	CountAgents(ctx context.Context) (int64, error)
 	DeleteAgent(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteAgentKnowledge(ctx context.Context, id uuid.UUID) (int64, error)
 	DeleteKnowledge(ctx context.Context, id uuid.UUID) (int64, error)
@@ -22,9 +23,9 @@ type Querier interface {
 	InsertUpcomingChange(ctx context.Context, arg InsertUpcomingChangeParams) (UpcomingChange, error)
 	InsertUserRegister(ctx context.Context, arg InsertUserRegisterParams) (User, error)
 	RevokeUpcomingChangeByID(ctx context.Context, id uuid.UUID) error
-	SelectAgentById(ctx context.Context, id uuid.UUID) (Agent, error)
+	SelectAgentById(ctx context.Context, id uuid.UUID) (SelectAgentByIdRow, error)
 	SelectAgentKnowledgesByAgentId(ctx context.Context, arg SelectAgentKnowledgesByAgentIdParams) ([]SelectAgentKnowledgesByAgentIdRow, error)
-	SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]Agent, error)
+	SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]SelectAgentsRow, error)
 	SelectKnowledgeById(ctx context.Context, id uuid.UUID) (Knowledge, error)
 	SelectKnowledges(ctx context.Context, arg SelectKnowledgesParams) ([]Knowledge, error)
 	SelectMcpById(ctx context.Context, id uuid.UUID) (Mcp, error)

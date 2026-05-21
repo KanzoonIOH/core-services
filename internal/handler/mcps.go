@@ -38,11 +38,11 @@ func (h *McpHandler) Create(w http.ResponseWriter, r *http.Request) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Uri = strings.TrimSpace(req.Uri)
 	if req.Name == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "name are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "name are required")
 		return
 	}
 	if req.Uri == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "uri are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "uri are required")
 		return
 	}
 
@@ -54,11 +54,11 @@ func (h *McpHandler) Create(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		fmt.Printf("%v\n", err)
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to create mcp")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to create mcp")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, mcp)
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, mcp, nil)
 }
 
 func (h *McpHandler) Read(w http.ResponseWriter, r *http.Request) {
@@ -72,11 +72,11 @@ func (h *McpHandler) Read(w http.ResponseWriter, r *http.Request) {
 		Offset: pagination.Offset,
 	})
 	if err != nil {
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to get mcps")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get mcps")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, mcps)
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, mcps, nil)
 }
 
 func (h *McpHandler) ReadById(w http.ResponseWriter, r *http.Request) {
@@ -88,15 +88,15 @@ func (h *McpHandler) ReadById(w http.ResponseWriter, r *http.Request) {
 	mcp, err := h.Queries.SelectMcpById(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			lib.ResponseJSON(w, http.StatusNotFound, "mcp not found")
+			lib.ResponseJSONError(w, http.StatusNotFound, "mcp not found")
 			return
 		}
 
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to get mcp")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get mcp")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, mcp)
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, mcp, nil)
 }
 
 type mcpUpdateRequest struct {
@@ -117,7 +117,7 @@ func (h *McpHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "name are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "name are required")
 		return
 	}
 
@@ -128,15 +128,15 @@ func (h *McpHandler) Update(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			lib.ResponseJSON(w, http.StatusNotFound, "mcp not found")
+			lib.ResponseJSONError(w, http.StatusNotFound, "mcp not found")
 			return
 		}
 
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to update mcp")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to update mcp")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, mcp)
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, mcp, nil)
 }
 
 func (h *McpHandler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -147,15 +147,15 @@ func (h *McpHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	rowsAffected, err := h.Queries.DeleteMcp(r.Context(), id)
 	if err != nil {
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to delete mcp")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to delete mcp")
 		return
 	}
 	if rowsAffected == 0 {
-		lib.ResponseJSON(w, http.StatusNotFound, "mcp not found")
+		lib.ResponseJSONError(w, http.StatusNotFound, "mcp not found")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusNoContent, nil)
+	lib.ResponseJSONTemplate(w, http.StatusNoContent, nil, nil, nil)
 }
 
 // func (h *McpHandler) ReadIdFunctions(w http.ResponseWriter, r *http.Request) {

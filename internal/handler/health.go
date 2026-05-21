@@ -6,5 +6,5 @@ import (
 )
 
 func Health(w http.ResponseWriter, r *http.Request) {
-	lib.ResponseJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, map[string]string{"status": "ok"}, nil)
 }

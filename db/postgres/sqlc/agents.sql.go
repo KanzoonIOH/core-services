@@ -7,9 +7,21 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
+
+const countAgents = `-- name: CountAgents :one
+SELECT COUNT(*) FROM agents
+`
+
+func (q *Queries) CountAgents(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countAgents)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
 
 const deleteAgent = `-- name: DeleteAgent :execrows
 DELETE FROM agents
@@ -66,16 +78,39 @@ func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (Agent
 }
 
 const selectAgentById = `-- name: SelectAgentById :one
-SELECT id, name, description, is_active, webhook_uri, created_at, updated_at, deleted_at FROM agents
+SELECT
+    agents.id, agents.name, agents.description, agents.is_active, agents.webhook_uri, agents.created_at, agents.updated_at, agents.deleted_at,
+    (
+        SELECT COUNT(*) FROM agent_knowledges ak
+        WHERE ak.agent_id = agents.id AND ak.deleted_at IS NULL
+    ) AS knowledges_count,
+    (
+        SELECT COUNT(*) FROM mcps m
+        WHERE m.agent_id = agents.id AND m.deleted_at IS NULL
+    ) AS mcps_count
+FROM agents
 WHERE
     deleted_at IS NULL
-    AND id = $1
+    AND agents.id = $1
 LIMIT 1
 `
 
-func (q *Queries) SelectAgentById(ctx context.Context, id uuid.UUID) (Agent, error) {
+type SelectAgentByIdRow struct {
+	ID              uuid.UUID  `json:"id"`
+	Name            string     `json:"name"`
+	Description     *string    `json:"description"`
+	IsActive        bool       `json:"is_active"`
+	WebhookUri      string     `json:"webhook_uri"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	DeletedAt       *time.Time `json:"deleted_at"`
+	KnowledgesCount int64      `json:"knowledges_count"`
+	McpsCount       int64      `json:"mcps_count"`
+}
+
+func (q *Queries) SelectAgentById(ctx context.Context, id uuid.UUID) (SelectAgentByIdRow, error) {
 	row := q.db.QueryRow(ctx, selectAgentById, id)
-	var i Agent
+	var i SelectAgentByIdRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -85,25 +120,53 @@ func (q *Queries) SelectAgentById(ctx context.Context, id uuid.UUID) (Agent, err
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeletedAt,
+		&i.KnowledgesCount,
+		&i.McpsCount,
 	)
 	return i, err
 }
 
 const selectAgents = `-- name: SelectAgents :many
-SELECT id, name, description, is_active, webhook_uri, created_at, updated_at, deleted_at FROM agents
+SELECT
+    a.id, a.name, a.description, a.is_active, a.webhook_uri, a.created_at, a.updated_at, a.deleted_at,
+    COALESCE(ak.knowledges_count, 0) AS knowledges_count,
+    COALESCE(m.mcps_count, 0) AS mcps_count
+FROM agents a
+LEFT JOIN (
+    SELECT
+        agent_id,
+        COUNT(*) AS knowledges_count
+    FROM agent_knowledges
+    WHERE deleted_at IS NULL
+    GROUP BY agent_id
+) ak ON ak.agent_id = a.id
+LEFT JOIN (
+    SELECT
+        agent_id,
+        COUNT(*) AS mcps_count
+    FROM mcps
+    WHERE deleted_at IS NULL
+    GROUP BY agent_id
+) m ON m.agent_id = a.id
 WHERE
-    deleted_at IS NULL
+    a.deleted_at IS NULL
     AND (
         $1::bool IS NULL
-        OR is_active = $1::bool
+        OR a.is_active = $1::bool
     )
 ORDER BY
-    CASE WHEN $2::text = 'is_active_asc' THEN is_active END ASC,
-    CASE WHEN $2::text = 'is_active_desc' THEN is_active END ASC,
-    CASE WHEN $2::text = 'name_asc' THEN name END ASC,
-    CASE WHEN $2::text = 'name_desc' THEN name END DESC,
-    CASE WHEN $2::text = 'created_asc' THEN created_at END ASC,
-    CASE WHEN $2::text = 'created_desc' THEN created_at END DESC,
+    CASE
+        WHEN $2::text = 'is_active_asc' THEN a.is_active
+    END DESC,
+    CASE
+        WHEN $2::text = 'is_active_desc' THEN a.is_active
+    END ASC,
+    CASE WHEN $2::text = 'name_asc' THEN a.name END ASC,
+    CASE WHEN $2::text = 'name_desc' THEN a.name END DESC,
+    CASE WHEN $2::text = 'created_asc' THEN a.created_at END ASC,
+    CASE
+        WHEN $2::text = 'created_desc' THEN a.created_at
+    END DESC,
     created_at DESC
 LIMIT $4 OFFSET $3
 `
@@ -115,7 +178,20 @@ type SelectAgentsParams struct {
 	Limit    int32   `json:"limit"`
 }
 
-func (q *Queries) SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]Agent, error) {
+type SelectAgentsRow struct {
+	ID              uuid.UUID  `json:"id"`
+	Name            string     `json:"name"`
+	Description     *string    `json:"description"`
+	IsActive        bool       `json:"is_active"`
+	WebhookUri      string     `json:"webhook_uri"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	DeletedAt       *time.Time `json:"deleted_at"`
+	KnowledgesCount int64      `json:"knowledges_count"`
+	McpsCount       int64      `json:"mcps_count"`
+}
+
+func (q *Queries) SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]SelectAgentsRow, error) {
 	rows, err := q.db.Query(ctx, selectAgents,
 		arg.IsActive,
 		arg.Sort,
@@ -126,9 +202,9 @@ func (q *Queries) SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]A
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Agent{}
+	items := []SelectAgentsRow{}
 	for rows.Next() {
-		var i Agent
+		var i SelectAgentsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
@@ -138,6 +214,8 @@ func (q *Queries) SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]A
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.DeletedAt,
+			&i.KnowledgesCount,
+			&i.McpsCount,
 		); err != nil {
 			return nil, err
 		}
@@ -156,7 +234,7 @@ SET
     description = $2,
     is_active = $3,
     webhook_uri = $4,
-    updated_at = now()
+    updated_at = NOW()
 WHERE
     deleted_at IS NULL
     AND id = $5

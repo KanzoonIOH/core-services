@@ -23,7 +23,7 @@ type changePasswordRequest struct {
 }
 
 func (h *ExecQHandler) Password(w http.ResponseWriter, r *http.Request) {
-	lib.ResponseJSON(w, http.StatusOK, "under construction")
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, "under construction", nil)
 	return
 
 	var req changePasswordRequest
@@ -35,11 +35,11 @@ func (h *ExecQHandler) Password(w http.ResponseWriter, r *http.Request) {
 	req.QueueID = strings.TrimSpace(req.QueueID)
 	req.Password = strings.TrimSpace(req.Password)
 	if req.QueueID == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "login_id are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "login_id are required")
 		return
 	}
 	if req.Password == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "password are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "password are required")
 		return
 	}
 
@@ -81,7 +81,7 @@ type changeEmailRequest struct {
 }
 
 func (h *ExecQHandler) Email(w http.ResponseWriter, r *http.Request) {
-	lib.ResponseJSON(w, http.StatusOK, "under construction")
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, "under construction", nil)
 	return
 
 	var req changeEmailRequest
@@ -92,7 +92,7 @@ func (h *ExecQHandler) Email(w http.ResponseWriter, r *http.Request) {
 
 	req.QueueID = strings.TrimSpace(req.QueueID)
 	if req.QueueID == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "login_id are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "login_id are required")
 		return
 	}
 }

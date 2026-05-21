@@ -13,7 +13,7 @@ import (
 func ParseJSONBody(w http.ResponseWriter, r *http.Request, req any) bool {
 	err := json.NewDecoder(r.Body).Decode(req)
 	if err != nil {
-		ResponseJSON(w, http.StatusBadRequest, "invalid request body")
+		ResponseJSONError(w, http.StatusBadRequest, "invalid request body")
 		return false
 	}
 	return true
@@ -22,7 +22,7 @@ func ParseJSONBody(w http.ResponseWriter, r *http.Request, req any) bool {
 func ParseID(w http.ResponseWriter, r *http.Request, id string) (uuid.UUID, bool) {
 	v, err := uuid.Parse(chi.URLParam(r, id))
 	if err != nil {
-		ResponseJSON(w, http.StatusBadRequest, "invalid id")
+		ResponseJSONError(w, http.StatusBadRequest, "invalid id")
 		return uuid.Nil, false
 	}
 

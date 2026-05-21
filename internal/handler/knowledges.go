@@ -36,11 +36,11 @@ func (h *KnowledgeHandler) Create(w http.ResponseWriter, r *http.Request) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.SourceType = strings.TrimSpace(req.SourceType)
 	if req.Name == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "name are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "name are required")
 		return
 	}
 	if req.SourceType == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "source_type are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "source_type are required")
 		return
 	}
 
@@ -53,11 +53,11 @@ func (h *KnowledgeHandler) Create(w http.ResponseWriter, r *http.Request) {
 		SourceUri:   req.SourceUri,
 	})
 	if err != nil {
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to create knowledge")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to create knowledge")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, knowledge)
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, knowledge, nil)
 }
 
 func (h *KnowledgeHandler) Read(w http.ResponseWriter, r *http.Request) {
@@ -73,11 +73,11 @@ func (h *KnowledgeHandler) Read(w http.ResponseWriter, r *http.Request) {
 		Offset:     pagination.Offset,
 	})
 	if err != nil {
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to get knowledges")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get knowledges")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, knowledges)
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, knowledges, nil)
 }
 
 func (h *KnowledgeHandler) ReadById(w http.ResponseWriter, r *http.Request) {
@@ -89,15 +89,15 @@ func (h *KnowledgeHandler) ReadById(w http.ResponseWriter, r *http.Request) {
 	knowledge, err := h.Queries.SelectKnowledgeById(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			lib.ResponseJSON(w, http.StatusNotFound, "knowledge not found")
+			lib.ResponseJSONError(w, http.StatusNotFound, "knowledge not found")
 			return
 		}
 
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to get knowledge")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get knowledge")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, knowledge)
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, knowledge, nil)
 }
 
 type updateKnowledgeRequest struct {
@@ -118,7 +118,7 @@ func (h *KnowledgeHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "name are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "name are required")
 		return
 	}
 
@@ -129,15 +129,15 @@ func (h *KnowledgeHandler) Update(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			lib.ResponseJSON(w, http.StatusNotFound, "knowledge not found")
+			lib.ResponseJSONError(w, http.StatusNotFound, "knowledge not found")
 			return
 		}
 
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to update knowledge")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to update knowledge")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, knowledge)
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, knowledge, nil)
 }
 
 func (h *KnowledgeHandler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -148,15 +148,15 @@ func (h *KnowledgeHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	rowsAffected, err := h.Queries.DeleteKnowledge(r.Context(), id)
 	if err != nil {
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to delete knowledge")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to delete knowledge")
 		return
 	}
 	if rowsAffected == 0 {
-		lib.ResponseJSON(w, http.StatusNotFound, "knowledge not found")
+		lib.ResponseJSONError(w, http.StatusNotFound, "knowledge not found")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusNoContent, nil)
+	lib.ResponseJSONTemplate(w, http.StatusNoContent, nil, nil, nil)
 }
 
 // func (h *KnowledgeHandler) ReadIdAgents(w http.ResponseWriter, r *http.Request) {

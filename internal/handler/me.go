@@ -23,7 +23,7 @@ func NewMeHandler(conn *pgxpool.Pool, mailer *lib.Mailer) *MeHandler {
 func (h *MeHandler) Read(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.ClaimsFromContext(r.Context())
 	if !ok {
-		lib.ResponseJSON(w, http.StatusUnauthorized, "unauthorized")
+		lib.ResponseJSONError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	userID := claims.UserID
@@ -31,11 +31,11 @@ func (h *MeHandler) Read(w http.ResponseWriter, r *http.Request) {
 	user, err := h.Queries.SelectUserById(r.Context(), userID)
 	if err != nil {
 		fmt.Printf("%v", err)
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to get agents")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agents")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, user)
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, user, nil)
 }
 
 type updatePasswordRequest struct {
@@ -46,7 +46,7 @@ type updatePasswordRequest struct {
 func (h *MeHandler) UpdatePassword(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.ClaimsFromContext(r.Context())
 	if !ok {
-		lib.ResponseJSON(w, http.StatusUnauthorized, "unauthorized")
+		lib.ResponseJSONError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	userID := claims.UserID
@@ -54,7 +54,7 @@ func (h *MeHandler) UpdatePassword(w http.ResponseWriter, r *http.Request) {
 	user, err := h.Queries.SelectUserById(r.Context(), userID)
 	if err != nil {
 		fmt.Printf("%v", err)
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to get user")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get user")
 		return
 	}
 
@@ -67,26 +67,26 @@ func (h *MeHandler) UpdatePassword(w http.ResponseWriter, r *http.Request) {
 	req.OldPassword = strings.TrimSpace(req.OldPassword)
 	req.NewPassword = strings.TrimSpace(req.NewPassword)
 	if req.OldPassword == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "old password are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "old password are required")
 		return
 	}
 	if req.NewPassword == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "new password are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "new password are required")
 		return
 	}
 	if req.OldPassword == req.NewPassword {
-		lib.ResponseJSON(w, http.StatusBadRequest, "new password has to be different")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "new password has to be different")
 		return
 	}
 
 	if !lib.ComparePassword(user.HashedPassword, req.OldPassword) {
-		lib.ResponseJSON(w, http.StatusInternalServerError, "Password is incorrect")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "Password is incorrect")
 		return
 	}
 
 	hashedPassword, err := lib.HashPassword(req.NewPassword)
 	if err != nil {
-		lib.ResponseJSON(w, http.StatusBadRequest, err)
+		lib.ResponseJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -97,11 +97,11 @@ func (h *MeHandler) UpdatePassword(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		fmt.Printf("%v", err)
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to get agents")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agents")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, newUser)
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, newUser, nil)
 }
 
 type updateDetailsRequest struct {
@@ -112,7 +112,7 @@ type updateDetailsRequest struct {
 func (h *MeHandler) UpdateDetails(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.ClaimsFromContext(r.Context())
 	if !ok {
-		lib.ResponseJSON(w, http.StatusUnauthorized, "unauthorized")
+		lib.ResponseJSONError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	userID := claims.UserID
@@ -126,11 +126,11 @@ func (h *MeHandler) UpdateDetails(w http.ResponseWriter, r *http.Request) {
 	req.Name = strings.TrimSpace(req.Name)
 	req.Username = strings.TrimSpace(req.Username)
 	if req.Name == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "name are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "name are required")
 		return
 	}
 	if req.Username == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "username are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "username are required")
 		return
 	}
 
@@ -141,11 +141,11 @@ func (h *MeHandler) UpdateDetails(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		fmt.Printf("%v", err)
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to update user")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to update user")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, user)
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, user, nil)
 }
 
 type updateEmailRequest struct {
@@ -155,7 +155,7 @@ type updateEmailRequest struct {
 func (h *MeHandler) UpdateEmailRequest(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.ClaimsFromContext(r.Context())
 	if !ok {
-		lib.ResponseJSON(w, http.StatusUnauthorized, "unauthorized")
+		lib.ResponseJSONError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	userID := claims.UserID
@@ -168,19 +168,19 @@ func (h *MeHandler) UpdateEmailRequest(w http.ResponseWriter, r *http.Request) {
 
 	req.Email = strings.TrimSpace(req.Email)
 	if req.Email == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "new email are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "new email are required")
 		return
 	}
 
 	user, err := h.Queries.SelectUserById(r.Context(), userID)
 	if err != nil {
 		fmt.Printf("%v", err)
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to get user")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get user")
 		return
 	}
 
 	if user.Email == req.Email {
-		lib.ResponseJSON(w, http.StatusBadRequest, "email not changed")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "email not changed")
 		return
 	}
 
@@ -191,7 +191,7 @@ func (h *MeHandler) UpdateEmailRequest(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		fmt.Printf("change email request: insert upcoming change: %v\n", err)
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to request changes")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to request changes")
 		return
 	}
 
@@ -205,5 +205,5 @@ func (h *MeHandler) UpdateEmailRequest(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("change-email: send email: %v\n", err)
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, "email change confirmation has been sent to your email")
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, "email change confirmation has been sent to your email", nil)
 }

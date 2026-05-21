@@ -49,9 +49,9 @@ func AllFunctions(r chi.Router) http.HandlerFunc {
 			return nil
 		})
 
-		lib.ResponseJSON(w, http.StatusOK, map[string]any{
+		lib.ResponseJSONTemplate(w, http.StatusOK, nil, map[string]any{
 			"total":  len(routes),
 			"routes": routes,
-		})
+		}, nil)
 	}
 }

@@ -38,11 +38,11 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 	req.WebhookUri = strings.TrimSpace(req.WebhookUri)
 
 	if req.Name == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "name are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "name are required")
 		return
 	}
 	if req.WebhookUri == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "webhook_uri are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "webhook_uri are required")
 		return
 	}
 
@@ -56,11 +56,11 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		fmt.Printf("%v", err)
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to create agent")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to create agent")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, agent)
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agent, nil)
 }
 
 func (h *AgentHandler) Read(w http.ResponseWriter, r *http.Request) {
@@ -73,15 +73,23 @@ func (h *AgentHandler) Read(w http.ResponseWriter, r *http.Request) {
 		IsActive: isActive,
 		Sort:     pagination.Sort,
 		Limit:    pagination.Limit,
-		Offset:   pagination.Offset,
+		Offset:   pagination.Offset * pagination.Limit,
 	})
 	if err != nil {
 		fmt.Printf("%v", err)
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to get agents")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agents")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, agents)
+	totalRow, err := h.Queries.CountAgents(r.Context())
+	if err != nil {
+		fmt.Printf("%v", err)
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agents")
+		return
+	}
+
+	fmt.Printf("%v", len(agents))
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agents, lib.ResponsePagination(int(pagination.Limit), int(pagination.Offset), len(agents), int(totalRow)))
 }
 
 func (h *AgentHandler) ReadById(w http.ResponseWriter, r *http.Request) {
@@ -93,15 +101,15 @@ func (h *AgentHandler) ReadById(w http.ResponseWriter, r *http.Request) {
 	agent, err := h.Queries.SelectAgentById(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			lib.ResponseJSON(w, http.StatusNotFound, "agent not found")
+			lib.ResponseJSONError(w, http.StatusNotFound, "agent not found")
 			return
 		}
 
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to get agent")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agent")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, agent)
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agent, nil)
 }
 
 type updateAgentRequest struct {
@@ -126,11 +134,11 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	req.WebhookUri = strings.TrimSpace(req.WebhookUri)
 
 	if req.Name == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "name are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "name are required")
 		return
 	}
 	if req.WebhookUri == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "webhook_uri are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "webhook_uri are required")
 		return
 	}
 
@@ -143,15 +151,15 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			lib.ResponseJSON(w, http.StatusNotFound, "agent not found")
+			lib.ResponseJSONError(w, http.StatusNotFound, "agent not found")
 			return
 		}
 
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to update agent")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to update agent")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, agent)
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agent, nil)
 }
 
 func (h *AgentHandler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -162,64 +170,14 @@ func (h *AgentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	rowsAffected, err := h.Queries.DeleteAgent(r.Context(), id)
 	if err != nil {
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to delete agent")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to delete agent")
 		return
 	}
 
 	if rowsAffected == 0 {
-		lib.ResponseJSON(w, http.StatusNotFound, "agent not found")
+		lib.ResponseJSONError(w, http.StatusNotFound, "agent not found")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusNoContent, nil)
+	lib.ResponseJSONTemplate(w, http.StatusNoContent, nil, nil, nil)
 }
-
-// func (h *AgentHandler) Duplicate(w http.ResponseWriter, r *http.Request) {
-// 	id, ok := lib.ParseID(w, r, "id")
-// 	if !ok {
-// 		return
-// 	}
-
-// 	agent, err := h.Queries.DuplicateAgent(r.Context(), id)
-// 	if err != nil {
-// 		if errors.Is(err, pgx.ErrNoRows) {
-// 			lib.ResponseError(w, http.StatusNotFound, "agent not found")
-// 			return
-// 		}
-
-// 		lib.ResponseError(w, http.StatusInternalServerError, "failed to duplicate agent")
-// 		return
-// 	}
-
-// 	lib.ResponseJSON(w, http.StatusOK, agent)
-// }
-
-// func (h *AgentHandler) ReadIdKnowledges(w http.ResponseWriter, r *http.Request) {
-// 	id, ok := lib.ParseID(w, r, "id")
-// 	if !ok {
-// 		return
-// 	}
-
-// 	knowledges, err := h.Queries.GetAgentKnowledges(r.Context(), id)
-// 	if err != nil {
-// 		lib.ResponseError(w, http.StatusInternalServerError, "failed to get agent knowledges")
-// 		return
-// 	}
-
-// 	lib.ResponseJSON(w, http.StatusOK, knowledges)
-// }
-
-// func (h *AgentHandler) ReadIdMcps(w http.ResponseWriter, r *http.Request) {
-// 	id, ok := lib.ParseID(w, r, "id")
-// 	if !ok {
-// 		return
-// 	}
-
-// 	mcps, err := h.Queries.GetAgentMcps(r.Context(), id)
-// 	if err != nil {
-// 		lib.ResponseError(w, http.StatusInternalServerError, "failed to get agent mcps")
-// 		return
-// 	}
-
-// 	lib.ResponseJSON(w, http.StatusOK, mcps)
-// }

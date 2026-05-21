@@ -41,21 +41,21 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	req.Email = strings.TrimSpace(req.Email)
 	req.Password = strings.TrimSpace(req.Password)
 	if req.Username == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "username are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "username are required")
 		return
 	}
 	if req.Email == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "email are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "email are required")
 		return
 	}
 	if req.Password == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "password are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "password are required")
 		return
 	}
 
 	hashedPassword, err := lib.HashPassword(req.Password)
 	if err != nil {
-		lib.ResponseJSON(w, http.StatusBadRequest, err)
+		lib.ResponseJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -66,21 +66,21 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		fmt.Printf("%v", err)
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to register user")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to register user")
 		return
 	}
 
 	token, err := h.Signer.Issue(user.ID, string(user.Role))
 	if err != nil {
 		fmt.Printf("%v", err)
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to issue token")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to issue token")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, map[string]any{
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, map[string]any{
 		"user":  user,
 		"token": token,
-	})
+	}, nil)
 }
 
 type loginAuthRequest struct {
@@ -98,23 +98,23 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	req.LoginID = strings.TrimSpace(req.LoginID)
 	req.Password = strings.TrimSpace(req.Password)
 	if req.LoginID == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "login_id are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "login_id are required")
 		return
 	}
 	if req.Password == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "password are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "password are required")
 		return
 	}
 
 	user, err := h.Queries.SelectUserByLoginId(r.Context(), req.LoginID)
 	if err != nil {
 		fmt.Printf("%v", err)
-		lib.ResponseJSON(w, http.StatusInternalServerError, "user not found")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "user not found")
 		return
 	}
 
 	if !lib.ComparePassword(user.HashedPassword, req.Password) {
-		lib.ResponseJSON(w, http.StatusInternalServerError, "Password is incorrect")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "Password is incorrect")
 		return
 
 	}
@@ -122,14 +122,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	token, err := h.Signer.Issue(user.ID, string(user.Role))
 	if err != nil {
 		fmt.Printf("%v", err)
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to issue token")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to issue token")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, map[string]any{
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, map[string]any{
 		"user":  user,
 		"token": token,
-	})
+	}, nil)
 }
 
 type forgotPasswordRequest struct {
@@ -145,7 +145,7 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 
 	req.LoginID = strings.TrimSpace(req.LoginID)
 	if req.LoginID == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "login_id are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "login_id are required")
 		return
 	}
 
@@ -153,7 +153,7 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.Queries.SelectUserByLoginId(r.Context(), req.LoginID)
 	if err != nil {
-		lib.ResponseJSON(w, http.StatusOK, safeResponse)
+		lib.ResponseJSONTemplate(w, http.StatusOK, nil, safeResponse, nil)
 		return
 	}
 
@@ -163,7 +163,7 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		fmt.Printf("forgot-password: insert upcoming change: %v\n", err)
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to request changes")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to request changes")
 		return
 	}
 
@@ -177,7 +177,7 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("forgot-password: send email: %v\n", err)
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, safeResponse)
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, safeResponse, nil)
 }
 
 type resetPasswordRequest struct {
@@ -195,23 +195,23 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	req.Token = strings.TrimSpace(req.Token)
 	req.Password = strings.TrimSpace(req.Password)
 	if req.Token == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "token are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "token are required")
 		return
 	}
 	if req.Password == "" {
-		lib.ResponseJSON(w, http.StatusBadRequest, "new_password are required")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "new_password are required")
 		return
 	}
 
 	upc, err := h.Queries.SelectUpcomingChangeByToken(r.Context(), req.Token)
 	if err != nil {
-		lib.ResponseJSON(w, http.StatusInternalServerError, "invalid request")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "invalid request")
 		return
 	}
 
 	hashedPassword, err := lib.HashPassword(req.Password)
 	if err != nil {
-		lib.ResponseJSON(w, http.StatusBadRequest, err)
+		lib.ResponseJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -220,14 +220,14 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		ID:             upc.UserID,
 	})
 	if err != nil {
-		lib.ResponseJSON(w, http.StatusInternalServerError, "invalid request")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "invalid request")
 		return
 	}
 
 	if err := h.Queries.RevokeUpcomingChangeByID(r.Context(), upc.ID); err != nil {
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to revoke")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to revoke")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, user)
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, user, nil)
 }

@@ -42,11 +42,11 @@ func (h *AgentKnowledgeHandler) CreateByAgentId(w http.ResponseWriter, r *http.R
 	})
 	if err != nil {
 		fmt.Printf("%v\n", err)
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to assign knowledge to agent")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to assign knowledge to agent")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, agent_knowledge)
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agent_knowledge, nil)
 }
 
 func (h *AgentKnowledgeHandler) ReadByAgentId(w http.ResponseWriter, r *http.Request) {
@@ -65,11 +65,11 @@ func (h *AgentKnowledgeHandler) ReadByAgentId(w http.ResponseWriter, r *http.Req
 		Offset:  pagination.Offset,
 	})
 	if err != nil {
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to get agent knowledges")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agent knowledges")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, agent_knowledges)
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agent_knowledges, nil)
 
 }
 
@@ -96,15 +96,15 @@ func (h *AgentKnowledgeHandler) Update(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			lib.ResponseJSON(w, http.StatusNotFound, "agent knowledge not found")
+			lib.ResponseJSONError(w, http.StatusNotFound, "agent knowledge not found")
 			return
 		}
 
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to update agent knowledge")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to update agent knowledge")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusOK, agent_knowledge)
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agent_knowledge, nil)
 }
 
 func (h *AgentKnowledgeHandler) Delete(w http.ResponseWriter, r *http.Request) {
@@ -115,14 +115,14 @@ func (h *AgentKnowledgeHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	rowsAffected, err := h.Queries.DeleteAgentKnowledge(r.Context(), id)
 	if err != nil {
-		lib.ResponseJSON(w, http.StatusInternalServerError, "failed to delete agent knowledge")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to delete agent knowledge")
 		return
 	}
 
 	if rowsAffected == 0 {
-		lib.ResponseJSON(w, http.StatusNotFound, "agent knowledge not found")
+		lib.ResponseJSONError(w, http.StatusNotFound, "agent knowledge not found")
 		return
 	}
 
-	lib.ResponseJSON(w, http.StatusNoContent, nil)
+	lib.ResponseJSONTemplate(w, http.StatusNoContent, nil, nil, nil)
 }

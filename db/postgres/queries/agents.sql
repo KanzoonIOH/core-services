@@ -9,10 +9,20 @@ VALUES (
 RETURNING *;
 
 -- name: SelectAgentById :one
-SELECT * FROM agents
+SELECT
+    agents.*,
+    (
+        SELECT COUNT(*) FROM agent_knowledges ak
+        WHERE ak.agent_id = agents.id AND ak.deleted_at IS NULL
+    ) AS knowledges_count,
+    (
+        SELECT COUNT(*) FROM mcps m
+        WHERE m.agent_id = agents.id AND m.deleted_at IS NULL
+    ) AS mcps_count
+FROM agents
 WHERE
     deleted_at IS NULL
-    AND id = sqlc.arg(id)
+    AND agents.id = sqlc.arg(id)
 LIMIT 1;
 
 -- name: UpdateAgent :one
@@ -22,7 +32,7 @@ SET
     description = sqlc.narg(description),
     is_active = sqlc.arg(is_active),
     webhook_uri = sqlc.arg(webhook_uri),
-    updated_at = now()
+    updated_at = NOW()
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id)
@@ -34,40 +44,49 @@ WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id);
 
+-- name: CountAgents :one
+SELECT COUNT(*) FROM agents;
+
 -- name: SelectAgents :many
-SELECT * FROM agents
+SELECT
+    a.*,
+    COALESCE(ak.knowledges_count, 0) AS knowledges_count,
+    COALESCE(m.mcps_count, 0) AS mcps_count
+FROM agents a
+LEFT JOIN (
+    SELECT
+        agent_id,
+        COUNT(*) AS knowledges_count
+    FROM agent_knowledges
+    WHERE deleted_at IS NULL
+    GROUP BY agent_id
+) ak ON ak.agent_id = a.id
+LEFT JOIN (
+    SELECT
+        agent_id,
+        COUNT(*) AS mcps_count
+    FROM mcps
+    WHERE deleted_at IS NULL
+    GROUP BY agent_id
+) m ON m.agent_id = a.id
 WHERE
-    deleted_at IS NULL
+    a.deleted_at IS NULL
     AND (
         sqlc.narg('is_active')::bool IS NULL
-        OR is_active = sqlc.narg('is_active')::bool
+        OR a.is_active = sqlc.narg('is_active')::bool
     )
 ORDER BY
-    CASE WHEN sqlc.narg('sort')::text = 'is_active_asc' THEN is_active END ASC,
-    CASE WHEN sqlc.narg('sort')::text = 'is_active_desc' THEN is_active END ASC,
-    CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN name END ASC,
-    CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN name END DESC,
-    CASE WHEN sqlc.narg('sort')::text = 'created_asc' THEN created_at END ASC,
-    CASE WHEN sqlc.narg('sort')::text = 'created_desc' THEN created_at END DESC,
+    CASE
+        WHEN sqlc.narg('sort')::text = 'is_active_asc' THEN a.is_active
+    END DESC,
+    CASE
+        WHEN sqlc.narg('sort')::text = 'is_active_desc' THEN a.is_active
+    END ASC,
+    CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN a.name END ASC,
+    CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN a.name END DESC,
+    CASE WHEN sqlc.narg('sort')::text = 'created_asc' THEN a.created_at END ASC,
+    CASE
+        WHEN sqlc.narg('sort')::text = 'created_desc' THEN a.created_at
+    END DESC,
     created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
-
--- -- name: GetAgentKnowledges :many
--- SELECT k.* FROM knowledges k
--- JOIN agent_knowledges ak ON ak.knowledge_id = k.id
--- WHERE
---     k.deleted_at IS NULL
---     AND ak.deleted_at IS NULL
---     AND ak.agent_id = sqlc.arg(agent_id)
--- ORDER BY k.created_at DESC;
-
--- -- name: GetAgentMcps :many
--- SELECT m.* FROM mcps m
--- WHERE
---     m.deleted_at IS NULL
---     AND EXISTS (
---         SELECT 1 FROM agents a
---         WHERE a.deleted_at IS NULL AND a.id = sqlc.arg(agent_id)
---     )
---     AND FALSE
--- ORDER BY m.created_at DESC;
