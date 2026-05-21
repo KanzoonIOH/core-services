@@ -33,6 +33,7 @@ func AppRouter(conn *pgxpool.Pool) http.Handler {
 	authHandler := handler.NewAuthHandler(conn, signer, mailer)
 	meHandler := handler.NewMeHandler(conn, mailer)
 	confirmHandler := handler.NewConfirmHandler(conn)
+	apiKeyHandler := handler.NewApiKeyHandler(conn)
 
 	r.Get("/health", handler.Health)
 	r.Get("/all-functions", handler.AllFunctions(r))
@@ -80,6 +81,11 @@ func AppRouter(conn *pgxpool.Pool) http.Handler {
 				r.Get("/agent/{id}", agentKnowledgeHandler.ReadByAgentId)
 				r.Patch("/{id}", agentKnowledgeHandler.Update)
 				r.Delete("/{id}", agentKnowledgeHandler.Delete)
+			})
+			r.Route("/api-keys", func(r chi.Router) {
+				r.Post("/", apiKeyHandler.Create)
+				r.Get("/", apiKeyHandler.Read)
+				r.Delete("/{id}", apiKeyHandler.Delete)
 			})
 		})
 	})

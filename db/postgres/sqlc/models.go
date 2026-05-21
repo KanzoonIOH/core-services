@@ -120,6 +120,14 @@ type AgentKnowledge struct {
 	DeletedAt    *time.Time `json:"deleted_at"`
 }
 
+type ApiKey struct {
+	ID        uuid.UUID  `json:"id"`
+	Name      string     `json:"name"`
+	Token     string     `json:"token"`
+	CreatedAt time.Time  `json:"created_at"`
+	RevokedAt *time.Time `json:"revoked_at"`
+}
+
 type Knowledge struct {
 	ID          uuid.UUID  `json:"id"`
 	Name        string     `json:"name"`
