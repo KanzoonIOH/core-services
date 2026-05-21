@@ -11,21 +11,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const deleteMcp = `-- name: DeleteMcp :execrows
-DELETE FROM mcps
-WHERE
-    deleted_at IS NULL
-    AND id = $1
-`
-
-func (q *Queries) DeleteMcp(ctx context.Context, id uuid.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteMcp, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const insertMcp = `-- name: InsertMcp :one
 INSERT INTO mcps (agent_id, name, description, uri)
 VALUES (
@@ -134,6 +119,22 @@ func (q *Queries) SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]Mcp, 
 		return nil, err
 	}
 	return items, nil
+}
+
+const softDeleteMcp = `-- name: SoftDeleteMcp :execrows
+UPDATE mcps
+SET deleted_at = now()
+WHERE
+    deleted_at IS NULL
+    AND id = $1
+`
+
+func (q *Queries) SoftDeleteMcp(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteMcp, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateMcp = `-- name: UpdateMcp :one

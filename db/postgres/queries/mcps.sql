@@ -26,8 +26,9 @@ WHERE
     AND id = sqlc.arg(id)
 RETURNING *;
 
--- name: DeleteMcp :execrows
-DELETE FROM mcps
+-- name: SoftDeleteMcp :execrows
+UPDATE mcps
+SET deleted_at = now()
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id);

@@ -168,7 +168,7 @@ func (h *AgentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rowsAffected, err := h.Queries.DeleteAgent(r.Context(), id)
+	rowsAffected, err := h.Queries.SoftDeleteAgent(r.Context(), id)
 	if err != nil {
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to delete agent")
 		return

@@ -145,7 +145,7 @@ func (h *McpHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rowsAffected, err := h.Queries.DeleteMcp(r.Context(), id)
+	rowsAffected, err := h.Queries.SoftDeleteMcp(r.Context(), id)
 	if err != nil {
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to delete mcp")
 		return

@@ -26,8 +26,9 @@ WHERE
     AND id = sqlc.arg(id)
 RETURNING *;
 
--- name: DeleteKnowledge :execrows
-DELETE FROM knowledges
+-- name: SoftDeleteKnowledge :execrows
+UPDATE knowledges
+SET deleted_at = now()
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id);

@@ -38,8 +38,9 @@ WHERE
     AND id = sqlc.arg(id)
 RETURNING *;
 
--- name: DeleteAgent :execrows
-DELETE FROM agents
+-- name: SoftDeleteAgent :execrows
+UPDATE agents
+SET deleted_at = now()
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id);

@@ -31,8 +31,9 @@ WHERE
     AND id = sqlc.arg(id)
 RETURNING *;
 
--- name: DeleteAgentKnowledge :execrows
-DELETE FROM agent_knowledges
+-- name: SoftDeleteAgentKnowledge :execrows
+UPDATE agent_knowledges
+SET deleted_at = now()
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id);

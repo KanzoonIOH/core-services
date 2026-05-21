@@ -12,21 +12,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const deleteAgentKnowledge = `-- name: DeleteAgentKnowledge :execrows
-DELETE FROM agent_knowledges
-WHERE
-    deleted_at IS NULL
-    AND id = $1
-`
-
-func (q *Queries) DeleteAgentKnowledge(ctx context.Context, id uuid.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteAgentKnowledge, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const insertAgentKnowledge = `-- name: InsertAgentKnowledge :one
 INSERT INTO agent_knowledges (agent_id, knowledge_id)
 VALUES (
@@ -125,6 +110,22 @@ func (q *Queries) SelectAgentKnowledgesByAgentId(ctx context.Context, arg Select
 		return nil, err
 	}
 	return items, nil
+}
+
+const softDeleteAgentKnowledge = `-- name: SoftDeleteAgentKnowledge :execrows
+UPDATE agent_knowledges
+SET deleted_at = now()
+WHERE
+    deleted_at IS NULL
+    AND id = $1
+`
+
+func (q *Queries) SoftDeleteAgentKnowledge(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteAgentKnowledge, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateAgentKnowledge = `-- name: UpdateAgentKnowledge :one

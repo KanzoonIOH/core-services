@@ -23,21 +23,6 @@ func (q *Queries) CountAgents(ctx context.Context) (int64, error) {
 	return count, err
 }
 
-const deleteAgent = `-- name: DeleteAgent :execrows
-DELETE FROM agents
-WHERE
-    deleted_at IS NULL
-    AND id = $1
-`
-
-func (q *Queries) DeleteAgent(ctx context.Context, id uuid.UUID) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteAgent, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const insertAgent = `-- name: InsertAgent :one
 INSERT INTO agents (name, description, is_active, webhook_uri)
 VALUES (
@@ -225,6 +210,22 @@ func (q *Queries) SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]S
 		return nil, err
 	}
 	return items, nil
+}
+
+const softDeleteAgent = `-- name: SoftDeleteAgent :execrows
+UPDATE agents
+SET deleted_at = now()
+WHERE
+    deleted_at IS NULL
+    AND id = $1
+`
+
+func (q *Queries) SoftDeleteAgent(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteAgent, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const updateAgent = `-- name: UpdateAgent :one
