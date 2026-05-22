@@ -13,7 +13,12 @@ import (
 
 type ctxKey string
 
-const ClaimsCtxKey ctxKey = "jwtClaims"
+const (
+	ClaimsCtxKey     ctxKey = "jwtClaims"
+	AuthMethodCtxKey ctxKey = "authMethod"
+	AuthMethodJWT           = "jwt"
+	AuthMethodApiKey        = "api_key"
+)
 
 func Auth(signer *lib.JWTSigner) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -30,6 +35,7 @@ func Auth(signer *lib.JWTSigner) func(http.Handler) http.Handler {
 			}
 
 			ctx := context.WithValue(r.Context(), ClaimsCtxKey, claims)
+			ctx = context.WithValue(ctx, AuthMethodCtxKey, AuthMethodJWT)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -46,13 +52,15 @@ func AuthOrApiKey(signer *lib.JWTSigner, queries db.Querier) func(http.Handler) 
 			claims, err := signer.Verify(token)
 			if err == nil {
 				ctx := context.WithValue(r.Context(), ClaimsCtxKey, claims)
+				ctx = context.WithValue(ctx, AuthMethodCtxKey, AuthMethodJWT)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 
 			_, err = queries.SelectApiKeyByToken(r.Context(), token)
 			if err == nil {
-				next.ServeHTTP(w, r)
+				ctx := context.WithValue(r.Context(), AuthMethodCtxKey, AuthMethodApiKey)
+				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -84,4 +92,9 @@ func bearerToken(w http.ResponseWriter, r *http.Request) (string, bool) {
 func ClaimsFromContext(ctx context.Context) (*lib.JWTClaims, bool) {
 	claims, ok := ctx.Value(ClaimsCtxKey).(*lib.JWTClaims)
 	return claims, ok
+}
+
+func IsApiKeyAuth(ctx context.Context) bool {
+	authMethod, ok := ctx.Value(AuthMethodCtxKey).(string)
+	return ok && authMethod == AuthMethodApiKey
 }

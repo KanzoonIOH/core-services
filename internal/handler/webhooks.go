@@ -2,6 +2,7 @@ package handler
 
 import (
 	db "aiac-service/db/postgres/sqlc"
+	"aiac-service/internal/app/middleware"
 	"aiac-service/internal/lib"
 	"crypto/tls"
 	"errors"
@@ -69,8 +70,8 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if !agent.IsActive {
-		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agent")
+	if middleware.IsApiKeyAuth(r.Context()) && !agent.IsActive {
+		lib.ResponseJSONError(w, http.StatusForbidden, "agent is not active")
 		return
 	}
 
