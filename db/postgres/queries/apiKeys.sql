@@ -11,6 +11,12 @@ RETURNING *;
 SELECT COUNT(*) FROM api_keys
 WHERE revoked_at IS NULL;
 
+-- name: SelectApiKeyByToken :one
+SELECT * FROM api_keys
+WHERE
+    revoked_at IS NULL
+    AND token = sqlc.arg(token);
+
 -- name: RevokeApiKey :execrows
 UPDATE api_keys
 SET revoked_at = now()

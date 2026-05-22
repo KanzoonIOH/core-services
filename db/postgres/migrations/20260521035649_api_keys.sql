@@ -8,5 +8,7 @@ CREATE TABLE api_keys (
     revoked_at TIMESTAMPTZ
 );
 
+CREATE INDEX idx_api_keys_token ON api_keys (token);
+
 -- +goose Down
 DROP TABLE IF EXISTS api_keys;

@@ -34,6 +34,7 @@ func AppRouter(conn *pgxpool.Pool) http.Handler {
 	meHandler := handler.NewMeHandler(conn, mailer)
 	confirmHandler := handler.NewConfirmHandler(conn)
 	apiKeyHandler := handler.NewApiKeyHandler(conn)
+	webhookHandler := handler.NewWebhookHandler(conn)
 
 	r.Get("/health", handler.Health)
 	r.Get("/all-functions", handler.AllFunctions(r))
@@ -46,6 +47,10 @@ func AppRouter(conn *pgxpool.Pool) http.Handler {
 			r.Post("/password/reset", authHandler.ResetPassword)
 		})
 		r.Get("/confirm", confirmHandler.UpdateEmailConfirm)
+		r.Route("/", func(r chi.Router) {
+			r.Use(middleware.AuthOrApiKey(signer, webhookHandler.Queries))
+			r.Post("/chat/{id}", webhookHandler.ForwardChatWebhook)
+		})
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(signer))
 			r.Route("/me", func(r chi.Router) {

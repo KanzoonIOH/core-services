@@ -66,6 +66,26 @@ func (q *Queries) RevokeApiKey(ctx context.Context, id uuid.UUID) (int64, error)
 	return result.RowsAffected(), nil
 }
 
+const selectApiKeyByToken = `-- name: SelectApiKeyByToken :one
+SELECT id, name, token, created_at, revoked_at FROM api_keys
+WHERE
+    revoked_at IS NULL
+    AND token = $1
+`
+
+func (q *Queries) SelectApiKeyByToken(ctx context.Context, token string) (ApiKey, error) {
+	row := q.db.QueryRow(ctx, selectApiKeyByToken, token)
+	var i ApiKey
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Token,
+		&i.CreatedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const selectApiKeys = `-- name: SelectApiKeys :many
 SELECT id, name, token, created_at, revoked_at FROM api_keys
 WHERE revoked_at IS NULL

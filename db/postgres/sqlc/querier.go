@@ -25,6 +25,7 @@ type Querier interface {
 	SelectAgentById(ctx context.Context, id uuid.UUID) (SelectAgentByIdRow, error)
 	SelectAgentKnowledgesByAgentId(ctx context.Context, arg SelectAgentKnowledgesByAgentIdParams) ([]SelectAgentKnowledgesByAgentIdRow, error)
 	SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]SelectAgentsRow, error)
+	SelectApiKeyByToken(ctx context.Context, token string) (ApiKey, error)
 	SelectApiKeys(ctx context.Context, arg SelectApiKeysParams) ([]ApiKey, error)
 	SelectKnowledgeById(ctx context.Context, id uuid.UUID) (Knowledge, error)
 	SelectKnowledges(ctx context.Context, arg SelectKnowledgesParams) ([]Knowledge, error)
