@@ -106,7 +106,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.Queries.SelectUserByLoginId(r.Context(), req.LoginID)
+	user, err := h.Queries.SelectUserByLoginIdWithPassword(r.Context(), req.LoginID)
 	if err != nil {
 		fmt.Printf("%v", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "user not found")
@@ -116,7 +116,6 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	if !lib.ComparePassword(user.HashedPassword, req.Password) {
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "Password is incorrect")
 		return
-
 	}
 
 	token, err := h.Signer.Issue(user.ID, string(user.Role))
@@ -127,7 +126,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, map[string]any{
-		"user":  user,
+		"user":  lib.ToUserResponse(user),
 		"token": token,
 	}, nil)
 }
@@ -151,7 +150,7 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 
 	const safeResponse = "If an account exists for that login, a password reset link has been sent"
 
-	user, err := h.Queries.SelectUserByLoginId(r.Context(), req.LoginID)
+	user, err := h.Queries.SelectUserByLoginIdWithPassword(r.Context(), req.LoginID)
 	if err != nil {
 		lib.ResponseJSONTemplate(w, http.StatusOK, nil, safeResponse, nil)
 		return

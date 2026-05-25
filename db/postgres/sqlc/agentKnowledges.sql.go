@@ -18,7 +18,7 @@ VALUES (
     $1,
     $2
 )
-RETURNING id, is_active_prod, is_active_dev, agent_id, knowledge_id, created_at, updated_at, deleted_at
+RETURNING id, agent_id, knowledge_id, is_active_prod, is_active_dev, created_at, updated_at
 `
 
 type InsertAgentKnowledgeParams struct {
@@ -26,32 +26,39 @@ type InsertAgentKnowledgeParams struct {
 	KnowledgeID uuid.UUID `json:"knowledge_id"`
 }
 
-func (q *Queries) InsertAgentKnowledge(ctx context.Context, arg InsertAgentKnowledgeParams) (AgentKnowledge, error) {
+type InsertAgentKnowledgeRow struct {
+	ID           uuid.UUID `json:"id"`
+	AgentID      uuid.UUID `json:"agent_id"`
+	KnowledgeID  uuid.UUID `json:"knowledge_id"`
+	IsActiveProd bool      `json:"is_active_prod"`
+	IsActiveDev  bool      `json:"is_active_dev"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+func (q *Queries) InsertAgentKnowledge(ctx context.Context, arg InsertAgentKnowledgeParams) (InsertAgentKnowledgeRow, error) {
 	row := q.db.QueryRow(ctx, insertAgentKnowledge, arg.AgentID, arg.KnowledgeID)
-	var i AgentKnowledge
+	var i InsertAgentKnowledgeRow
 	err := row.Scan(
 		&i.ID,
-		&i.IsActiveProd,
-		&i.IsActiveDev,
 		&i.AgentID,
 		&i.KnowledgeID,
+		&i.IsActiveProd,
+		&i.IsActiveDev,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const selectAgentKnowledgesByAgentId = `-- name: SelectAgentKnowledgesByAgentId :many
 SELECT
-    ak.id, ak.is_active_prod, ak.is_active_dev, ak.agent_id, ak.knowledge_id, ak.created_at, ak.updated_at, ak.deleted_at,
-    k.id, k.name, k.description, k.source_type, k.source_uri, k.created_at, k.updated_at, k.deleted_at
-FROM agent_knowledges ak
-JOIN knowledges k
-    ON ak.knowledge_id = k.id
-WHERE
-    ak.deleted_at IS NULL
-    AND ak.agent_id = $1
+    akv.id, akv.agent_id, akv.knowledge_id, akv.is_active_prod, akv.is_active_dev, akv.created_at, akv.updated_at,
+    kv.id, kv.name, kv.description, kv.source_type, kv.source_uri, kv.created_at, kv.updated_at
+FROM agent_knowledges_view akv
+JOIN knowledges_view kv
+    ON akv.knowledge_id = kv.id
+WHERE akv.agent_id = $1
 LIMIT
     coalesce($3, 10)
     OFFSET coalesce($2, 0)
@@ -64,15 +71,14 @@ type SelectAgentKnowledgesByAgentIdParams struct {
 }
 
 type SelectAgentKnowledgesByAgentIdRow struct {
-	ID           uuid.UUID  `json:"id"`
-	IsActiveProd bool       `json:"is_active_prod"`
-	IsActiveDev  bool       `json:"is_active_dev"`
-	AgentID      uuid.UUID  `json:"agent_id"`
-	KnowledgeID  uuid.UUID  `json:"knowledge_id"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	DeletedAt    *time.Time `json:"deleted_at"`
-	Knowledge    Knowledge  `json:"knowledge"`
+	ID             uuid.UUID      `json:"id"`
+	AgentID        uuid.UUID      `json:"agent_id"`
+	KnowledgeID    uuid.UUID      `json:"knowledge_id"`
+	IsActiveProd   bool           `json:"is_active_prod"`
+	IsActiveDev    bool           `json:"is_active_dev"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+	KnowledgesView KnowledgesView `json:"knowledges_view"`
 }
 
 func (q *Queries) SelectAgentKnowledgesByAgentId(ctx context.Context, arg SelectAgentKnowledgesByAgentIdParams) ([]SelectAgentKnowledgesByAgentIdRow, error) {
@@ -86,21 +92,19 @@ func (q *Queries) SelectAgentKnowledgesByAgentId(ctx context.Context, arg Select
 		var i SelectAgentKnowledgesByAgentIdRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.IsActiveProd,
-			&i.IsActiveDev,
 			&i.AgentID,
 			&i.KnowledgeID,
+			&i.IsActiveProd,
+			&i.IsActiveDev,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.DeletedAt,
-			&i.Knowledge.ID,
-			&i.Knowledge.Name,
-			&i.Knowledge.Description,
-			&i.Knowledge.SourceType,
-			&i.Knowledge.SourceUri,
-			&i.Knowledge.CreatedAt,
-			&i.Knowledge.UpdatedAt,
-			&i.Knowledge.DeletedAt,
+			&i.KnowledgesView.ID,
+			&i.KnowledgesView.Name,
+			&i.KnowledgesView.Description,
+			&i.KnowledgesView.SourceType,
+			&i.KnowledgesView.SourceUri,
+			&i.KnowledgesView.CreatedAt,
+			&i.KnowledgesView.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -137,7 +141,7 @@ SET
 WHERE
     deleted_at IS NULL
     AND id = $3
-RETURNING id, is_active_prod, is_active_dev, agent_id, knowledge_id, created_at, updated_at, deleted_at
+RETURNING id, agent_id, knowledge_id, is_active_prod, is_active_dev, created_at, updated_at
 `
 
 type UpdateAgentKnowledgeParams struct {
@@ -146,18 +150,27 @@ type UpdateAgentKnowledgeParams struct {
 	ID           uuid.UUID `json:"id"`
 }
 
-func (q *Queries) UpdateAgentKnowledge(ctx context.Context, arg UpdateAgentKnowledgeParams) (AgentKnowledge, error) {
+type UpdateAgentKnowledgeRow struct {
+	ID           uuid.UUID `json:"id"`
+	AgentID      uuid.UUID `json:"agent_id"`
+	KnowledgeID  uuid.UUID `json:"knowledge_id"`
+	IsActiveProd bool      `json:"is_active_prod"`
+	IsActiveDev  bool      `json:"is_active_dev"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+func (q *Queries) UpdateAgentKnowledge(ctx context.Context, arg UpdateAgentKnowledgeParams) (UpdateAgentKnowledgeRow, error) {
 	row := q.db.QueryRow(ctx, updateAgentKnowledge, arg.IsActiveProd, arg.IsActiveDev, arg.ID)
-	var i AgentKnowledge
+	var i UpdateAgentKnowledgeRow
 	err := row.Scan(
 		&i.ID,
-		&i.IsActiveProd,
-		&i.IsActiveDev,
 		&i.AgentID,
 		&i.KnowledgeID,
+		&i.IsActiveProd,
+		&i.IsActiveDev,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
 	)
 	return i, err
 }

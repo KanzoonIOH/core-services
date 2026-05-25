@@ -13,7 +13,7 @@ import (
 )
 
 const countAgents = `-- name: CountAgents :one
-SELECT COUNT(*) FROM agents
+SELECT COUNT(*) FROM agents_view
 `
 
 func (q *Queries) CountAgents(ctx context.Context) (int64, error) {
@@ -31,7 +31,7 @@ VALUES (
     $3,
     $4
 )
-RETURNING id, name, description, is_active, webhook_uri, created_at, updated_at, deleted_at
+RETURNING id, name, description, is_active, webhook_uri, created_at, updated_at
 `
 
 type InsertAgentParams struct {
@@ -41,14 +41,24 @@ type InsertAgentParams struct {
 	WebhookUri  string  `json:"webhook_uri"`
 }
 
-func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (Agent, error) {
+type InsertAgentRow struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description"`
+	IsActive    bool      `json:"is_active"`
+	WebhookUri  string    `json:"webhook_uri"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (InsertAgentRow, error) {
 	row := q.db.QueryRow(ctx, insertAgent,
 		arg.Name,
 		arg.Description,
 		arg.IsActive,
 		arg.WebhookUri,
 	)
-	var i Agent
+	var i InsertAgentRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -57,40 +67,36 @@ func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (Agent
 		&i.WebhookUri,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const selectAgentById = `-- name: SelectAgentById :one
 SELECT
-    agents.id, agents.name, agents.description, agents.is_active, agents.webhook_uri, agents.created_at, agents.updated_at, agents.deleted_at,
+    av.id, av.name, av.description, av.is_active, av.webhook_uri, av.created_at, av.updated_at,
     (
-        SELECT COUNT(*) FROM agent_knowledges ak
-        WHERE ak.agent_id = agents.id AND ak.deleted_at IS NULL
+        SELECT COUNT(*) FROM agent_knowledges_view akv
+        WHERE akv.agent_id = av.id
     ) AS knowledges_count,
     (
-        SELECT COUNT(*) FROM mcps m
-        WHERE m.agent_id = agents.id AND m.deleted_at IS NULL
+        SELECT COUNT(*) FROM mcps_view mv
+        WHERE mv.agent_id = av.id
     ) AS mcps_count
-FROM agents
-WHERE
-    deleted_at IS NULL
-    AND agents.id = $1
+FROM agents_view av
+WHERE av.id = $1
 LIMIT 1
 `
 
 type SelectAgentByIdRow struct {
-	ID              uuid.UUID  `json:"id"`
-	Name            string     `json:"name"`
-	Description     *string    `json:"description"`
-	IsActive        bool       `json:"is_active"`
-	WebhookUri      string     `json:"webhook_uri"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	DeletedAt       *time.Time `json:"deleted_at"`
-	KnowledgesCount int64      `json:"knowledges_count"`
-	McpsCount       int64      `json:"mcps_count"`
+	ID              uuid.UUID `json:"id"`
+	Name            string    `json:"name"`
+	Description     *string   `json:"description"`
+	IsActive        bool      `json:"is_active"`
+	WebhookUri      string    `json:"webhook_uri"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+	KnowledgesCount int64     `json:"knowledges_count"`
+	McpsCount       int64     `json:"mcps_count"`
 }
 
 func (q *Queries) SelectAgentById(ctx context.Context, id uuid.UUID) (SelectAgentByIdRow, error) {
@@ -104,7 +110,6 @@ func (q *Queries) SelectAgentById(ctx context.Context, id uuid.UUID) (SelectAgen
 		&i.WebhookUri,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
 		&i.KnowledgesCount,
 		&i.McpsCount,
 	)
@@ -113,46 +118,42 @@ func (q *Queries) SelectAgentById(ctx context.Context, id uuid.UUID) (SelectAgen
 
 const selectAgents = `-- name: SelectAgents :many
 SELECT
-    a.id, a.name, a.description, a.is_active, a.webhook_uri, a.created_at, a.updated_at, a.deleted_at,
+    av.id, av.name, av.description, av.is_active, av.webhook_uri, av.created_at, av.updated_at,
     COALESCE(ak.knowledges_count, 0) AS knowledges_count,
     COALESCE(m.mcps_count, 0) AS mcps_count
-FROM agents a
+FROM agents_view av
 LEFT JOIN (
     SELECT
         agent_id,
         COUNT(*) AS knowledges_count
-    FROM agent_knowledges
-    WHERE deleted_at IS NULL
+    FROM agent_knowledges_view
     GROUP BY agent_id
-) ak ON ak.agent_id = a.id
+) ak ON ak.agent_id = av.id
 LEFT JOIN (
     SELECT
         agent_id,
         COUNT(*) AS mcps_count
-    FROM mcps
-    WHERE deleted_at IS NULL
+    FROM mcps_view
     GROUP BY agent_id
-) m ON m.agent_id = a.id
-WHERE
-    a.deleted_at IS NULL
-    AND (
-        $1::bool IS NULL
-        OR a.is_active = $1::bool
-    )
+) m ON m.agent_id = av.id
+WHERE (
+    $1::bool IS NULL
+    OR av.is_active = $1::bool
+)
 ORDER BY
     CASE
-        WHEN $2::text = 'is_active_asc' THEN a.is_active
+        WHEN $2::text = 'is_active_asc' THEN av.is_active
     END DESC,
     CASE
-        WHEN $2::text = 'is_active_desc' THEN a.is_active
+        WHEN $2::text = 'is_active_desc' THEN av.is_active
     END ASC,
-    CASE WHEN $2::text = 'name_asc' THEN a.name END ASC,
-    CASE WHEN $2::text = 'name_desc' THEN a.name END DESC,
-    CASE WHEN $2::text = 'created_asc' THEN a.created_at END ASC,
+    CASE WHEN $2::text = 'name_asc' THEN av.name END ASC,
+    CASE WHEN $2::text = 'name_desc' THEN av.name END DESC,
+    CASE WHEN $2::text = 'created_asc' THEN av.created_at END ASC,
     CASE
-        WHEN $2::text = 'created_desc' THEN a.created_at
+        WHEN $2::text = 'created_desc' THEN av.created_at
     END DESC,
-    created_at DESC
+    av.created_at DESC
 LIMIT $4 OFFSET $3
 `
 
@@ -164,16 +165,15 @@ type SelectAgentsParams struct {
 }
 
 type SelectAgentsRow struct {
-	ID              uuid.UUID  `json:"id"`
-	Name            string     `json:"name"`
-	Description     *string    `json:"description"`
-	IsActive        bool       `json:"is_active"`
-	WebhookUri      string     `json:"webhook_uri"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	DeletedAt       *time.Time `json:"deleted_at"`
-	KnowledgesCount int64      `json:"knowledges_count"`
-	McpsCount       int64      `json:"mcps_count"`
+	ID              uuid.UUID `json:"id"`
+	Name            string    `json:"name"`
+	Description     *string   `json:"description"`
+	IsActive        bool      `json:"is_active"`
+	WebhookUri      string    `json:"webhook_uri"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+	KnowledgesCount int64     `json:"knowledges_count"`
+	McpsCount       int64     `json:"mcps_count"`
 }
 
 func (q *Queries) SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]SelectAgentsRow, error) {
@@ -198,7 +198,6 @@ func (q *Queries) SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]S
 			&i.WebhookUri,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.DeletedAt,
 			&i.KnowledgesCount,
 			&i.McpsCount,
 		); err != nil {
@@ -239,7 +238,7 @@ SET
 WHERE
     deleted_at IS NULL
     AND id = $5
-RETURNING id, name, description, is_active, webhook_uri, created_at, updated_at, deleted_at
+RETURNING id, name, description, is_active, webhook_uri, created_at, updated_at
 `
 
 type UpdateAgentParams struct {
@@ -250,7 +249,17 @@ type UpdateAgentParams struct {
 	ID          uuid.UUID `json:"id"`
 }
 
-func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Agent, error) {
+type UpdateAgentRow struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description"`
+	IsActive    bool      `json:"is_active"`
+	WebhookUri  string    `json:"webhook_uri"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (UpdateAgentRow, error) {
 	row := q.db.QueryRow(ctx, updateAgent,
 		arg.Name,
 		arg.Description,
@@ -258,7 +267,7 @@ func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Agent
 		arg.WebhookUri,
 		arg.ID,
 	)
-	var i Agent
+	var i UpdateAgentRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -267,7 +276,6 @@ func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Agent
 		&i.WebhookUri,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
 	)
 	return i, err
 }

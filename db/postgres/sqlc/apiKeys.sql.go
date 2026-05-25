@@ -7,13 +7,13 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
 
 const countApiKeys = `-- name: CountApiKeys :one
-SELECT COUNT(*) FROM api_keys
-WHERE revoked_at IS NULL
+SELECT COUNT(*) FROM api_keys_view
 `
 
 func (q *Queries) CountApiKeys(ctx context.Context) (int64, error) {
@@ -29,7 +29,7 @@ VALUES (
     $1,
     $2
 )
-RETURNING id, name, token, created_at, revoked_at
+RETURNING id, name, token, created_at
 `
 
 type InsertApiKeyParams struct {
@@ -37,15 +37,21 @@ type InsertApiKeyParams struct {
 	Token string `json:"token"`
 }
 
-func (q *Queries) InsertApiKey(ctx context.Context, arg InsertApiKeyParams) (ApiKey, error) {
+type InsertApiKeyRow struct {
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	Token     string    `json:"token"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (q *Queries) InsertApiKey(ctx context.Context, arg InsertApiKeyParams) (InsertApiKeyRow, error) {
 	row := q.db.QueryRow(ctx, insertApiKey, arg.Name, arg.Token)
-	var i ApiKey
+	var i InsertApiKeyRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Token,
 		&i.CreatedAt,
-		&i.RevokedAt,
 	)
 	return i, err
 }
@@ -67,28 +73,24 @@ func (q *Queries) RevokeApiKey(ctx context.Context, id uuid.UUID) (int64, error)
 }
 
 const selectApiKeyByToken = `-- name: SelectApiKeyByToken :one
-SELECT id, name, token, created_at, revoked_at FROM api_keys
-WHERE
-    revoked_at IS NULL
-    AND token = $1
+SELECT id, name, token, created_at FROM api_keys_view
+WHERE token = $1
 `
 
-func (q *Queries) SelectApiKeyByToken(ctx context.Context, token string) (ApiKey, error) {
+func (q *Queries) SelectApiKeyByToken(ctx context.Context, token string) (ApiKeysView, error) {
 	row := q.db.QueryRow(ctx, selectApiKeyByToken, token)
-	var i ApiKey
+	var i ApiKeysView
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Token,
 		&i.CreatedAt,
-		&i.RevokedAt,
 	)
 	return i, err
 }
 
 const selectApiKeys = `-- name: SelectApiKeys :many
-SELECT id, name, token, created_at, revoked_at FROM api_keys
-WHERE revoked_at IS NULL
+SELECT id, name, token, created_at FROM api_keys_view
 ORDER BY
     CASE WHEN $1::text = 'name_asc' THEN name END ASC,
     CASE WHEN $1::text = 'name_desc' THEN name END DESC,
@@ -104,21 +106,20 @@ type SelectApiKeysParams struct {
 	Limit  interface{} `json:"limit"`
 }
 
-func (q *Queries) SelectApiKeys(ctx context.Context, arg SelectApiKeysParams) ([]ApiKey, error) {
+func (q *Queries) SelectApiKeys(ctx context.Context, arg SelectApiKeysParams) ([]ApiKeysView, error) {
 	rows, err := q.db.Query(ctx, selectApiKeys, arg.Sort, arg.Offset, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ApiKey{}
+	items := []ApiKeysView{}
 	for rows.Next() {
-		var i ApiKey
+		var i ApiKeysView
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
 			&i.Token,
 			&i.CreatedAt,
-			&i.RevokedAt,
 		); err != nil {
 			return nil, err
 		}

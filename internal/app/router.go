@@ -35,6 +35,7 @@ func AppRouter(conn *pgxpool.Pool) http.Handler {
 	confirmHandler := handler.NewConfirmHandler(conn)
 	apiKeyHandler := handler.NewApiKeyHandler(conn)
 	webhookHandler := handler.NewWebhookHandler(conn)
+	memberHandler := handler.NewMemberHandler(conn)
 
 	r.Get("/health", handler.Health)
 	r.Get("/all-functions", handler.AllFunctions(r))
@@ -60,7 +61,12 @@ func AppRouter(conn *pgxpool.Pool) http.Handler {
 				r.Patch("/password", meHandler.UpdatePassword)
 				r.Patch("/email", meHandler.UpdateEmailRequest)
 			})
-			r.Route("/users", func(r chi.Router) {})
+			r.Route("/members", func(r chi.Router) {
+				r.Get("/", memberHandler.Read)
+				r.Patch("/{id}/accept", memberHandler.Accept)
+				r.Patch("/{id}/status", memberHandler.UpdateStatus)
+				r.Delete("/{id}", memberHandler.Delete)
+			})
 			r.Route("/agents", func(r chi.Router) {
 				r.Post("/", agentHandler.Create)
 				r.Get("/", agentHandler.Read)

@@ -7,6 +7,9 @@ package db
 
 import (
 	"context"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 const insertUserRegister = `-- name: InsertUserRegister :one
@@ -17,7 +20,7 @@ VALUES (
     $2,
     $3
 )
-RETURNING id, name, username, email, role, hashed_password, created_at, updated_at, deleted_at
+RETURNING id, name, username, email, role, created_at, updated_at
 `
 
 type InsertUserRegisterParams struct {
@@ -26,27 +29,36 @@ type InsertUserRegisterParams struct {
 	HashedPassword string `json:"hashed_password"`
 }
 
-func (q *Queries) InsertUserRegister(ctx context.Context, arg InsertUserRegisterParams) (User, error) {
+type InsertUserRegisterRow struct {
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	Username  string    `json:"username"`
+	Email     string    `json:"email"`
+	Role      UserRole  `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (q *Queries) InsertUserRegister(ctx context.Context, arg InsertUserRegisterParams) (InsertUserRegisterRow, error) {
 	row := q.db.QueryRow(ctx, insertUserRegister, arg.Username, arg.Email, arg.HashedPassword)
-	var i User
+	var i InsertUserRegisterRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Username,
 		&i.Email,
 		&i.Role,
-		&i.HashedPassword,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
 	)
 	return i, err
 }
 
-const selectUserByLoginId = `-- name: SelectUserByLoginId :one
-SELECT id, name, username, email, role, hashed_password, created_at, updated_at, deleted_at FROM users
+const selectUserByLoginIdWithPassword = `-- name: SelectUserByLoginIdWithPassword :one
+SELECT id, name, username, email, role, hashed_password, created_at, updated_at
+FROM users
 WHERE
-    deleted_at IS null
+    deleted_at IS NULL
     AND (
         username = $1
         OR email = $1
@@ -54,9 +66,20 @@ WHERE
 LIMIT 1
 `
 
-func (q *Queries) SelectUserByLoginId(ctx context.Context, loginID string) (User, error) {
-	row := q.db.QueryRow(ctx, selectUserByLoginId, loginID)
-	var i User
+type SelectUserByLoginIdWithPasswordRow struct {
+	ID             uuid.UUID `json:"id"`
+	Name           string    `json:"name"`
+	Username       string    `json:"username"`
+	Email          string    `json:"email"`
+	Role           UserRole  `json:"role"`
+	HashedPassword string    `json:"hashed_password"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+func (q *Queries) SelectUserByLoginIdWithPassword(ctx context.Context, loginID string) (SelectUserByLoginIdWithPasswordRow, error) {
+	row := q.db.QueryRow(ctx, selectUserByLoginIdWithPassword, loginID)
+	var i SelectUserByLoginIdWithPasswordRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -66,7 +89,6 @@ func (q *Queries) SelectUserByLoginId(ctx context.Context, loginID string) (User
 		&i.HashedPassword,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
 	)
 	return i, err
 }

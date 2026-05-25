@@ -6,12 +6,13 @@ VALUES (
     sqlc.arg(email),
     sqlc.arg(hashed_password)
 )
-RETURNING *;
+RETURNING id, name, username, email, role, created_at, updated_at;
 
--- name: SelectUserByLoginId :one
-SELECT * FROM users
+-- name: SelectUserByLoginIdWithPassword :one
+SELECT id, name, username, email, role, hashed_password, created_at, updated_at
+FROM users
 WHERE
-    deleted_at IS null
+    deleted_at IS NULL
     AND (
         username = sqlc.arg(login_id)
         OR email = sqlc.arg(login_id)

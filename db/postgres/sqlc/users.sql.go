@@ -7,22 +7,164 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
 
-const selectUserById = `-- name: SelectUserById :one
-SELECT id, name, username, email, role, hashed_password, created_at, updated_at, deleted_at FROM users
+const acceptMember = `-- name: AcceptMember :one
+UPDATE users
+SET
+    role = 'user',
+    updated_at = now()
 WHERE
-    deleted_at IS null
-    AND
-    id = $1
+    deleted_at IS NULL
+    AND id = $1
+    AND role = 'new'
+RETURNING id, name, username, email, role, created_at, updated_at
+`
+
+type AcceptMemberRow struct {
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	Username  string    `json:"username"`
+	Email     string    `json:"email"`
+	Role      UserRole  `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (q *Queries) AcceptMember(ctx context.Context, id uuid.UUID) (AcceptMemberRow, error) {
+	row := q.db.QueryRow(ctx, acceptMember, id)
+	var i AcceptMemberRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Username,
+		&i.Email,
+		&i.Role,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const countMembers = `-- name: CountMembers :one
+SELECT COUNT(*) FROM users_view
+WHERE (
+    $1::text IS NULL
+    OR $1::text = ''
+    OR role::text = $1::text
+)
+`
+
+func (q *Queries) CountMembers(ctx context.Context, role *string) (int64, error) {
+	row := q.db.QueryRow(ctx, countMembers, role)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const selectMembers = `-- name: SelectMembers :many
+SELECT id, name, username, email, role, created_at, updated_at FROM users_view
+WHERE (
+    $1::text IS NULL
+    OR $1::text = ''
+    OR role::text = $1::text
+)
+ORDER BY
+    CASE WHEN $2::text = 'name_asc' THEN name END ASC,
+    CASE WHEN $2::text = 'name_desc' THEN name END DESC,
+    CASE WHEN $2::text = 'created_asc' THEN created_at END ASC,
+    CASE WHEN $2::text = 'created_desc' THEN created_at END DESC,
+    created_at DESC
+LIMIT coalesce($4, 10) OFFSET coalesce($3, 0)
+`
+
+type SelectMembersParams struct {
+	Role   *string     `json:"role"`
+	Sort   *string     `json:"sort"`
+	Offset interface{} `json:"offset"`
+	Limit  interface{} `json:"limit"`
+}
+
+func (q *Queries) SelectMembers(ctx context.Context, arg SelectMembersParams) ([]UsersView, error) {
+	rows, err := q.db.Query(ctx, selectMembers,
+		arg.Role,
+		arg.Sort,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UsersView{}
+	for rows.Next() {
+		var i UsersView
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Username,
+			&i.Email,
+			&i.Role,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectUserById = `-- name: SelectUserById :one
+SELECT id, name, username, email, role, created_at, updated_at FROM users_view
+WHERE id = $1
 LIMIT 1
 `
 
-func (q *Queries) SelectUserById(ctx context.Context, id uuid.UUID) (User, error) {
+func (q *Queries) SelectUserById(ctx context.Context, id uuid.UUID) (UsersView, error) {
 	row := q.db.QueryRow(ctx, selectUserById, id)
-	var i User
+	var i UsersView
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Username,
+		&i.Email,
+		&i.Role,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const selectUserByIdWithPassword = `-- name: SelectUserByIdWithPassword :one
+SELECT id, name, username, email, role, hashed_password, created_at, updated_at
+FROM users
+WHERE
+    deleted_at IS NULL
+    AND id = $1
+LIMIT 1
+`
+
+type SelectUserByIdWithPasswordRow struct {
+	ID             uuid.UUID `json:"id"`
+	Name           string    `json:"name"`
+	Username       string    `json:"username"`
+	Email          string    `json:"email"`
+	Role           UserRole  `json:"role"`
+	HashedPassword string    `json:"hashed_password"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+func (q *Queries) SelectUserByIdWithPassword(ctx context.Context, id uuid.UUID) (SelectUserByIdWithPasswordRow, error) {
+	row := q.db.QueryRow(ctx, selectUserByIdWithPassword, id)
+	var i SelectUserByIdWithPasswordRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -32,7 +174,64 @@ func (q *Queries) SelectUserById(ctx context.Context, id uuid.UUID) (User, error
 		&i.HashedPassword,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const softDeleteMember = `-- name: SoftDeleteMember :execrows
+UPDATE users
+SET deleted_at = now()
+WHERE
+    deleted_at IS NULL
+    AND id = $1
+`
+
+func (q *Queries) SoftDeleteMember(ctx context.Context, id uuid.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteMember, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateMemberStatus = `-- name: UpdateMemberStatus :one
+UPDATE users
+SET
+    role = $1,
+    updated_at = now()
+WHERE
+    deleted_at IS NULL
+    AND id = $2
+    AND role != 'new'
+RETURNING id, name, username, email, role, created_at, updated_at
+`
+
+type UpdateMemberStatusParams struct {
+	Role UserRole  `json:"role"`
+	ID   uuid.UUID `json:"id"`
+}
+
+type UpdateMemberStatusRow struct {
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	Username  string    `json:"username"`
+	Email     string    `json:"email"`
+	Role      UserRole  `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (q *Queries) UpdateMemberStatus(ctx context.Context, arg UpdateMemberStatusParams) (UpdateMemberStatusRow, error) {
+	row := q.db.QueryRow(ctx, updateMemberStatus, arg.Role, arg.ID)
+	var i UpdateMemberStatusRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Username,
+		&i.Email,
+		&i.Role,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -46,10 +245,9 @@ SET
     hashed_password = coalesce($4, hashed_password),
     updated_at = now()
 WHERE
-    deleted_at IS null
-    AND
-    id = $5
-RETURNING id, name, username, email, role, hashed_password, created_at, updated_at, deleted_at
+    deleted_at IS NULL
+    AND id = $5
+RETURNING id, name, username, email, role, created_at, updated_at
 `
 
 type UpdateUserParams struct {
@@ -60,7 +258,17 @@ type UpdateUserParams struct {
 	ID             uuid.UUID `json:"id"`
 }
 
-func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error) {
+type UpdateUserRow struct {
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	Username  string    `json:"username"`
+	Email     string    `json:"email"`
+	Role      UserRole  `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateUserRow, error) {
 	row := q.db.QueryRow(ctx, updateUser,
 		arg.Name,
 		arg.Username,
@@ -68,17 +276,15 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		arg.HashedPassword,
 		arg.ID,
 	)
-	var i User
+	var i UpdateUserRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Username,
 		&i.Email,
 		&i.Role,
-		&i.HashedPassword,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
 	)
 	return i, err
 }

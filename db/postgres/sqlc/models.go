@@ -120,12 +120,39 @@ type AgentKnowledge struct {
 	DeletedAt    *time.Time `json:"deleted_at"`
 }
 
+type AgentKnowledgesView struct {
+	ID           uuid.UUID `json:"id"`
+	AgentID      uuid.UUID `json:"agent_id"`
+	KnowledgeID  uuid.UUID `json:"knowledge_id"`
+	IsActiveProd bool      `json:"is_active_prod"`
+	IsActiveDev  bool      `json:"is_active_dev"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type AgentsView struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description"`
+	IsActive    bool      `json:"is_active"`
+	WebhookUri  string    `json:"webhook_uri"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
 type ApiKey struct {
 	ID        uuid.UUID  `json:"id"`
 	Name      string     `json:"name"`
 	Token     string     `json:"token"`
 	CreatedAt time.Time  `json:"created_at"`
 	RevokedAt *time.Time `json:"revoked_at"`
+}
+
+type ApiKeysView struct {
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	Token     string    `json:"token"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type Knowledge struct {
@@ -137,6 +164,16 @@ type Knowledge struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 	DeletedAt   *time.Time `json:"deleted_at"`
+}
+
+type KnowledgesView struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description"`
+	SourceType  string    `json:"source_type"`
+	SourceUri   *string   `json:"source_uri"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type Mcp struct {
@@ -161,6 +198,16 @@ type McpTool struct {
 	DeletedAt   *time.Time `json:"deleted_at"`
 }
 
+type McpsView struct {
+	ID          uuid.UUID `json:"id"`
+	AgentID     uuid.UUID `json:"agent_id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description"`
+	Uri         string    `json:"uri"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
 type UpcomingChange struct {
 	ID            uuid.UUID           `json:"id"`
 	Token         string              `json:"token"`
@@ -182,4 +229,14 @@ type User struct {
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 	DeletedAt      *time.Time `json:"deleted_at"`
+}
+
+type UsersView struct {
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	Username  string    `json:"username"`
+	Email     string    `json:"email"`
+	Role      UserRole  `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }

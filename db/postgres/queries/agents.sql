@@ -6,23 +6,21 @@ VALUES (
     sqlc.arg(is_active),
     sqlc.arg(webhook_uri)
 )
-RETURNING *;
+RETURNING id, name, description, is_active, webhook_uri, created_at, updated_at;
 
 -- name: SelectAgentById :one
 SELECT
-    agents.*,
+    av.*,
     (
-        SELECT COUNT(*) FROM agent_knowledges ak
-        WHERE ak.agent_id = agents.id AND ak.deleted_at IS NULL
+        SELECT COUNT(*) FROM agent_knowledges_view akv
+        WHERE akv.agent_id = av.id
     ) AS knowledges_count,
     (
-        SELECT COUNT(*) FROM mcps m
-        WHERE m.agent_id = agents.id AND m.deleted_at IS NULL
+        SELECT COUNT(*) FROM mcps_view mv
+        WHERE mv.agent_id = av.id
     ) AS mcps_count
-FROM agents
-WHERE
-    deleted_at IS NULL
-    AND agents.id = sqlc.arg(id)
+FROM agents_view av
+WHERE av.id = sqlc.arg(id)
 LIMIT 1;
 
 -- name: UpdateAgent :one
@@ -36,7 +34,7 @@ SET
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id)
-RETURNING *;
+RETURNING id, name, description, is_active, webhook_uri, created_at, updated_at;
 
 -- name: SoftDeleteAgent :execrows
 UPDATE agents
@@ -46,48 +44,44 @@ WHERE
     AND id = sqlc.arg(id);
 
 -- name: CountAgents :one
-SELECT COUNT(*) FROM agents;
+SELECT COUNT(*) FROM agents_view;
 
 -- name: SelectAgents :many
 SELECT
-    a.*,
+    av.*,
     COALESCE(ak.knowledges_count, 0) AS knowledges_count,
     COALESCE(m.mcps_count, 0) AS mcps_count
-FROM agents a
+FROM agents_view av
 LEFT JOIN (
     SELECT
         agent_id,
         COUNT(*) AS knowledges_count
-    FROM agent_knowledges
-    WHERE deleted_at IS NULL
+    FROM agent_knowledges_view
     GROUP BY agent_id
-) ak ON ak.agent_id = a.id
+) ak ON ak.agent_id = av.id
 LEFT JOIN (
     SELECT
         agent_id,
         COUNT(*) AS mcps_count
-    FROM mcps
-    WHERE deleted_at IS NULL
+    FROM mcps_view
     GROUP BY agent_id
-) m ON m.agent_id = a.id
-WHERE
-    a.deleted_at IS NULL
-    AND (
-        sqlc.narg('is_active')::bool IS NULL
-        OR a.is_active = sqlc.narg('is_active')::bool
-    )
+) m ON m.agent_id = av.id
+WHERE (
+    sqlc.narg('is_active')::bool IS NULL
+    OR av.is_active = sqlc.narg('is_active')::bool
+)
 ORDER BY
     CASE
-        WHEN sqlc.narg('sort')::text = 'is_active_asc' THEN a.is_active
+        WHEN sqlc.narg('sort')::text = 'is_active_asc' THEN av.is_active
     END DESC,
     CASE
-        WHEN sqlc.narg('sort')::text = 'is_active_desc' THEN a.is_active
+        WHEN sqlc.narg('sort')::text = 'is_active_desc' THEN av.is_active
     END ASC,
-    CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN a.name END ASC,
-    CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN a.name END DESC,
-    CASE WHEN sqlc.narg('sort')::text = 'created_asc' THEN a.created_at END ASC,
+    CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN av.name END ASC,
+    CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN av.name END DESC,
+    CASE WHEN sqlc.narg('sort')::text = 'created_asc' THEN av.created_at END ASC,
     CASE
-        WHEN sqlc.narg('sort')::text = 'created_desc' THEN a.created_at
+        WHEN sqlc.narg('sort')::text = 'created_desc' THEN av.created_at
     END DESC,
-    created_at DESC
+    av.created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');

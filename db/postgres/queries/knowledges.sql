@@ -6,13 +6,11 @@ VALUES (
     sqlc.arg(source_type),
     sqlc.narg(source_uri)
 )
-RETURNING *;
+RETURNING id, name, description, source_type, source_uri, created_at, updated_at;
 
 -- name: SelectKnowledgeById :one
-SELECT * FROM knowledges
-WHERE
-    deleted_at IS NULL
-    AND id = sqlc.arg(id)
+SELECT * FROM knowledges_view
+WHERE id = sqlc.arg(id)
 LIMIT 1;
 
 -- name: UpdateKnowledge :one
@@ -24,7 +22,7 @@ SET
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id)
-RETURNING *;
+RETURNING id, name, description, source_type, source_uri, created_at, updated_at;
 
 -- name: SoftDeleteKnowledge :execrows
 UPDATE knowledges
@@ -34,14 +32,12 @@ WHERE
     AND id = sqlc.arg(id);
 
 -- name: SelectKnowledges :many
-SELECT * FROM knowledges
-WHERE
-    deleted_at IS NULL
-    AND (
-        sqlc.narg('source_type')::text IS NULL
-        OR sqlc.narg('source_type')::text = ''
-        OR source_type = sqlc.narg('source_type')::text
-    )
+SELECT * FROM knowledges_view
+WHERE (
+    sqlc.narg('source_type')::text IS NULL
+    OR sqlc.narg('source_type')::text = ''
+    OR source_type = sqlc.narg('source_type')::text
+)
 ORDER BY
     CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN name END ASC,
     CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN name END DESC,

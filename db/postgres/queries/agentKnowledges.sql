@@ -4,18 +4,16 @@ VALUES (
     sqlc.arg(agent_id),
     sqlc.arg(knowledge_id)
 )
-RETURNING *;
+RETURNING id, agent_id, knowledge_id, is_active_prod, is_active_dev, created_at, updated_at;
 
 -- name: SelectAgentKnowledgesByAgentId :many
 SELECT
-    ak.*,
-    sqlc.embed(k)
-FROM agent_knowledges ak
-JOIN knowledges k
-    ON ak.knowledge_id = k.id
-WHERE
-    ak.deleted_at IS NULL
-    AND ak.agent_id = sqlc.arg(agent_id)
+    akv.*,
+    sqlc.embed(kv)
+FROM agent_knowledges_view akv
+JOIN knowledges_view kv
+    ON akv.knowledge_id = kv.id
+WHERE akv.agent_id = sqlc.arg(agent_id)
 LIMIT
     coalesce(sqlc.narg('limit'), 10)
     OFFSET coalesce(sqlc.narg('offset'), 0);
@@ -29,7 +27,7 @@ SET
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id)
-RETURNING *;
+RETURNING id, agent_id, knowledge_id, is_active_prod, is_active_dev, created_at, updated_at;
 
 -- name: SoftDeleteAgentKnowledge :execrows
 UPDATE agent_knowledges

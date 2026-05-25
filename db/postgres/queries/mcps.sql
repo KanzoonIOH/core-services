@@ -6,13 +6,11 @@ VALUES (
     sqlc.narg(description),
     sqlc.arg(uri)
 )
-RETURNING *;
+RETURNING id, agent_id, name, description, uri, created_at, updated_at;
 
 -- name: SelectMcpById :one
-SELECT * FROM mcps
-WHERE
-    deleted_at IS NULL
-    AND id = sqlc.arg(id)
+SELECT * FROM mcps_view
+WHERE id = sqlc.arg(id)
 LIMIT 1;
 
 -- name: UpdateMcp :one
@@ -24,7 +22,7 @@ SET
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id)
-RETURNING *;
+RETURNING id, agent_id, name, description, uri, created_at, updated_at;
 
 -- name: SoftDeleteMcp :execrows
 UPDATE mcps
@@ -34,8 +32,7 @@ WHERE
     AND id = sqlc.arg(id);
 
 -- name: SelectMcps :many
-SELECT * FROM mcps
-WHERE deleted_at IS NULL
+SELECT * FROM mcps_view
 ORDER BY
     CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN name END ASC,
     CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN name END DESC,

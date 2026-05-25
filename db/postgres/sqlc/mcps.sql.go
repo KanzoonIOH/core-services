@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -19,7 +20,7 @@ VALUES (
     $3,
     $4
 )
-RETURNING id, name, description, uri, agent_id, created_at, updated_at, deleted_at
+RETURNING id, agent_id, name, description, uri, created_at, updated_at
 `
 
 type InsertMcpParams struct {
@@ -29,54 +30,59 @@ type InsertMcpParams struct {
 	Uri         string    `json:"uri"`
 }
 
-func (q *Queries) InsertMcp(ctx context.Context, arg InsertMcpParams) (Mcp, error) {
+type InsertMcpRow struct {
+	ID          uuid.UUID `json:"id"`
+	AgentID     uuid.UUID `json:"agent_id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description"`
+	Uri         string    `json:"uri"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+func (q *Queries) InsertMcp(ctx context.Context, arg InsertMcpParams) (InsertMcpRow, error) {
 	row := q.db.QueryRow(ctx, insertMcp,
 		arg.AgentID,
 		arg.Name,
 		arg.Description,
 		arg.Uri,
 	)
-	var i Mcp
+	var i InsertMcpRow
 	err := row.Scan(
 		&i.ID,
+		&i.AgentID,
 		&i.Name,
 		&i.Description,
 		&i.Uri,
-		&i.AgentID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const selectMcpById = `-- name: SelectMcpById :one
-SELECT id, name, description, uri, agent_id, created_at, updated_at, deleted_at FROM mcps
-WHERE
-    deleted_at IS NULL
-    AND id = $1
+SELECT id, agent_id, name, description, uri, created_at, updated_at FROM mcps_view
+WHERE id = $1
 LIMIT 1
 `
 
-func (q *Queries) SelectMcpById(ctx context.Context, id uuid.UUID) (Mcp, error) {
+func (q *Queries) SelectMcpById(ctx context.Context, id uuid.UUID) (McpsView, error) {
 	row := q.db.QueryRow(ctx, selectMcpById, id)
-	var i Mcp
+	var i McpsView
 	err := row.Scan(
 		&i.ID,
+		&i.AgentID,
 		&i.Name,
 		&i.Description,
 		&i.Uri,
-		&i.AgentID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const selectMcps = `-- name: SelectMcps :many
-SELECT id, name, description, uri, agent_id, created_at, updated_at, deleted_at FROM mcps
-WHERE deleted_at IS NULL
+SELECT id, agent_id, name, description, uri, created_at, updated_at FROM mcps_view
 ORDER BY
     CASE WHEN $1::text = 'name_asc' THEN name END ASC,
     CASE WHEN $1::text = 'name_desc' THEN name END DESC,
@@ -92,24 +98,23 @@ type SelectMcpsParams struct {
 	Limit  interface{} `json:"limit"`
 }
 
-func (q *Queries) SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]Mcp, error) {
+func (q *Queries) SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]McpsView, error) {
 	rows, err := q.db.Query(ctx, selectMcps, arg.Sort, arg.Offset, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Mcp{}
+	items := []McpsView{}
 	for rows.Next() {
-		var i Mcp
+		var i McpsView
 		if err := rows.Scan(
 			&i.ID,
+			&i.AgentID,
 			&i.Name,
 			&i.Description,
 			&i.Uri,
-			&i.AgentID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -146,7 +151,7 @@ SET
 WHERE
     deleted_at IS NULL
     AND id = $3
-RETURNING id, name, description, uri, agent_id, created_at, updated_at, deleted_at
+RETURNING id, agent_id, name, description, uri, created_at, updated_at
 `
 
 type UpdateMcpParams struct {
@@ -155,18 +160,27 @@ type UpdateMcpParams struct {
 	ID          uuid.UUID `json:"id"`
 }
 
-func (q *Queries) UpdateMcp(ctx context.Context, arg UpdateMcpParams) (Mcp, error) {
+type UpdateMcpRow struct {
+	ID          uuid.UUID `json:"id"`
+	AgentID     uuid.UUID `json:"agent_id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description"`
+	Uri         string    `json:"uri"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+func (q *Queries) UpdateMcp(ctx context.Context, arg UpdateMcpParams) (UpdateMcpRow, error) {
 	row := q.db.QueryRow(ctx, updateMcp, arg.Name, arg.Description, arg.ID)
-	var i Mcp
+	var i UpdateMcpRow
 	err := row.Scan(
 		&i.ID,
+		&i.AgentID,
 		&i.Name,
 		&i.Description,
 		&i.Uri,
-		&i.AgentID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
 	)
 	return i, err
 }

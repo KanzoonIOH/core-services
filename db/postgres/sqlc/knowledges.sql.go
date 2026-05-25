@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -19,7 +20,7 @@ VALUES (
     $3,
     $4
 )
-RETURNING id, name, description, source_type, source_uri, created_at, updated_at, deleted_at
+RETURNING id, name, description, source_type, source_uri, created_at, updated_at
 `
 
 type InsertKnowledgeParams struct {
@@ -29,14 +30,24 @@ type InsertKnowledgeParams struct {
 	SourceUri   *string `json:"source_uri"`
 }
 
-func (q *Queries) InsertKnowledge(ctx context.Context, arg InsertKnowledgeParams) (Knowledge, error) {
+type InsertKnowledgeRow struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description"`
+	SourceType  string    `json:"source_type"`
+	SourceUri   *string   `json:"source_uri"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+func (q *Queries) InsertKnowledge(ctx context.Context, arg InsertKnowledgeParams) (InsertKnowledgeRow, error) {
 	row := q.db.QueryRow(ctx, insertKnowledge,
 		arg.Name,
 		arg.Description,
 		arg.SourceType,
 		arg.SourceUri,
 	)
-	var i Knowledge
+	var i InsertKnowledgeRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -45,22 +56,19 @@ func (q *Queries) InsertKnowledge(ctx context.Context, arg InsertKnowledgeParams
 		&i.SourceUri,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const selectKnowledgeById = `-- name: SelectKnowledgeById :one
-SELECT id, name, description, source_type, source_uri, created_at, updated_at, deleted_at FROM knowledges
-WHERE
-    deleted_at IS NULL
-    AND id = $1
+SELECT id, name, description, source_type, source_uri, created_at, updated_at FROM knowledges_view
+WHERE id = $1
 LIMIT 1
 `
 
-func (q *Queries) SelectKnowledgeById(ctx context.Context, id uuid.UUID) (Knowledge, error) {
+func (q *Queries) SelectKnowledgeById(ctx context.Context, id uuid.UUID) (KnowledgesView, error) {
 	row := q.db.QueryRow(ctx, selectKnowledgeById, id)
-	var i Knowledge
+	var i KnowledgesView
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -69,20 +77,17 @@ func (q *Queries) SelectKnowledgeById(ctx context.Context, id uuid.UUID) (Knowle
 		&i.SourceUri,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const selectKnowledges = `-- name: SelectKnowledges :many
-SELECT id, name, description, source_type, source_uri, created_at, updated_at, deleted_at FROM knowledges
-WHERE
-    deleted_at IS NULL
-    AND (
-        $1::text IS NULL
-        OR $1::text = ''
-        OR source_type = $1::text
-    )
+SELECT id, name, description, source_type, source_uri, created_at, updated_at FROM knowledges_view
+WHERE (
+    $1::text IS NULL
+    OR $1::text = ''
+    OR source_type = $1::text
+)
 ORDER BY
     CASE WHEN $2::text = 'name_asc' THEN name END ASC,
     CASE WHEN $2::text = 'name_desc' THEN name END DESC,
@@ -99,7 +104,7 @@ type SelectKnowledgesParams struct {
 	Limit      interface{} `json:"limit"`
 }
 
-func (q *Queries) SelectKnowledges(ctx context.Context, arg SelectKnowledgesParams) ([]Knowledge, error) {
+func (q *Queries) SelectKnowledges(ctx context.Context, arg SelectKnowledgesParams) ([]KnowledgesView, error) {
 	rows, err := q.db.Query(ctx, selectKnowledges,
 		arg.SourceType,
 		arg.Sort,
@@ -110,9 +115,9 @@ func (q *Queries) SelectKnowledges(ctx context.Context, arg SelectKnowledgesPara
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Knowledge{}
+	items := []KnowledgesView{}
 	for rows.Next() {
-		var i Knowledge
+		var i KnowledgesView
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
@@ -121,7 +126,6 @@ func (q *Queries) SelectKnowledges(ctx context.Context, arg SelectKnowledgesPara
 			&i.SourceUri,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.DeletedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -158,7 +162,7 @@ SET
 WHERE
     deleted_at IS NULL
     AND id = $3
-RETURNING id, name, description, source_type, source_uri, created_at, updated_at, deleted_at
+RETURNING id, name, description, source_type, source_uri, created_at, updated_at
 `
 
 type UpdateKnowledgeParams struct {
@@ -167,9 +171,19 @@ type UpdateKnowledgeParams struct {
 	ID          uuid.UUID `json:"id"`
 }
 
-func (q *Queries) UpdateKnowledge(ctx context.Context, arg UpdateKnowledgeParams) (Knowledge, error) {
+type UpdateKnowledgeRow struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description"`
+	SourceType  string    `json:"source_type"`
+	SourceUri   *string   `json:"source_uri"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+func (q *Queries) UpdateKnowledge(ctx context.Context, arg UpdateKnowledgeParams) (UpdateKnowledgeRow, error) {
 	row := q.db.QueryRow(ctx, updateKnowledge, arg.Name, arg.Description, arg.ID)
-	var i Knowledge
+	var i UpdateKnowledgeRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -178,7 +192,6 @@ func (q *Queries) UpdateKnowledge(ctx context.Context, arg UpdateKnowledgeParams
 		&i.SourceUri,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-		&i.DeletedAt,
 	)
 	return i, err
 }

@@ -51,7 +51,7 @@ func (h *MeHandler) UpdatePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	userID := claims.UserID
 
-	user, err := h.Queries.SelectUserById(r.Context(), userID)
+	user, err := h.Queries.SelectUserByIdWithPassword(r.Context(), userID)
 	if err != nil {
 		fmt.Printf("%v", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get user")
