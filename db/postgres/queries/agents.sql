@@ -38,7 +38,7 @@ RETURNING id, name, description, is_active, webhook_uri, created_at, updated_at;
 
 -- name: SoftDeleteAgent :execrows
 UPDATE agents
-SET deleted_at = now()
+SET deleted_at = NOW()
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id);
@@ -79,7 +79,9 @@ ORDER BY
     END ASC,
     CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN av.name END ASC,
     CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN av.name END DESC,
-    CASE WHEN sqlc.narg('sort')::text = 'created_asc' THEN av.created_at END ASC,
+    CASE
+        WHEN sqlc.narg('sort')::text = 'created_asc' THEN av.created_at
+    END ASC,
     CASE
         WHEN sqlc.narg('sort')::text = 'created_desc' THEN av.created_at
     END DESC,

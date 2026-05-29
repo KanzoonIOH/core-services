@@ -4,7 +4,15 @@ WHERE id = sqlc.arg(id)
 LIMIT 1;
 
 -- name: SelectUserByIdWithPassword :one
-SELECT id, name, username, email, role, hashed_password, created_at, updated_at
+SELECT
+    id,
+    name,
+    username,
+    email,
+    role,
+    hashed_password,
+    created_at,
+    updated_at
 FROM users
 WHERE
     deleted_at IS NULL
@@ -25,7 +33,7 @@ WHERE
 RETURNING id, name, username, email, role, created_at, updated_at;
 
 -- name: CountMembers :one
-SELECT COUNT(*) FROM users_view
+SELECT count(*) FROM users_view
 WHERE (
     sqlc.narg('role')::text IS NULL
     OR sqlc.narg('role')::text = ''

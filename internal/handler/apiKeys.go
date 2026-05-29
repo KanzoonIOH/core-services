@@ -1,10 +1,10 @@
 package handler
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	db "aiac-service/db/postgres/sqlc"
 	"aiac-service/internal/lib"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"strings"

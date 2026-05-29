@@ -15,7 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func AppRouter(conn *pgxpool.Pool) http.Handler {
+func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(chimiddleware.Logger)
@@ -34,7 +34,8 @@ func AppRouter(conn *pgxpool.Pool) http.Handler {
 	meHandler := handler.NewMeHandler(conn, mailer)
 	confirmHandler := handler.NewConfirmHandler(conn)
 	apiKeyHandler := handler.NewApiKeyHandler(conn)
-	webhookHandler := handler.NewWebhookHandler(conn)
+	webhookHandler := handler.NewWebhookHandler(conn, kafka)
+	conversationHandler := handler.NewConversationHandler(conn, kafka)
 	memberHandler := handler.NewMemberHandler(conn)
 
 	r.Get("/health", handler.Health)
@@ -52,6 +53,7 @@ func AppRouter(conn *pgxpool.Pool) http.Handler {
 			r.Use(middleware.AuthOrApiKey(signer, webhookHandler.Queries))
 			// No timeout here — webhook forwards to upstream and may take a long time
 			r.Post("/chat/{id}", webhookHandler.ForwardChatWebhook)
+			r.Post("/chat/{id}/conversation/end", conversationHandler.EndConversation)
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(signer))

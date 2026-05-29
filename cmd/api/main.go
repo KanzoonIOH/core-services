@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"strings"
+	"syscall"
 
 	"aiac-service/internal/app"
+	"aiac-service/internal/handler"
 
 	"github.com/joho/godotenv"
 )
@@ -18,13 +23,29 @@ func main() {
 		log.Fatal("SERVER_PORT is required")
 	}
 
+	// Postgres
 	conn, err := app.DB()
 	if err != nil {
 		log.Fatalf("open db: %v", err)
 	}
 	defer conn.Close()
 
-	r := app.AppRouter(conn)
+	// Redpanda / Kafka producer
+	kafka := app.Kafka()
+	defer kafka.Close()
+
+	// ClickHouse
+	ch := app.ClickHouse()
+	defer ch.Close()
+
+	// Background consumer: Redpanda → ClickHouse
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	brokers := strings.Split(os.Getenv("REDPANDA_BROKER"), ",")
+	handler.StartChatConsumer(ctx, brokers, ch)
+
+	r := app.AppRouter(conn, kafka)
 
 	log.Printf("Starting server on :%v", serverPort)
 	if err := http.ListenAndServe(":"+serverPort, r); err != nil {

@@ -6,7 +6,8 @@ VALUES (
     sqlc.arg(source_type),
     sqlc.narg(source_uri)
 )
-RETURNING id, name, description, source_type, source_uri, created_at, updated_at;
+RETURNING
+    id, name, description, source_type, source_uri, created_at, updated_at;
 
 -- name: SelectKnowledgeById :one
 SELECT * FROM knowledges_view
@@ -22,7 +23,8 @@ SET
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id)
-RETURNING id, name, description, source_type, source_uri, created_at, updated_at;
+RETURNING
+    id, name, description, source_type, source_uri, created_at, updated_at;
 
 -- name: SoftDeleteKnowledge :execrows
 UPDATE knowledges

@@ -4,6 +4,7 @@ import (
 	db "aiac-service/db/postgres/sqlc"
 	"aiac-service/internal/app/middleware"
 	"aiac-service/internal/lib"
+	"context"
 	"crypto/tls"
 	"errors"
 	"io"
@@ -12,8 +13,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// Topic names
+const (
+	TopicChatMessage     = "chat.webhook.message"
+	TopicConversationEnd = "chat.conversation.end"
 )
 
 var insecureWebhookHosts = map[string]bool{
@@ -24,6 +32,7 @@ var insecureWebhookHosts = map[string]bool{
 type WebhookHandler struct {
 	HTTPClient *http.Client
 	Queries    db.Querier
+	Kafka      *lib.KafkaProducer
 }
 
 type hostTLSBypassTransport struct {
@@ -38,9 +47,10 @@ func (t *hostTLSBypassTransport) RoundTrip(req *http.Request) (*http.Response, e
 	return t.secure.RoundTrip(req)
 }
 
-func NewWebhookHandler(conn *pgxpool.Pool) *WebhookHandler {
+func NewWebhookHandler(conn *pgxpool.Pool, kafka *lib.KafkaProducer) *WebhookHandler {
 	return &WebhookHandler{
 		Queries: db.New(conn),
+		Kafka:   kafka,
 		HTTPClient: &http.Client{
 			Timeout: 2 * time.Minute,
 			Transport: &hostTLSBypassTransport{
@@ -65,7 +75,6 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 			lib.ResponseJSONError(w, http.StatusNotFound, "agent not found")
 			return
 		}
-
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agent")
 		return
 	}
@@ -75,30 +84,54 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Resolve conversation_id: use caller-supplied sessionId or generate a new one.
+	conversationID := r.URL.Query().Get("sessionId")
+	if conversationID == "" {
+		conversationID = uuid.New().String()
+	}
+
 	targetURL := agent.WebhookUri
 	if r.URL.RawQuery != "" {
 		targetURL += "?" + r.URL.RawQuery
 	}
 
-	log.Printf("chat webhook proxy working: target=%s", targetURL)
+	log.Printf("chat webhook proxy: agent=%s session=%s target=%s", id, conversationID, targetURL)
 
 	req, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, r.Body)
 	if err != nil {
-		log.Printf("error dsini")
-		http.Error(w, "failed to create webhook request", http.StatusInternalServerError)
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to create webhook request")
 		return
 	}
 	copyForwardHeaders(req.Header, r.Header)
 
+	hitTime := time.Now().UTC()
+
 	res, err := h.HTTPClient.Do(req)
 	if err != nil {
-		log.Printf("%v", err)
-		http.Error(w, "failed to forward webhook request", http.StatusBadGateway)
+		log.Printf("chat webhook forward error: %v", err)
+		lib.ResponseJSONError(w, http.StatusBadGateway, "failed to forward webhook request")
 		return
 	}
 	defer res.Body.Close()
 
+	responseTimeMs := time.Since(hitTime).Milliseconds()
+	isSuccess := res.StatusCode >= 200 && res.StatusCode < 300
+
+	// Publish a single message event with full metrics.
+	if err := h.Kafka.Publish(context.Background(), TopicChatMessage, map[string]any{
+		"agent_id":         id.String(),
+		"conversation_id":  conversationID,
+		"status_code":      res.StatusCode,
+		"response_time_ms": responseTimeMs,
+		"is_success":       isSuccess,
+		"occurred_at":      hitTime,
+	}); err != nil {
+		log.Printf("kafka publish %s: %v", TopicChatMessage, err)
+	}
+
+	// Echo the conversation_id back so the caller can reuse it on subsequent messages.
 	copyResponseHeaders(w.Header(), res.Header)
+	w.Header().Set("X-Session-Id", conversationID)
 	w.WriteHeader(res.StatusCode)
 	_, _ = io.Copy(w, res.Body)
 }

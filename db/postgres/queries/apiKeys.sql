@@ -15,7 +15,7 @@ WHERE token = sqlc.arg(token);
 
 -- name: RevokeApiKey :execrows
 UPDATE api_keys
-SET revoked_at = now()
+SET revoked_at = NOW()
 WHERE
     revoked_at IS NULL
     AND id = sqlc.arg(id);
@@ -28,4 +28,4 @@ ORDER BY
     CASE WHEN sqlc.narg('sort')::text = 'created_asc' THEN created_at END ASC,
     CASE WHEN sqlc.narg('sort')::text = 'created_desc' THEN created_at END DESC,
     created_at DESC
-LIMIT coalesce(sqlc.narg('limit'), 10) OFFSET coalesce(sqlc.narg('offset'), 0);
+LIMIT COALESCE(sqlc.narg('limit'), 10) OFFSET COALESCE(sqlc.narg('offset'), 0);

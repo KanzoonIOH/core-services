@@ -4,7 +4,8 @@ VALUES (
     sqlc.arg(agent_id),
     sqlc.arg(knowledge_id)
 )
-RETURNING id, agent_id, knowledge_id, is_active_prod, is_active_dev, created_at, updated_at;
+RETURNING
+    id, agent_id, knowledge_id, is_active_prod, is_active_dev, created_at, updated_at;
 
 -- name: SelectAgentKnowledgesByAgentId :many
 SELECT
@@ -27,7 +28,8 @@ SET
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id)
-RETURNING id, agent_id, knowledge_id, is_active_prod, is_active_dev, created_at, updated_at;
+RETURNING
+    id, agent_id, knowledge_id, is_active_prod, is_active_dev, created_at, updated_at;
 
 -- name: SoftDeleteAgentKnowledge :execrows
 UPDATE agent_knowledges

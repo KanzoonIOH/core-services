@@ -1,7 +1,8 @@
-APP_NAME      := aiac-service
-BUILD_DIR     := build
-CMD_DIR       := ./cmd/api
-MIGRATION_DIR := ./db/postgres/migrations
+APP_NAME         := aiac-service
+BUILD_DIR        := build
+CMD_DIR          := ./cmd/api
+MIGRATION_DIR    := ./db/postgres/migrations
+CH_MIGRATION_DIR := ./db/clickhouse/migrations
 
 # Load environment variables from .env file if it exists
 ifneq (,$(wildcard ./.env))
@@ -29,7 +30,7 @@ test:
 
 format:
 	go fmt ./cmd/... ./internal/...
-	sqlfluff format ./db
+	sqlfluff format ./db/postgres
 
 .PHONY: goose-pg-new goose-pg-up goose-pg-down goose-pg-status goose-pg-validate
 
@@ -84,3 +85,25 @@ db-reset:
 	@sleep 5
 	@echo "Database is ready! Running migrations..."
 	$(MAKE) goose-pg-up
+
+# ─── ClickHouse ───────────────────────────────────────────────────────────────
+
+.PHONY: goose-ch-new goose-ch-up goose-ch-down goose-ch-status goose-ch-validate goose-ch-reset
+
+goose-ch-new:
+	goose -dir $(CH_MIGRATION_DIR) create $(name) sql
+
+goose-ch-up:
+	goose -dir $(CH_MIGRATION_DIR) clickhouse "$(CLICKHOUSE_URL)" up
+
+goose-ch-down:
+	goose -dir $(CH_MIGRATION_DIR) clickhouse "$(CLICKHOUSE_URL)" down
+
+goose-ch-status:
+	goose -dir $(CH_MIGRATION_DIR) clickhouse "$(CLICKHOUSE_URL)" status
+
+goose-ch-validate:
+	goose -dir $(CH_MIGRATION_DIR) validate
+
+goose-ch-reset:
+	goose -dir $(CH_MIGRATION_DIR) clickhouse "$(CLICKHOUSE_URL)" reset

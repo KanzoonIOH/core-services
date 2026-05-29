@@ -9,7 +9,15 @@ VALUES (
 RETURNING id, name, username, email, role, created_at, updated_at;
 
 -- name: SelectUserByLoginIdWithPassword :one
-SELECT id, name, username, email, role, hashed_password, created_at, updated_at
+SELECT
+    id,
+    name,
+    username,
+    email,
+    role,
+    hashed_password,
+    created_at,
+    updated_at
 FROM users
 WHERE
     deleted_at IS NULL
