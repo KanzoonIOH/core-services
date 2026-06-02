@@ -50,7 +50,7 @@ func (q *Queries) AcceptMember(ctx context.Context, id uuid.UUID) (AcceptMemberR
 }
 
 const countMembers = `-- name: CountMembers :one
-SELECT COUNT(*) FROM users_view
+SELECT count(*) FROM users_view
 WHERE (
     $1::text IS NULL
     OR $1::text = ''
@@ -78,14 +78,14 @@ ORDER BY
     CASE WHEN $2::text = 'created_asc' THEN created_at END ASC,
     CASE WHEN $2::text = 'created_desc' THEN created_at END DESC,
     created_at DESC
-LIMIT coalesce($4, 10) OFFSET coalesce($3, 0)
+LIMIT $4 OFFSET $3
 `
 
 type SelectMembersParams struct {
-	Role   *string     `json:"role"`
-	Sort   *string     `json:"sort"`
-	Offset interface{} `json:"offset"`
-	Limit  interface{} `json:"limit"`
+	Role   *string `json:"role"`
+	Sort   *string `json:"sort"`
+	Offset int32   `json:"offset"`
+	Limit  int32   `json:"limit"`
 }
 
 func (q *Queries) SelectMembers(ctx context.Context, arg SelectMembersParams) ([]UsersView, error) {
@@ -143,7 +143,15 @@ func (q *Queries) SelectUserById(ctx context.Context, id uuid.UUID) (UsersView, 
 }
 
 const selectUserByIdWithPassword = `-- name: SelectUserByIdWithPassword :one
-SELECT id, name, username, email, role, hashed_password, created_at, updated_at
+SELECT
+    id,
+    name,
+    username,
+    email,
+    role,
+    hashed_password,
+    created_at,
+    updated_at
 FROM users
 WHERE
     deleted_at IS NULL

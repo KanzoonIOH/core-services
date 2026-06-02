@@ -12,8 +12,11 @@ import (
 
 type Querier interface {
 	AcceptMember(ctx context.Context, id uuid.UUID) (AcceptMemberRow, error)
+	CountAgentKnowledgesByAgentId(ctx context.Context, agentID uuid.UUID) (int64, error)
 	CountAgents(ctx context.Context) (int64, error)
 	CountApiKeys(ctx context.Context) (int64, error)
+	CountKnowledges(ctx context.Context, sourceType *string) (int64, error)
+	CountMcps(ctx context.Context) (int64, error)
 	CountMembers(ctx context.Context, role *string) (int64, error)
 	InsertAgent(ctx context.Context, arg InsertAgentParams) (InsertAgentRow, error)
 	InsertAgentKnowledge(ctx context.Context, arg InsertAgentKnowledgeParams) (InsertAgentKnowledgeRow, error)

@@ -58,7 +58,7 @@ func (q *Queries) InsertApiKey(ctx context.Context, arg InsertApiKeyParams) (Ins
 
 const revokeApiKey = `-- name: RevokeApiKey :execrows
 UPDATE api_keys
-SET revoked_at = now()
+SET revoked_at = NOW()
 WHERE
     revoked_at IS NULL
     AND id = $1
@@ -97,13 +97,13 @@ ORDER BY
     CASE WHEN $1::text = 'created_asc' THEN created_at END ASC,
     CASE WHEN $1::text = 'created_desc' THEN created_at END DESC,
     created_at DESC
-LIMIT coalesce($3, 10) OFFSET coalesce($2, 0)
+LIMIT $3 OFFSET $2
 `
 
 type SelectApiKeysParams struct {
-	Sort   *string     `json:"sort"`
-	Offset interface{} `json:"offset"`
-	Limit  interface{} `json:"limit"`
+	Sort   *string `json:"sort"`
+	Offset int32   `json:"offset"`
+	Limit  int32   `json:"limit"`
 }
 
 func (q *Queries) SelectApiKeys(ctx context.Context, arg SelectApiKeysParams) ([]ApiKeysView, error) {

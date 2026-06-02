@@ -53,7 +53,7 @@ ORDER BY
     CASE WHEN sqlc.narg('sort')::text = 'created_asc' THEN created_at END ASC,
     CASE WHEN sqlc.narg('sort')::text = 'created_desc' THEN created_at END DESC,
     created_at DESC
-LIMIT coalesce(sqlc.narg('limit'), 10) OFFSET coalesce(sqlc.narg('offset'), 0);
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: AcceptMember :one
 UPDATE users

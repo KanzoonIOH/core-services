@@ -12,13 +12,29 @@ import (
 	"github.com/google/uuid"
 )
 
+const countAgentKnowledgesByAgentId = `-- name: CountAgentKnowledgesByAgentId :one
+SELECT COUNT(*)
+FROM agent_knowledges_view akv
+JOIN knowledges_view kv
+    ON akv.knowledge_id = kv.id
+WHERE akv.agent_id = $1
+`
+
+func (q *Queries) CountAgentKnowledgesByAgentId(ctx context.Context, agentID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countAgentKnowledgesByAgentId, agentID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const insertAgentKnowledge = `-- name: InsertAgentKnowledge :one
 INSERT INTO agent_knowledges (agent_id, knowledge_id)
 VALUES (
     $1,
     $2
 )
-RETURNING id, agent_id, knowledge_id, is_active_prod, is_active_dev, created_at, updated_at
+RETURNING
+    id, agent_id, knowledge_id, is_active_prod, is_active_dev, created_at, updated_at
 `
 
 type InsertAgentKnowledgeParams struct {
@@ -59,15 +75,22 @@ FROM agent_knowledges_view akv
 JOIN knowledges_view kv
     ON akv.knowledge_id = kv.id
 WHERE akv.agent_id = $1
-LIMIT
-    coalesce($3, 10)
-    OFFSET coalesce($2, 0)
+ORDER BY
+    CASE
+        WHEN $2::text = 'created_asc' THEN akv.created_at
+    END ASC,
+    CASE
+        WHEN $2::text = 'created_desc' THEN akv.created_at
+    END DESC,
+    akv.created_at DESC
+LIMIT $4 OFFSET $3
 `
 
 type SelectAgentKnowledgesByAgentIdParams struct {
-	AgentID uuid.UUID   `json:"agent_id"`
-	Offset  interface{} `json:"offset"`
-	Limit   interface{} `json:"limit"`
+	AgentID uuid.UUID `json:"agent_id"`
+	Sort    *string   `json:"sort"`
+	Offset  int32     `json:"offset"`
+	Limit   int32     `json:"limit"`
 }
 
 type SelectAgentKnowledgesByAgentIdRow struct {
@@ -82,7 +105,12 @@ type SelectAgentKnowledgesByAgentIdRow struct {
 }
 
 func (q *Queries) SelectAgentKnowledgesByAgentId(ctx context.Context, arg SelectAgentKnowledgesByAgentIdParams) ([]SelectAgentKnowledgesByAgentIdRow, error) {
-	rows, err := q.db.Query(ctx, selectAgentKnowledgesByAgentId, arg.AgentID, arg.Offset, arg.Limit)
+	rows, err := q.db.Query(ctx, selectAgentKnowledgesByAgentId,
+		arg.AgentID,
+		arg.Sort,
+		arg.Offset,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -118,7 +146,7 @@ func (q *Queries) SelectAgentKnowledgesByAgentId(ctx context.Context, arg Select
 
 const softDeleteAgentKnowledge = `-- name: SoftDeleteAgentKnowledge :execrows
 UPDATE agent_knowledges
-SET deleted_at = now()
+SET deleted_at = NOW()
 WHERE
     deleted_at IS NULL
     AND id = $1
@@ -137,11 +165,12 @@ UPDATE agent_knowledges
 SET
     is_active_prod = $1,
     is_active_dev = $2,
-    updated_at = now()
+    updated_at = NOW()
 WHERE
     deleted_at IS NULL
     AND id = $3
-RETURNING id, agent_id, knowledge_id, is_active_prod, is_active_dev, created_at, updated_at
+RETURNING
+    id, agent_id, knowledge_id, is_active_prod, is_active_dev, created_at, updated_at
 `
 
 type UpdateAgentKnowledgeParams struct {

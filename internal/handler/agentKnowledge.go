@@ -61,16 +61,22 @@ func (h *AgentKnowledgeHandler) ReadByAgentId(w http.ResponseWriter, r *http.Req
 
 	agent_knowledges, err := h.Queries.SelectAgentKnowledgesByAgentId(r.Context(), db.SelectAgentKnowledgesByAgentIdParams{
 		AgentID: agent_id,
+		Sort:    pagination.Sort,
 		Limit:   pagination.Limit,
-		Offset:  pagination.Offset,
+		Offset:  pagination.Offset * pagination.Limit,
 	})
 	if err != nil {
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agent knowledges")
 		return
 	}
 
-	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agent_knowledges, nil)
+	totalRow, err := h.Queries.CountAgentKnowledgesByAgentId(r.Context(), agent_id)
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agent knowledges")
+		return
+	}
 
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agent_knowledges, lib.ResponsePagination(int(pagination.Limit), int(pagination.Offset), len(agent_knowledges), int(totalRow)))
 }
 
 type updateAgentKnowledgeRequest struct {

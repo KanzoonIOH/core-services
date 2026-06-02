@@ -69,14 +69,20 @@ func (h *McpHandler) Read(w http.ResponseWriter, r *http.Request) {
 	mcps, err := h.Queries.SelectMcps(r.Context(), db.SelectMcpsParams{
 		Sort:   pagination.Sort,
 		Limit:  pagination.Limit,
-		Offset: pagination.Offset,
+		Offset: pagination.Offset * pagination.Limit,
 	})
 	if err != nil {
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get mcps")
 		return
 	}
 
-	lib.ResponseJSONTemplate(w, http.StatusOK, nil, mcps, nil)
+	totalRow, err := h.Queries.CountMcps(r.Context())
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get mcps")
+		return
+	}
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, mcps, lib.ResponsePagination(int(pagination.Limit), int(pagination.Offset), len(mcps), int(totalRow)))
 }
 
 func (h *McpHandler) ReadById(w http.ResponseWriter, r *http.Request) {

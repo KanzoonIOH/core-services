@@ -12,6 +12,17 @@ import (
 	"github.com/google/uuid"
 )
 
+const countMcps = `-- name: CountMcps :one
+SELECT count(*) FROM mcps_view
+`
+
+func (q *Queries) CountMcps(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countMcps)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const insertMcp = `-- name: InsertMcp :one
 INSERT INTO mcps (agent_id, name, description, uri)
 VALUES (
@@ -89,13 +100,13 @@ ORDER BY
     CASE WHEN $1::text = 'created_asc' THEN created_at END ASC,
     CASE WHEN $1::text = 'created_desc' THEN created_at END DESC,
     created_at DESC
-LIMIT coalesce($3, 10) OFFSET coalesce($2, 0)
+LIMIT $3 OFFSET $2
 `
 
 type SelectMcpsParams struct {
-	Sort   *string     `json:"sort"`
-	Offset interface{} `json:"offset"`
-	Limit  interface{} `json:"limit"`
+	Sort   *string `json:"sort"`
+	Offset int32   `json:"offset"`
+	Limit  int32   `json:"limit"`
 }
 
 func (q *Queries) SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]McpsView, error) {

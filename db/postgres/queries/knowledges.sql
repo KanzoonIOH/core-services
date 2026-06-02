@@ -33,6 +33,14 @@ WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id);
 
+-- name: CountKnowledges :one
+SELECT count(*) FROM knowledges_view
+WHERE (
+    sqlc.narg('source_type')::text IS NULL
+    OR sqlc.narg('source_type')::text = ''
+    OR source_type = sqlc.narg('source_type')::text
+);
+
 -- name: SelectKnowledges :many
 SELECT * FROM knowledges_view
 WHERE (
@@ -46,7 +54,7 @@ ORDER BY
     CASE WHEN sqlc.narg('sort')::text = 'created_asc' THEN created_at END ASC,
     CASE WHEN sqlc.narg('sort')::text = 'created_desc' THEN created_at END DESC,
     created_at DESC
-LIMIT coalesce(sqlc.narg('limit'), 10) OFFSET coalesce(sqlc.narg('offset'), 0);
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- -- -- name: GetKnowledgeAgents :many
 -- -- SELECT a.* FROM agents a

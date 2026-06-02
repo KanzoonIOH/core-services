@@ -55,7 +55,15 @@ func (q *Queries) InsertUserRegister(ctx context.Context, arg InsertUserRegister
 }
 
 const selectUserByLoginIdWithPassword = `-- name: SelectUserByLoginIdWithPassword :one
-SELECT id, name, username, email, role, hashed_password, created_at, updated_at
+SELECT
+    id,
+    name,
+    username,
+    email,
+    role,
+    hashed_password,
+    created_at,
+    updated_at
 FROM users
 WHERE
     deleted_at IS NULL

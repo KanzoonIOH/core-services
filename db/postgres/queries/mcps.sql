@@ -31,6 +31,9 @@ WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id);
 
+-- name: CountMcps :one
+SELECT count(*) FROM mcps_view;
+
 -- name: SelectMcps :many
 SELECT * FROM mcps_view
 ORDER BY
@@ -39,4 +42,4 @@ ORDER BY
     CASE WHEN sqlc.narg('sort')::text = 'created_asc' THEN created_at END ASC,
     CASE WHEN sqlc.narg('sort')::text = 'created_desc' THEN created_at END DESC,
     created_at DESC
-LIMIT coalesce(sqlc.narg('limit'), 10) OFFSET coalesce(sqlc.narg('offset'), 0);
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');

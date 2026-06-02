@@ -70,14 +70,20 @@ func (h *KnowledgeHandler) Read(w http.ResponseWriter, r *http.Request) {
 		SourceType: sourceType,
 		Sort:       pagination.Sort,
 		Limit:      pagination.Limit,
-		Offset:     pagination.Offset,
+		Offset:     pagination.Offset * pagination.Limit,
 	})
 	if err != nil {
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get knowledges")
 		return
 	}
 
-	lib.ResponseJSONTemplate(w, http.StatusOK, nil, knowledges, nil)
+	totalRow, err := h.Queries.CountKnowledges(r.Context(), sourceType)
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get knowledges")
+		return
+	}
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, knowledges, lib.ResponsePagination(int(pagination.Limit), int(pagination.Offset), len(knowledges), int(totalRow)))
 }
 
 func (h *KnowledgeHandler) ReadById(w http.ResponseWriter, r *http.Request) {

@@ -12,6 +12,22 @@ import (
 	"github.com/google/uuid"
 )
 
+const countKnowledges = `-- name: CountKnowledges :one
+SELECT count(*) FROM knowledges_view
+WHERE (
+    $1::text IS NULL
+    OR $1::text = ''
+    OR source_type = $1::text
+)
+`
+
+func (q *Queries) CountKnowledges(ctx context.Context, sourceType *string) (int64, error) {
+	row := q.db.QueryRow(ctx, countKnowledges, sourceType)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const insertKnowledge = `-- name: InsertKnowledge :one
 INSERT INTO knowledges (name, description, source_type, source_uri)
 VALUES (
@@ -20,7 +36,8 @@ VALUES (
     $3,
     $4
 )
-RETURNING id, name, description, source_type, source_uri, created_at, updated_at
+RETURNING
+    id, name, description, source_type, source_uri, created_at, updated_at
 `
 
 type InsertKnowledgeParams struct {
@@ -94,14 +111,14 @@ ORDER BY
     CASE WHEN $2::text = 'created_asc' THEN created_at END ASC,
     CASE WHEN $2::text = 'created_desc' THEN created_at END DESC,
     created_at DESC
-LIMIT coalesce($4, 10) OFFSET coalesce($3, 0)
+LIMIT $4 OFFSET $3
 `
 
 type SelectKnowledgesParams struct {
-	SourceType *string     `json:"source_type"`
-	Sort       *string     `json:"sort"`
-	Offset     interface{} `json:"offset"`
-	Limit      interface{} `json:"limit"`
+	SourceType *string `json:"source_type"`
+	Sort       *string `json:"sort"`
+	Offset     int32   `json:"offset"`
+	Limit      int32   `json:"limit"`
 }
 
 func (q *Queries) SelectKnowledges(ctx context.Context, arg SelectKnowledgesParams) ([]KnowledgesView, error) {
@@ -162,7 +179,8 @@ SET
 WHERE
     deleted_at IS NULL
     AND id = $3
-RETURNING id, name, description, source_type, source_uri, created_at, updated_at
+RETURNING
+    id, name, description, source_type, source_uri, created_at, updated_at
 `
 
 type UpdateKnowledgeParams struct {
