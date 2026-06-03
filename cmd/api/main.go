@@ -45,7 +45,7 @@ func main() {
 	brokers := strings.Split(os.Getenv("REDPANDA_BROKER"), ",")
 	handler.StartChatConsumer(ctx, brokers, ch)
 
-	r := app.AppRouter(conn, kafka)
+	r := app.AppRouter(conn, kafka, ch)
 
 	log.Printf("Starting server on :%v", serverPort)
 	if err := http.ListenAndServe(":"+serverPort, r); err != nil {

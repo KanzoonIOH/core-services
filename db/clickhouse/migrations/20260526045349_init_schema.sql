@@ -1,6 +1,4 @@
 -- +goose Up
-
--- Per-message analytics: traffic, response time, success rate
 CREATE TABLE webhook_messages (
     agent_id         String,
     conversation_id  String,
@@ -15,7 +13,6 @@ ENGINE = MergeTree()
 PARTITION BY toYYYYMM(occurred_at)
 ORDER BY (agent_id, conversation_id, occurred_at);
 
--- Per-conversation analytics: total convos, escalation rate, resolution time
 CREATE TABLE conversation_events (
     agent_id          String,
     conversation_id   String,

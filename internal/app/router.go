@@ -15,7 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer) http.Handler {
+func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseClient) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(chimiddleware.Logger)
@@ -37,6 +37,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer) http.Handler {
 	webhookHandler := handler.NewWebhookHandler(conn, kafka)
 	conversationHandler := handler.NewConversationHandler(conn, kafka)
 	memberHandler := handler.NewMemberHandler(conn)
+	logHandler := handler.NewLogHandler(ch)
 
 	r.Get("/health", handler.Health)
 	r.Get("/all-functions", handler.AllFunctions(r))
@@ -75,6 +76,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer) http.Handler {
 				r.Get("/{id}", agentHandler.ReadById)
 				r.Patch("/{id}", agentHandler.Update)
 				r.Delete("/{id}", agentHandler.Delete)
+				r.Patch("/{id}/persona", agentHandler.UpdatePersona)
 			})
 			r.Route("/knowledges", func(r chi.Router) {
 				r.Post("/", knowledgeHandler.Create)
@@ -100,6 +102,12 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer) http.Handler {
 				r.Post("/", apiKeyHandler.Create)
 				r.Get("/", apiKeyHandler.Read)
 				r.Delete("/{id}", apiKeyHandler.Delete)
+			})
+			r.Route("/logs", func(r chi.Router) {
+				r.Get("/messages", logHandler.ReadMessages)
+				r.Get("/messages/{id}", logHandler.ReadMessagesByAgentId)
+				r.Get("/summary", logHandler.Summary)
+				r.Get("/timeseries", logHandler.Timeseries)
 			})
 		})
 	})

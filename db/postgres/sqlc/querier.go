@@ -48,6 +48,7 @@ type Querier interface {
 	SoftDeleteMember(ctx context.Context, id uuid.UUID) (int64, error)
 	UpdateAgent(ctx context.Context, arg UpdateAgentParams) (UpdateAgentRow, error)
 	UpdateAgentKnowledge(ctx context.Context, arg UpdateAgentKnowledgeParams) (UpdateAgentKnowledgeRow, error)
+	UpdateAgentPersona(ctx context.Context, arg UpdateAgentPersonaParams) (UpdateAgentPersonaRow, error)
 	UpdateKnowledge(ctx context.Context, arg UpdateKnowledgeParams) (UpdateKnowledgeRow, error)
 	UpdateMcp(ctx context.Context, arg UpdateMcpParams) (UpdateMcpRow, error)
 	UpdateMemberStatus(ctx context.Context, arg UpdateMemberStatusParams) (UpdateMemberStatusRow, error)

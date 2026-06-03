@@ -6,7 +6,7 @@ VALUES (
     sqlc.arg(is_active),
     sqlc.arg(webhook_uri)
 )
-RETURNING id, name, description, is_active, webhook_uri, created_at, updated_at;
+RETURNING id, name, description, is_active, webhook_uri, tone, response_length, communication_style, created_at, updated_at;
 
 -- name: SelectAgentById :one
 SELECT
@@ -34,7 +34,19 @@ SET
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id)
-RETURNING id, name, description, is_active, webhook_uri, created_at, updated_at;
+RETURNING id, name, description, is_active, webhook_uri, tone, response_length, communication_style, created_at, updated_at;
+
+-- name: UpdateAgentPersona :one
+UPDATE agents
+SET
+    tone = sqlc.arg(tone),
+    response_length = sqlc.arg(response_length),
+    communication_style = sqlc.arg(communication_style),
+    updated_at = NOW()
+WHERE
+    deleted_at IS NULL
+    AND id = sqlc.arg(id)
+RETURNING id, name, description, is_active, webhook_uri, tone, response_length, communication_style, created_at, updated_at;
 
 -- name: SoftDeleteAgent :execrows
 UPDATE agents

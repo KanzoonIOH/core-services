@@ -31,7 +31,7 @@ VALUES (
     $3,
     $4
 )
-RETURNING id, name, description, is_active, webhook_uri, created_at, updated_at
+RETURNING id, name, description, is_active, webhook_uri, tone, response_length, communication_style, created_at, updated_at
 `
 
 type InsertAgentParams struct {
@@ -42,13 +42,16 @@ type InsertAgentParams struct {
 }
 
 type InsertAgentRow struct {
-	ID          uuid.UUID `json:"id"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description"`
-	IsActive    bool      `json:"is_active"`
-	WebhookUri  string    `json:"webhook_uri"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID                 uuid.UUID               `json:"id"`
+	Name               string                  `json:"name"`
+	Description        *string                 `json:"description"`
+	IsActive           bool                    `json:"is_active"`
+	WebhookUri         string                  `json:"webhook_uri"`
+	Tone               AgentTone               `json:"tone"`
+	ResponseLength     AgentResponseLength     `json:"response_length"`
+	CommunicationStyle AgentCommunicationStyle `json:"communication_style"`
+	CreatedAt          time.Time               `json:"created_at"`
+	UpdatedAt          time.Time               `json:"updated_at"`
 }
 
 func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (InsertAgentRow, error) {
@@ -65,6 +68,9 @@ func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (Inser
 		&i.Description,
 		&i.IsActive,
 		&i.WebhookUri,
+		&i.Tone,
+		&i.ResponseLength,
+		&i.CommunicationStyle,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -73,7 +79,7 @@ func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (Inser
 
 const selectAgentById = `-- name: SelectAgentById :one
 SELECT
-    av.id, av.name, av.description, av.is_active, av.webhook_uri, av.created_at, av.updated_at,
+    av.id, av.name, av.description, av.is_active, av.webhook_uri, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at,
     (
         SELECT COUNT(*) FROM agent_knowledges_view akv
         WHERE akv.agent_id = av.id
@@ -88,15 +94,18 @@ LIMIT 1
 `
 
 type SelectAgentByIdRow struct {
-	ID              uuid.UUID `json:"id"`
-	Name            string    `json:"name"`
-	Description     *string   `json:"description"`
-	IsActive        bool      `json:"is_active"`
-	WebhookUri      string    `json:"webhook_uri"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
-	KnowledgesCount int64     `json:"knowledges_count"`
-	McpsCount       int64     `json:"mcps_count"`
+	ID                 uuid.UUID               `json:"id"`
+	Name               string                  `json:"name"`
+	Description        *string                 `json:"description"`
+	IsActive           bool                    `json:"is_active"`
+	WebhookUri         string                  `json:"webhook_uri"`
+	Tone               AgentTone               `json:"tone"`
+	ResponseLength     AgentResponseLength     `json:"response_length"`
+	CommunicationStyle AgentCommunicationStyle `json:"communication_style"`
+	CreatedAt          time.Time               `json:"created_at"`
+	UpdatedAt          time.Time               `json:"updated_at"`
+	KnowledgesCount    int64                   `json:"knowledges_count"`
+	McpsCount          int64                   `json:"mcps_count"`
 }
 
 func (q *Queries) SelectAgentById(ctx context.Context, id uuid.UUID) (SelectAgentByIdRow, error) {
@@ -108,6 +117,9 @@ func (q *Queries) SelectAgentById(ctx context.Context, id uuid.UUID) (SelectAgen
 		&i.Description,
 		&i.IsActive,
 		&i.WebhookUri,
+		&i.Tone,
+		&i.ResponseLength,
+		&i.CommunicationStyle,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.KnowledgesCount,
@@ -118,7 +130,7 @@ func (q *Queries) SelectAgentById(ctx context.Context, id uuid.UUID) (SelectAgen
 
 const selectAgents = `-- name: SelectAgents :many
 SELECT
-    av.id, av.name, av.description, av.is_active, av.webhook_uri, av.created_at, av.updated_at,
+    av.id, av.name, av.description, av.is_active, av.webhook_uri, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at,
     COALESCE(ak.knowledges_count, 0) AS knowledges_count,
     COALESCE(m.mcps_count, 0) AS mcps_count
 FROM agents_view av
@@ -167,15 +179,18 @@ type SelectAgentsParams struct {
 }
 
 type SelectAgentsRow struct {
-	ID              uuid.UUID `json:"id"`
-	Name            string    `json:"name"`
-	Description     *string   `json:"description"`
-	IsActive        bool      `json:"is_active"`
-	WebhookUri      string    `json:"webhook_uri"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
-	KnowledgesCount int64     `json:"knowledges_count"`
-	McpsCount       int64     `json:"mcps_count"`
+	ID                 uuid.UUID               `json:"id"`
+	Name               string                  `json:"name"`
+	Description        *string                 `json:"description"`
+	IsActive           bool                    `json:"is_active"`
+	WebhookUri         string                  `json:"webhook_uri"`
+	Tone               AgentTone               `json:"tone"`
+	ResponseLength     AgentResponseLength     `json:"response_length"`
+	CommunicationStyle AgentCommunicationStyle `json:"communication_style"`
+	CreatedAt          time.Time               `json:"created_at"`
+	UpdatedAt          time.Time               `json:"updated_at"`
+	KnowledgesCount    int64                   `json:"knowledges_count"`
+	McpsCount          int64                   `json:"mcps_count"`
 }
 
 func (q *Queries) SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]SelectAgentsRow, error) {
@@ -198,6 +213,9 @@ func (q *Queries) SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]S
 			&i.Description,
 			&i.IsActive,
 			&i.WebhookUri,
+			&i.Tone,
+			&i.ResponseLength,
+			&i.CommunicationStyle,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.KnowledgesCount,
@@ -240,7 +258,7 @@ SET
 WHERE
     deleted_at IS NULL
     AND id = $5
-RETURNING id, name, description, is_active, webhook_uri, created_at, updated_at
+RETURNING id, name, description, is_active, webhook_uri, tone, response_length, communication_style, created_at, updated_at
 `
 
 type UpdateAgentParams struct {
@@ -252,13 +270,16 @@ type UpdateAgentParams struct {
 }
 
 type UpdateAgentRow struct {
-	ID          uuid.UUID `json:"id"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description"`
-	IsActive    bool      `json:"is_active"`
-	WebhookUri  string    `json:"webhook_uri"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID                 uuid.UUID               `json:"id"`
+	Name               string                  `json:"name"`
+	Description        *string                 `json:"description"`
+	IsActive           bool                    `json:"is_active"`
+	WebhookUri         string                  `json:"webhook_uri"`
+	Tone               AgentTone               `json:"tone"`
+	ResponseLength     AgentResponseLength     `json:"response_length"`
+	CommunicationStyle AgentCommunicationStyle `json:"communication_style"`
+	CreatedAt          time.Time               `json:"created_at"`
+	UpdatedAt          time.Time               `json:"updated_at"`
 }
 
 func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (UpdateAgentRow, error) {
@@ -276,6 +297,65 @@ func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Updat
 		&i.Description,
 		&i.IsActive,
 		&i.WebhookUri,
+		&i.Tone,
+		&i.ResponseLength,
+		&i.CommunicationStyle,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateAgentPersona = `-- name: UpdateAgentPersona :one
+UPDATE agents
+SET
+    tone = $1,
+    response_length = $2,
+    communication_style = $3,
+    updated_at = NOW()
+WHERE
+    deleted_at IS NULL
+    AND id = $4
+RETURNING id, name, description, is_active, webhook_uri, tone, response_length, communication_style, created_at, updated_at
+`
+
+type UpdateAgentPersonaParams struct {
+	Tone               AgentTone               `json:"tone"`
+	ResponseLength     AgentResponseLength     `json:"response_length"`
+	CommunicationStyle AgentCommunicationStyle `json:"communication_style"`
+	ID                 uuid.UUID               `json:"id"`
+}
+
+type UpdateAgentPersonaRow struct {
+	ID                 uuid.UUID               `json:"id"`
+	Name               string                  `json:"name"`
+	Description        *string                 `json:"description"`
+	IsActive           bool                    `json:"is_active"`
+	WebhookUri         string                  `json:"webhook_uri"`
+	Tone               AgentTone               `json:"tone"`
+	ResponseLength     AgentResponseLength     `json:"response_length"`
+	CommunicationStyle AgentCommunicationStyle `json:"communication_style"`
+	CreatedAt          time.Time               `json:"created_at"`
+	UpdatedAt          time.Time               `json:"updated_at"`
+}
+
+func (q *Queries) UpdateAgentPersona(ctx context.Context, arg UpdateAgentPersonaParams) (UpdateAgentPersonaRow, error) {
+	row := q.db.QueryRow(ctx, updateAgentPersona,
+		arg.Tone,
+		arg.ResponseLength,
+		arg.CommunicationStyle,
+		arg.ID,
+	)
+	var i UpdateAgentPersonaRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.IsActive,
+		&i.WebhookUri,
+		&i.Tone,
+		&i.ResponseLength,
+		&i.CommunicationStyle,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

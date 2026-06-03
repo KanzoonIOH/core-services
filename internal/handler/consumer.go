@@ -24,6 +24,7 @@ type ChatMessageEvent struct {
 	StatusCode     int       `json:"status_code"`
 	ResponseTimeMs int64     `json:"response_time_ms"`
 	IsSuccess      bool      `json:"is_success"`
+	Error          string    `json:"error"`
 	OccurredAt     time.Time `json:"occurred_at"`
 }
 
@@ -34,6 +35,7 @@ type ChatMessageRow struct {
 	StatusCode     int32
 	ResponseTimeMs int64
 	IsSuccess      bool
+	Error          *string
 	OccurredAt     time.Time
 }
 
@@ -126,14 +128,18 @@ func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouse
 						log.Printf("chat consumer unmarshal message: %v", err)
 						return
 					}
-					msgBatch = append(msgBatch, ChatMessageRow{
+					row := ChatMessageRow{
 						AgentID:        evt.AgentID,
 						ConversationID: evt.ConversationID,
 						StatusCode:     int32(evt.StatusCode),
 						ResponseTimeMs: evt.ResponseTimeMs,
 						IsSuccess:      evt.IsSuccess,
 						OccurredAt:     evt.OccurredAt,
-					})
+					}
+					if evt.Error != "" {
+						row.Error = &evt.Error
+					}
+					msgBatch = append(msgBatch, row)
 
 				case TopicConversationEnd:
 					var evt ConversationEndEvent
@@ -176,7 +182,7 @@ func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouse
 
 func flushMessages(ctx context.Context, ch *lib.ClickHouseClient, rows []ChatMessageRow) {
 	b, err := ch.Conn().PrepareBatch(ctx,
-		"INSERT INTO webhook_messages (agent_id, conversation_id, status_code, response_time_ms, is_success, occurred_at)",
+		"INSERT INTO webhook_messages (agent_id, conversation_id, status_code, response_time_ms, is_success, error, occurred_at)",
 	)
 	if err != nil {
 		log.Printf("clickhouse prepare batch (webhook_messages): %v", err)
@@ -184,7 +190,7 @@ func flushMessages(ctx context.Context, ch *lib.ClickHouseClient, rows []ChatMes
 	}
 
 	for _, r := range rows {
-		if err := b.Append(r.AgentID, r.ConversationID, r.StatusCode, r.ResponseTimeMs, r.IsSuccess, r.OccurredAt); err != nil {
+		if err := b.Append(r.AgentID, r.ConversationID, r.StatusCode, r.ResponseTimeMs, r.IsSuccess, r.Error, r.OccurredAt); err != nil {
 			log.Printf("clickhouse append webhook_messages: %v", err)
 		}
 	}

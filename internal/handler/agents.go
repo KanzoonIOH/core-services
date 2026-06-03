@@ -181,3 +181,75 @@ func (h *AgentHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	lib.ResponseJSONTemplate(w, http.StatusNoContent, nil, nil, nil)
 }
+
+type updateAgentPersonaRequest struct {
+	Tone               string `json:"tone"`
+	ResponseLength     string `json:"response_length"`
+	CommunicationStyle string `json:"communication_style"`
+}
+
+func (h *AgentHandler) UpdatePersona(w http.ResponseWriter, r *http.Request) {
+	id, ok := lib.ParseID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var req updateAgentPersonaRequest
+	if !lib.ParseJSONBody(w, r, &req) {
+		return
+	}
+
+	validTones := map[string]db.AgentTone{
+		string(db.AgentToneFRIENDLY):     db.AgentToneFRIENDLY,
+		string(db.AgentTonePROFESSIONAL): db.AgentTonePROFESSIONAL,
+		string(db.AgentToneEXPLANATORY):  db.AgentToneEXPLANATORY,
+	}
+	validResponseLengths := map[string]db.AgentResponseLength{
+		string(db.AgentResponseLengthSHORT):  db.AgentResponseLengthSHORT,
+		string(db.AgentResponseLengthMEDIUM): db.AgentResponseLengthMEDIUM,
+		string(db.AgentResponseLengthLONG):   db.AgentResponseLengthLONG,
+	}
+	validCommunicationStyles := map[string]db.AgentCommunicationStyle{
+		string(db.AgentCommunicationStyleEXPERTADVISOR):        db.AgentCommunicationStyleEXPERTADVISOR,
+		string(db.AgentCommunicationStyleEMPATHETICGUIDE):      db.AgentCommunicationStyleEMPATHETICGUIDE,
+		string(db.AgentCommunicationStyleEFFICIENTCONCIERGE):   db.AgentCommunicationStyleEFFICIENTCONCIERGE,
+		string(db.AgentCommunicationStyleEDUCATOR):             db.AgentCommunicationStyleEDUCATOR,
+		string(db.AgentCommunicationStylePROACTIVECONSULTANT): db.AgentCommunicationStylePROACTIVECONSULTANT,
+	}
+
+	tone, ok := validTones[req.Tone]
+	if !ok {
+		lib.ResponseJSONError(w, http.StatusBadRequest, "invalid tone value")
+		return
+	}
+
+	responseLength, ok := validResponseLengths[req.ResponseLength]
+	if !ok {
+		lib.ResponseJSONError(w, http.StatusBadRequest, "invalid response_length value")
+		return
+	}
+
+	communicationStyle, ok := validCommunicationStyles[req.CommunicationStyle]
+	if !ok {
+		lib.ResponseJSONError(w, http.StatusBadRequest, "invalid communication_style value")
+		return
+	}
+
+	agent, err := h.Queries.UpdateAgentPersona(r.Context(), db.UpdateAgentPersonaParams{
+		Tone:               tone,
+		ResponseLength:     responseLength,
+		CommunicationStyle: communicationStyle,
+		ID:                 id,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			lib.ResponseJSONError(w, http.StatusNotFound, "agent not found")
+			return
+		}
+
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to update agent persona")
+		return
+	}
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agent, nil)
+}

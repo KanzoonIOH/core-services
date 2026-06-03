@@ -12,6 +12,137 @@ import (
 	"github.com/google/uuid"
 )
 
+type AgentCommunicationStyle string
+
+const (
+	AgentCommunicationStyleEXPERTADVISOR       AgentCommunicationStyle = "EXPERT_ADVISOR"
+	AgentCommunicationStyleEMPATHETICGUIDE     AgentCommunicationStyle = "EMPATHETIC_GUIDE"
+	AgentCommunicationStyleEFFICIENTCONCIERGE  AgentCommunicationStyle = "EFFICIENT_CONCIERGE"
+	AgentCommunicationStyleEDUCATOR            AgentCommunicationStyle = "EDUCATOR"
+	AgentCommunicationStylePROACTIVECONSULTANT AgentCommunicationStyle = "PROACTIVE_CONSULTANT"
+)
+
+func (e *AgentCommunicationStyle) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = AgentCommunicationStyle(s)
+	case string:
+		*e = AgentCommunicationStyle(s)
+	default:
+		return fmt.Errorf("unsupported scan type for AgentCommunicationStyle: %T", src)
+	}
+	return nil
+}
+
+type NullAgentCommunicationStyle struct {
+	AgentCommunicationStyle AgentCommunicationStyle `json:"agent_communication_style"`
+	Valid                   bool                    `json:"valid"` // Valid is true if AgentCommunicationStyle is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullAgentCommunicationStyle) Scan(value interface{}) error {
+	if value == nil {
+		ns.AgentCommunicationStyle, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.AgentCommunicationStyle.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullAgentCommunicationStyle) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.AgentCommunicationStyle), nil
+}
+
+type AgentResponseLength string
+
+const (
+	AgentResponseLengthSHORT  AgentResponseLength = "SHORT"
+	AgentResponseLengthMEDIUM AgentResponseLength = "MEDIUM"
+	AgentResponseLengthLONG   AgentResponseLength = "LONG"
+)
+
+func (e *AgentResponseLength) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = AgentResponseLength(s)
+	case string:
+		*e = AgentResponseLength(s)
+	default:
+		return fmt.Errorf("unsupported scan type for AgentResponseLength: %T", src)
+	}
+	return nil
+}
+
+type NullAgentResponseLength struct {
+	AgentResponseLength AgentResponseLength `json:"agent_response_length"`
+	Valid               bool                `json:"valid"` // Valid is true if AgentResponseLength is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullAgentResponseLength) Scan(value interface{}) error {
+	if value == nil {
+		ns.AgentResponseLength, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.AgentResponseLength.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullAgentResponseLength) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.AgentResponseLength), nil
+}
+
+type AgentTone string
+
+const (
+	AgentToneFRIENDLY     AgentTone = "FRIENDLY"
+	AgentTonePROFESSIONAL AgentTone = "PROFESSIONAL"
+	AgentToneEXPLANATORY  AgentTone = "EXPLANATORY"
+)
+
+func (e *AgentTone) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = AgentTone(s)
+	case string:
+		*e = AgentTone(s)
+	default:
+		return fmt.Errorf("unsupported scan type for AgentTone: %T", src)
+	}
+	return nil
+}
+
+type NullAgentTone struct {
+	AgentTone AgentTone `json:"agent_tone"`
+	Valid     bool      `json:"valid"` // Valid is true if AgentTone is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullAgentTone) Scan(value interface{}) error {
+	if value == nil {
+		ns.AgentTone, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.AgentTone.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullAgentTone) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.AgentTone), nil
+}
+
 type UpcomingChangesType string
 
 const (
@@ -99,14 +230,17 @@ func (ns NullUserRole) Value() (driver.Value, error) {
 }
 
 type Agent struct {
-	ID          uuid.UUID  `json:"id"`
-	Name        string     `json:"name"`
-	Description *string    `json:"description"`
-	IsActive    bool       `json:"is_active"`
-	WebhookUri  string     `json:"webhook_uri"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	DeletedAt   *time.Time `json:"deleted_at"`
+	ID                 uuid.UUID               `json:"id"`
+	Name               string                  `json:"name"`
+	Description        *string                 `json:"description"`
+	IsActive           bool                    `json:"is_active"`
+	WebhookUri         string                  `json:"webhook_uri"`
+	CreatedAt          time.Time               `json:"created_at"`
+	UpdatedAt          time.Time               `json:"updated_at"`
+	DeletedAt          *time.Time              `json:"deleted_at"`
+	Tone               AgentTone               `json:"tone"`
+	ResponseLength     AgentResponseLength     `json:"response_length"`
+	CommunicationStyle AgentCommunicationStyle `json:"communication_style"`
 }
 
 type AgentKnowledge struct {
@@ -131,13 +265,16 @@ type AgentKnowledgesView struct {
 }
 
 type AgentsView struct {
-	ID          uuid.UUID `json:"id"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description"`
-	IsActive    bool      `json:"is_active"`
-	WebhookUri  string    `json:"webhook_uri"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID                 uuid.UUID               `json:"id"`
+	Name               string                  `json:"name"`
+	Description        *string                 `json:"description"`
+	IsActive           bool                    `json:"is_active"`
+	WebhookUri         string                  `json:"webhook_uri"`
+	Tone               AgentTone               `json:"tone"`
+	ResponseLength     AgentResponseLength     `json:"response_length"`
+	CommunicationStyle AgentCommunicationStyle `json:"communication_style"`
+	CreatedAt          time.Time               `json:"created_at"`
+	UpdatedAt          time.Time               `json:"updated_at"`
 }
 
 type ApiKey struct {
