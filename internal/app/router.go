@@ -91,6 +91,8 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 				r.Get("/{id}", mcpHandler.ReadById)
 				r.Patch("/{id}", mcpHandler.Update)
 				r.Delete("/{id}", mcpHandler.Delete)
+				r.Get("/{id}/tools", mcpHandler.ReadTools)
+				r.Post("/{id}/refresh-tools", mcpHandler.RefreshTools)
 			})
 			r.Route("/agent-knowledges", func(r chi.Router) {
 				r.Post("/agent/{id}", agentKnowledgeHandler.CreateByAgentId)

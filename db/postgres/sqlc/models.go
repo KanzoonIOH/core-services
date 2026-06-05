@@ -6,6 +6,7 @@ package db
 
 import (
 	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -325,14 +326,26 @@ type Mcp struct {
 }
 
 type McpTool struct {
-	ID          uuid.UUID  `json:"id"`
-	Name        string     `json:"name"`
-	Description *string    `json:"description"`
-	TargetUri   string     `json:"target_uri"`
-	McpID       uuid.UUID  `json:"mcp_id"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	DeletedAt   *time.Time `json:"deleted_at"`
+	ID          uuid.UUID       `json:"id"`
+	Name        string          `json:"name"`
+	Description *string         `json:"description"`
+	TargetUri   string          `json:"target_uri"`
+	McpID       uuid.UUID       `json:"mcp_id"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+	DeletedAt   *time.Time      `json:"deleted_at"`
+	InputSchema json.RawMessage `json:"input_schema"`
+}
+
+type McpToolsView struct {
+	ID          uuid.UUID       `json:"id"`
+	McpID       uuid.UUID       `json:"mcp_id"`
+	Name        string          `json:"name"`
+	Description *string         `json:"description"`
+	TargetUri   string          `json:"target_uri"`
+	InputSchema json.RawMessage `json:"input_schema"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
 }
 
 type McpsView struct {
