@@ -93,13 +93,20 @@ func (q *Queries) SelectMcpById(ctx context.Context, id uuid.UUID) (McpsView, er
 }
 
 const selectMcps = `-- name: SelectMcps :many
-SELECT id, agent_id, name, description, uri, created_at, updated_at FROM mcps_view
+SELECT
+    m.id, m.agent_id, m.name, m.description, m.uri, m.created_at, m.updated_at,
+    (
+        SELECT count(*)
+        FROM mcp_tools AS t
+        WHERE t.mcp_id = m.id AND t.deleted_at IS NULL
+    ) AS tools_count
+FROM mcps_view AS m
 ORDER BY
-    CASE WHEN $1::text = 'name_asc' THEN name END ASC,
-    CASE WHEN $1::text = 'name_desc' THEN name END DESC,
-    CASE WHEN $1::text = 'created_asc' THEN created_at END ASC,
-    CASE WHEN $1::text = 'created_desc' THEN created_at END DESC,
-    created_at DESC
+    CASE WHEN $1::text = 'name_asc' THEN m.name END ASC,
+    CASE WHEN $1::text = 'name_desc' THEN m.name END DESC,
+    CASE WHEN $1::text = 'created_asc' THEN m.created_at END ASC,
+    CASE WHEN $1::text = 'created_desc' THEN m.created_at END DESC,
+    m.created_at DESC
 LIMIT $3 OFFSET $2
 `
 
@@ -109,15 +116,26 @@ type SelectMcpsParams struct {
 	Limit  int32   `json:"limit"`
 }
 
-func (q *Queries) SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]McpsView, error) {
+type SelectMcpsRow struct {
+	ID          uuid.UUID `json:"id"`
+	AgentID     uuid.UUID `json:"agent_id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description"`
+	Uri         string    `json:"uri"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	ToolsCount  int64     `json:"tools_count"`
+}
+
+func (q *Queries) SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]SelectMcpsRow, error) {
 	rows, err := q.db.Query(ctx, selectMcps, arg.Sort, arg.Offset, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []McpsView{}
+	items := []SelectMcpsRow{}
 	for rows.Next() {
-		var i McpsView
+		var i SelectMcpsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.AgentID,
@@ -126,6 +144,7 @@ func (q *Queries) SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]McpsV
 			&i.Uri,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ToolsCount,
 		); err != nil {
 			return nil, err
 		}

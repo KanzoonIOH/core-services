@@ -38,7 +38,7 @@ type Querier interface {
 	SelectKnowledges(ctx context.Context, arg SelectKnowledgesParams) ([]KnowledgesView, error)
 	SelectMcpById(ctx context.Context, id uuid.UUID) (McpsView, error)
 	SelectMcpToolsByMcpId(ctx context.Context, mcpID uuid.UUID) ([]McpToolsView, error)
-	SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]McpsView, error)
+	SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]SelectMcpsRow, error)
 	SelectMembers(ctx context.Context, arg SelectMembersParams) ([]UsersView, error)
 	SelectUpcomingChangeByToken(ctx context.Context, token string) (UpcomingChange, error)
 	SelectUserById(ctx context.Context, id uuid.UUID) (UsersView, error)
