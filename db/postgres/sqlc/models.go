@@ -265,6 +265,23 @@ type AgentKnowledgesView struct {
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+type AgentMcp struct {
+	ID        uuid.UUID  `json:"id"`
+	AgentID   uuid.UUID  `json:"agent_id"`
+	McpID     uuid.UUID  `json:"mcp_id"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+	DeletedAt *time.Time `json:"deleted_at"`
+}
+
+type AgentMcpsView struct {
+	ID        uuid.UUID `json:"id"`
+	AgentID   uuid.UUID `json:"agent_id"`
+	McpID     uuid.UUID `json:"mcp_id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type AgentsView struct {
 	ID                 uuid.UUID               `json:"id"`
 	Name               string                  `json:"name"`
@@ -319,7 +336,6 @@ type Mcp struct {
 	Name        string     `json:"name"`
 	Description *string    `json:"description"`
 	Uri         string     `json:"uri"`
-	AgentID     uuid.UUID  `json:"agent_id"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 	DeletedAt   *time.Time `json:"deleted_at"`
@@ -350,7 +366,6 @@ type McpToolsView struct {
 
 type McpsView struct {
 	ID          uuid.UUID `json:"id"`
-	AgentID     uuid.UUID `json:"agent_id"`
 	Name        string    `json:"name"`
 	Description *string   `json:"description"`
 	Uri         string    `json:"uri"`

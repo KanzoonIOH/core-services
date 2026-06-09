@@ -270,10 +270,10 @@ func (h *AgentHandler) UpdatePersona(w http.ResponseWriter, r *http.Request) {
 		string(db.AgentResponseLengthLONG):   db.AgentResponseLengthLONG,
 	}
 	validCommunicationStyles := map[string]db.AgentCommunicationStyle{
-		string(db.AgentCommunicationStyleEXPERTADVISOR):        db.AgentCommunicationStyleEXPERTADVISOR,
-		string(db.AgentCommunicationStyleEMPATHETICGUIDE):      db.AgentCommunicationStyleEMPATHETICGUIDE,
-		string(db.AgentCommunicationStyleEFFICIENTCONCIERGE):   db.AgentCommunicationStyleEFFICIENTCONCIERGE,
-		string(db.AgentCommunicationStyleEDUCATOR):             db.AgentCommunicationStyleEDUCATOR,
+		string(db.AgentCommunicationStyleEXPERTADVISOR):       db.AgentCommunicationStyleEXPERTADVISOR,
+		string(db.AgentCommunicationStyleEMPATHETICGUIDE):     db.AgentCommunicationStyleEMPATHETICGUIDE,
+		string(db.AgentCommunicationStyleEFFICIENTCONCIERGE):  db.AgentCommunicationStyleEFFICIENTCONCIERGE,
+		string(db.AgentCommunicationStyleEDUCATOR):            db.AgentCommunicationStyleEDUCATOR,
 		string(db.AgentCommunicationStylePROACTIVECONSULTANT): db.AgentCommunicationStylePROACTIVECONSULTANT,
 	}
 

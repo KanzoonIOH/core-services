@@ -41,9 +41,9 @@ func (q *Queries) CountAgentsByKnowledgeId(ctx context.Context, knowledgeID uuid
 const countAgentsByMcpId = `-- name: CountAgentsByMcpId :one
 SELECT COUNT(*)
 FROM agents_view av
-JOIN mcps_view mv
-    ON mv.agent_id = av.id
-WHERE mv.id = $1
+JOIN agent_mcps_view amv
+    ON amv.agent_id = av.id
+WHERE amv.mcp_id = $1
 `
 
 func (q *Queries) CountAgentsByMcpId(ctx context.Context, mcpID uuid.UUID) (int64, error) {
@@ -61,7 +61,8 @@ VALUES (
     $3,
     $4
 )
-RETURNING id, name, description, is_active, webhook_uri, tone, response_length, communication_style, created_at, updated_at
+RETURNING
+    id, name, description, is_active, webhook_uri, tone, response_length, communication_style, created_at, updated_at
 `
 
 type InsertAgentParams struct {
@@ -115,8 +116,8 @@ SELECT
         WHERE akv.agent_id = av.id
     ) AS knowledges_count,
     (
-        SELECT COUNT(*) FROM mcps_view mv
-        WHERE mv.agent_id = av.id
+        SELECT COUNT(*) FROM agent_mcps_view amv
+        WHERE amv.agent_id = av.id
     ) AS mcps_count
 FROM agents_view av
 WHERE av.id = $1
@@ -175,7 +176,7 @@ LEFT JOIN (
     SELECT
         agent_id,
         COUNT(*) AS mcps_count
-    FROM mcps_view
+    FROM agent_mcps_view
     GROUP BY agent_id
 ) m ON m.agent_id = av.id
 WHERE (
@@ -270,8 +271,12 @@ WHERE akv.knowledge_id = $1
 ORDER BY
     CASE WHEN $2::text = 'name_asc' THEN av.name END ASC,
     CASE WHEN $2::text = 'name_desc' THEN av.name END DESC,
-    CASE WHEN $2::text = 'created_asc' THEN av.created_at END ASC,
-    CASE WHEN $2::text = 'created_desc' THEN av.created_at END DESC,
+    CASE
+        WHEN $2::text = 'created_asc' THEN av.created_at
+    END ASC,
+    CASE
+        WHEN $2::text = 'created_desc' THEN av.created_at
+    END DESC,
     av.created_at DESC
 LIMIT $4 OFFSET $3
 `
@@ -322,14 +327,18 @@ func (q *Queries) SelectAgentsByKnowledgeId(ctx context.Context, arg SelectAgent
 const selectAgentsByMcpId = `-- name: SelectAgentsByMcpId :many
 SELECT av.id, av.name, av.description, av.is_active, av.webhook_uri, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at
 FROM agents_view av
-JOIN mcps_view mv
-    ON mv.agent_id = av.id
-WHERE mv.id = $1
+JOIN agent_mcps_view amv
+    ON amv.agent_id = av.id
+WHERE amv.mcp_id = $1
 ORDER BY
     CASE WHEN $2::text = 'name_asc' THEN av.name END ASC,
     CASE WHEN $2::text = 'name_desc' THEN av.name END DESC,
-    CASE WHEN $2::text = 'created_asc' THEN av.created_at END ASC,
-    CASE WHEN $2::text = 'created_desc' THEN av.created_at END DESC,
+    CASE
+        WHEN $2::text = 'created_asc' THEN av.created_at
+    END ASC,
+    CASE
+        WHEN $2::text = 'created_desc' THEN av.created_at
+    END DESC,
     av.created_at DESC
 LIMIT $4 OFFSET $3
 `
@@ -404,7 +413,8 @@ SET
 WHERE
     deleted_at IS NULL
     AND id = $5
-RETURNING id, name, description, is_active, webhook_uri, tone, response_length, communication_style, created_at, updated_at
+RETURNING
+    id, name, description, is_active, webhook_uri, tone, response_length, communication_style, created_at, updated_at
 `
 
 type UpdateAgentParams struct {
@@ -462,7 +472,8 @@ SET
 WHERE
     deleted_at IS NULL
     AND id = $4
-RETURNING id, name, description, is_active, webhook_uri, tone, response_length, communication_style, created_at, updated_at
+RETURNING
+    id, name, description, is_active, webhook_uri, tone, response_length, communication_style, created_at, updated_at
 `
 
 type UpdateAgentPersonaParams struct {

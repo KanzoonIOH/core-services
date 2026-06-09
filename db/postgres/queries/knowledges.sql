@@ -72,7 +72,11 @@ WHERE akv.agent_id = sqlc.arg(agent_id)
 ORDER BY
     CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN kv.name END ASC,
     CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN kv.name END DESC,
-    CASE WHEN sqlc.narg('sort')::text = 'created_asc' THEN kv.created_at END ASC,
-    CASE WHEN sqlc.narg('sort')::text = 'created_desc' THEN kv.created_at END DESC,
+    CASE
+        WHEN sqlc.narg('sort')::text = 'created_asc' THEN kv.created_at
+    END ASC,
+    CASE
+        WHEN sqlc.narg('sort')::text = 'created_desc' THEN kv.created_at
+    END DESC,
     kv.created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');

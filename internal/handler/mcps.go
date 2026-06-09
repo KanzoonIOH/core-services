@@ -23,10 +23,9 @@ func NewMcpHandler(conn *pgxpool.Pool) *McpHandler {
 }
 
 type mcpCreateRequest struct {
-	AgentId     uuid.UUID `json:"agent_id"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description"`
-	Uri         string    `json:"uri"`
+	Name        string  `json:"name"`
+	Description *string `json:"description"`
+	Uri         string  `json:"uri"`
 }
 
 func (h *McpHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +47,6 @@ func (h *McpHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mcp, err := h.Queries.InsertMcp(r.Context(), db.InsertMcpParams{
-		AgentID:     req.AgentId,
 		Name:        req.Name,
 		Description: req.Description,
 		Uri:         req.Uri,

@@ -160,6 +160,28 @@ func (q *Queries) SoftDeleteAgentKnowledge(ctx context.Context, id uuid.UUID) (i
 	return result.RowsAffected(), nil
 }
 
+const softDeleteAgentKnowledgeByPair = `-- name: SoftDeleteAgentKnowledgeByPair :execrows
+UPDATE agent_knowledges
+SET deleted_at = NOW()
+WHERE
+    deleted_at IS NULL
+    AND agent_id = $1
+    AND knowledge_id = $2
+`
+
+type SoftDeleteAgentKnowledgeByPairParams struct {
+	AgentID     uuid.UUID `json:"agent_id"`
+	KnowledgeID uuid.UUID `json:"knowledge_id"`
+}
+
+func (q *Queries) SoftDeleteAgentKnowledgeByPair(ctx context.Context, arg SoftDeleteAgentKnowledgeByPairParams) (int64, error) {
+	result, err := q.db.Exec(ctx, softDeleteAgentKnowledgeByPair, arg.AgentID, arg.KnowledgeID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const updateAgentKnowledge = `-- name: UpdateAgentKnowledge :one
 UPDATE agent_knowledges
 SET

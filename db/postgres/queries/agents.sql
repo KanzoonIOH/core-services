@@ -6,7 +6,8 @@ VALUES (
     sqlc.arg(is_active),
     sqlc.arg(webhook_uri)
 )
-RETURNING id, name, description, is_active, webhook_uri, tone, response_length, communication_style, created_at, updated_at;
+RETURNING
+    id, name, description, is_active, webhook_uri, tone, response_length, communication_style, created_at, updated_at;
 
 -- name: SelectAgentById :one
 SELECT
@@ -16,8 +17,8 @@ SELECT
         WHERE akv.agent_id = av.id
     ) AS knowledges_count,
     (
-        SELECT COUNT(*) FROM mcps_view mv
-        WHERE mv.agent_id = av.id
+        SELECT COUNT(*) FROM agent_mcps_view amv
+        WHERE amv.agent_id = av.id
     ) AS mcps_count
 FROM agents_view av
 WHERE av.id = sqlc.arg(id)
@@ -34,7 +35,8 @@ SET
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id)
-RETURNING id, name, description, is_active, webhook_uri, tone, response_length, communication_style, created_at, updated_at;
+RETURNING
+    id, name, description, is_active, webhook_uri, tone, response_length, communication_style, created_at, updated_at;
 
 -- name: UpdateAgentPersona :one
 UPDATE agents
@@ -46,7 +48,8 @@ SET
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id)
-RETURNING id, name, description, is_active, webhook_uri, tone, response_length, communication_style, created_at, updated_at;
+RETURNING
+    id, name, description, is_active, webhook_uri, tone, response_length, communication_style, created_at, updated_at;
 
 -- name: SoftDeleteAgent :execrows
 UPDATE agents
@@ -75,7 +78,7 @@ LEFT JOIN (
     SELECT
         agent_id,
         COUNT(*) AS mcps_count
-    FROM mcps_view
+    FROM agent_mcps_view
     GROUP BY agent_id
 ) m ON m.agent_id = av.id
 WHERE (
@@ -103,21 +106,25 @@ LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 -- name: CountAgentsByMcpId :one
 SELECT COUNT(*)
 FROM agents_view av
-JOIN mcps_view mv
-    ON mv.agent_id = av.id
-WHERE mv.id = sqlc.arg(mcp_id);
+JOIN agent_mcps_view amv
+    ON amv.agent_id = av.id
+WHERE amv.mcp_id = sqlc.arg(mcp_id);
 
 -- name: SelectAgentsByMcpId :many
 SELECT av.*
 FROM agents_view av
-JOIN mcps_view mv
-    ON mv.agent_id = av.id
-WHERE mv.id = sqlc.arg(mcp_id)
+JOIN agent_mcps_view amv
+    ON amv.agent_id = av.id
+WHERE amv.mcp_id = sqlc.arg(mcp_id)
 ORDER BY
     CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN av.name END ASC,
     CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN av.name END DESC,
-    CASE WHEN sqlc.narg('sort')::text = 'created_asc' THEN av.created_at END ASC,
-    CASE WHEN sqlc.narg('sort')::text = 'created_desc' THEN av.created_at END DESC,
+    CASE
+        WHEN sqlc.narg('sort')::text = 'created_asc' THEN av.created_at
+    END ASC,
+    CASE
+        WHEN sqlc.narg('sort')::text = 'created_desc' THEN av.created_at
+    END DESC,
     av.created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
@@ -137,7 +144,11 @@ WHERE akv.knowledge_id = sqlc.arg(knowledge_id)
 ORDER BY
     CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN av.name END ASC,
     CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN av.name END DESC,
-    CASE WHEN sqlc.narg('sort')::text = 'created_asc' THEN av.created_at END ASC,
-    CASE WHEN sqlc.narg('sort')::text = 'created_desc' THEN av.created_at END DESC,
+    CASE
+        WHEN sqlc.narg('sort')::text = 'created_asc' THEN av.created_at
+    END ASC,
+    CASE
+        WHEN sqlc.narg('sort')::text = 'created_desc' THEN av.created_at
+    END DESC,
     av.created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');

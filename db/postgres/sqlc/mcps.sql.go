@@ -24,8 +24,11 @@ func (q *Queries) CountMcps(ctx context.Context) (int64, error) {
 }
 
 const countMcpsByAgentId = `-- name: CountMcpsByAgentId :one
-SELECT count(*) FROM mcps_view
-WHERE agent_id = $1
+SELECT count(*)
+FROM mcps_view m
+JOIN agent_mcps_view amv
+    ON amv.mcp_id = m.id
+WHERE amv.agent_id = $1
 `
 
 func (q *Queries) CountMcpsByAgentId(ctx context.Context, agentID uuid.UUID) (int64, error) {
@@ -36,26 +39,23 @@ func (q *Queries) CountMcpsByAgentId(ctx context.Context, agentID uuid.UUID) (in
 }
 
 const insertMcp = `-- name: InsertMcp :one
-INSERT INTO mcps (agent_id, name, description, uri)
+INSERT INTO mcps (name, description, uri)
 VALUES (
     $1,
     $2,
-    $3,
-    $4
+    $3
 )
-RETURNING id, agent_id, name, description, uri, created_at, updated_at
+RETURNING id, name, description, uri, created_at, updated_at
 `
 
 type InsertMcpParams struct {
-	AgentID     uuid.UUID `json:"agent_id"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description"`
-	Uri         string    `json:"uri"`
+	Name        string  `json:"name"`
+	Description *string `json:"description"`
+	Uri         string  `json:"uri"`
 }
 
 type InsertMcpRow struct {
 	ID          uuid.UUID `json:"id"`
-	AgentID     uuid.UUID `json:"agent_id"`
 	Name        string    `json:"name"`
 	Description *string   `json:"description"`
 	Uri         string    `json:"uri"`
@@ -64,16 +64,10 @@ type InsertMcpRow struct {
 }
 
 func (q *Queries) InsertMcp(ctx context.Context, arg InsertMcpParams) (InsertMcpRow, error) {
-	row := q.db.QueryRow(ctx, insertMcp,
-		arg.AgentID,
-		arg.Name,
-		arg.Description,
-		arg.Uri,
-	)
+	row := q.db.QueryRow(ctx, insertMcp, arg.Name, arg.Description, arg.Uri)
 	var i InsertMcpRow
 	err := row.Scan(
 		&i.ID,
-		&i.AgentID,
 		&i.Name,
 		&i.Description,
 		&i.Uri,
@@ -84,7 +78,7 @@ func (q *Queries) InsertMcp(ctx context.Context, arg InsertMcpParams) (InsertMcp
 }
 
 const selectMcpById = `-- name: SelectMcpById :one
-SELECT id, agent_id, name, description, uri, created_at, updated_at FROM mcps_view
+SELECT id, name, description, uri, created_at, updated_at FROM mcps_view
 WHERE id = $1
 LIMIT 1
 `
@@ -94,7 +88,6 @@ func (q *Queries) SelectMcpById(ctx context.Context, id uuid.UUID) (McpsView, er
 	var i McpsView
 	err := row.Scan(
 		&i.ID,
-		&i.AgentID,
 		&i.Name,
 		&i.Description,
 		&i.Uri,
@@ -106,7 +99,7 @@ func (q *Queries) SelectMcpById(ctx context.Context, id uuid.UUID) (McpsView, er
 
 const selectMcps = `-- name: SelectMcps :many
 SELECT
-    m.id, m.agent_id, m.name, m.description, m.uri, m.created_at, m.updated_at,
+    m.id, m.name, m.description, m.uri, m.created_at, m.updated_at,
     (
         SELECT count(*)
         FROM mcp_tools AS t
@@ -117,7 +110,9 @@ ORDER BY
     CASE WHEN $1::text = 'name_asc' THEN m.name END ASC,
     CASE WHEN $1::text = 'name_desc' THEN m.name END DESC,
     CASE WHEN $1::text = 'created_asc' THEN m.created_at END ASC,
-    CASE WHEN $1::text = 'created_desc' THEN m.created_at END DESC,
+    CASE
+        WHEN $1::text = 'created_desc' THEN m.created_at
+    END DESC,
     m.created_at DESC
 LIMIT $3 OFFSET $2
 `
@@ -130,7 +125,6 @@ type SelectMcpsParams struct {
 
 type SelectMcpsRow struct {
 	ID          uuid.UUID `json:"id"`
-	AgentID     uuid.UUID `json:"agent_id"`
 	Name        string    `json:"name"`
 	Description *string   `json:"description"`
 	Uri         string    `json:"uri"`
@@ -150,7 +144,6 @@ func (q *Queries) SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]Selec
 		var i SelectMcpsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.AgentID,
 			&i.Name,
 			&i.Description,
 			&i.Uri,
@@ -170,19 +163,23 @@ func (q *Queries) SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]Selec
 
 const selectMcpsByAgentId = `-- name: SelectMcpsByAgentId :many
 SELECT
-    m.id, m.agent_id, m.name, m.description, m.uri, m.created_at, m.updated_at,
+    m.id, m.name, m.description, m.uri, m.created_at, m.updated_at,
     (
         SELECT count(*)
         FROM mcp_tools AS t
         WHERE t.mcp_id = m.id AND t.deleted_at IS NULL
     ) AS tools_count
 FROM mcps_view AS m
-WHERE m.agent_id = $1
+JOIN agent_mcps_view amv
+    ON amv.mcp_id = m.id
+WHERE amv.agent_id = $1
 ORDER BY
     CASE WHEN $2::text = 'name_asc' THEN m.name END ASC,
     CASE WHEN $2::text = 'name_desc' THEN m.name END DESC,
     CASE WHEN $2::text = 'created_asc' THEN m.created_at END ASC,
-    CASE WHEN $2::text = 'created_desc' THEN m.created_at END DESC,
+    CASE
+        WHEN $2::text = 'created_desc' THEN m.created_at
+    END DESC,
     m.created_at DESC
 LIMIT $4 OFFSET $3
 `
@@ -196,7 +193,6 @@ type SelectMcpsByAgentIdParams struct {
 
 type SelectMcpsByAgentIdRow struct {
 	ID          uuid.UUID `json:"id"`
-	AgentID     uuid.UUID `json:"agent_id"`
 	Name        string    `json:"name"`
 	Description *string   `json:"description"`
 	Uri         string    `json:"uri"`
@@ -221,7 +217,6 @@ func (q *Queries) SelectMcpsByAgentId(ctx context.Context, arg SelectMcpsByAgent
 		var i SelectMcpsByAgentIdRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.AgentID,
 			&i.Name,
 			&i.Description,
 			&i.Uri,
@@ -264,7 +259,7 @@ SET
 WHERE
     deleted_at IS NULL
     AND id = $3
-RETURNING id, agent_id, name, description, uri, created_at, updated_at
+RETURNING id, name, description, uri, created_at, updated_at
 `
 
 type UpdateMcpParams struct {
@@ -275,7 +270,6 @@ type UpdateMcpParams struct {
 
 type UpdateMcpRow struct {
 	ID          uuid.UUID `json:"id"`
-	AgentID     uuid.UUID `json:"agent_id"`
 	Name        string    `json:"name"`
 	Description *string   `json:"description"`
 	Uri         string    `json:"uri"`
@@ -288,7 +282,6 @@ func (q *Queries) UpdateMcp(ctx context.Context, arg UpdateMcpParams) (UpdateMcp
 	var i UpdateMcpRow
 	err := row.Scan(
 		&i.ID,
-		&i.AgentID,
 		&i.Name,
 		&i.Description,
 		&i.Uri,

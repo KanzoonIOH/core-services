@@ -30,6 +30,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 	mcpHandler := handler.NewMcpHandler(conn)
 	knowledgeHandler := handler.NewKnowledgeHandler(conn)
 	agentKnowledgeHandler := handler.NewAgentKnowledgeHandler(conn)
+	connectHandler := handler.NewConnectHandler(conn)
 	authHandler := handler.NewAuthHandler(conn, signer, mailer)
 	meHandler := handler.NewMeHandler(conn, mailer)
 	confirmHandler := handler.NewConfirmHandler(conn)
@@ -103,6 +104,12 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 				r.Get("/agent/{id}", agentKnowledgeHandler.ReadByAgentId)
 				r.Patch("/{id}", agentKnowledgeHandler.Update)
 				r.Delete("/{id}", agentKnowledgeHandler.Delete)
+			})
+			r.Route("/connect", func(r chi.Router) {
+				r.Post("/agent-mcp", connectHandler.ConnectAgentMcp)
+				r.Delete("/agent-mcp", connectHandler.DisconnectAgentMcp)
+				r.Post("/agent-knowledge", connectHandler.ConnectAgentKnowledge)
+				r.Delete("/agent-knowledge", connectHandler.DisconnectAgentKnowledge)
 			})
 			r.Route("/api-keys", func(r chi.Router) {
 				r.Post("/", apiKeyHandler.Create)

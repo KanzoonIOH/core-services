@@ -178,8 +178,12 @@ WHERE akv.agent_id = $1
 ORDER BY
     CASE WHEN $2::text = 'name_asc' THEN kv.name END ASC,
     CASE WHEN $2::text = 'name_desc' THEN kv.name END DESC,
-    CASE WHEN $2::text = 'created_asc' THEN kv.created_at END ASC,
-    CASE WHEN $2::text = 'created_desc' THEN kv.created_at END DESC,
+    CASE
+        WHEN $2::text = 'created_asc' THEN kv.created_at
+    END ASC,
+    CASE
+        WHEN $2::text = 'created_desc' THEN kv.created_at
+    END DESC,
     kv.created_at DESC
 LIMIT $4 OFFSET $3
 `
