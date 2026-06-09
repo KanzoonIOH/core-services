@@ -4,6 +4,7 @@ import (
 	"aiac-service/internal/app/middleware"
 	"aiac-service/internal/handler"
 	"aiac-service/internal/lib"
+	"context"
 	"log"
 	"net/http"
 	"os"
@@ -25,10 +26,11 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 
 	signer := newJWTSigner()
 	mailer := newMailer()
+	objectStorage := newObjectStorage()
 
 	agentHandler := handler.NewAgentHandler(conn)
 	mcpHandler := handler.NewMcpHandler(conn)
-	knowledgeHandler := handler.NewKnowledgeHandler(conn)
+	knowledgeHandler := handler.NewKnowledgeHandler(conn, objectStorage)
 	agentKnowledgeHandler := handler.NewAgentKnowledgeHandler(conn)
 	connectHandler := handler.NewConnectHandler(conn)
 	authHandler := handler.NewAuthHandler(conn, signer, mailer)
@@ -163,4 +165,34 @@ func newMailer() *lib.Mailer {
 		log.Fatal("APP_URL is required")
 	}
 	return lib.NewMailer(apiKey, from, appUrl)
+}
+
+func newObjectStorage() *lib.ObjectStorage {
+	endpoint := os.Getenv("RUSTFS_ENDPOINT")
+	if endpoint == "" {
+		log.Fatal("RUSTFS_ENDPOINT is required")
+	}
+	accessKey := os.Getenv("RUSTFS_ACCESS_KEY")
+	if accessKey == "" {
+		log.Fatal("RUSTFS_ACCESS_KEY is required")
+	}
+	secretKey := os.Getenv("RUSTFS_SECRET_KEY")
+	if secretKey == "" {
+		log.Fatal("RUSTFS_SECRET_KEY is required")
+	}
+	bucket := os.Getenv("RUSTFS_BUCKET")
+	if bucket == "" {
+		log.Fatal("RUSTFS_BUCKET is required")
+	}
+	region := os.Getenv("RUSTFS_REGION")
+	if region == "" {
+		log.Fatal("RUSTFS_REGION is required")
+	}
+
+	storage, err := lib.NewObjectStorage(context.Background(), endpoint, os.Getenv("RUSTFS_PUBLIC_ENDPOINT"), region, accessKey, secretKey, bucket)
+	if err != nil {
+		log.Fatalf("object storage: %v", err)
+	}
+
+	return storage
 }

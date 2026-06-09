@@ -4,19 +4,25 @@ import (
 	db "aiac-service/db/postgres/sqlc"
 	"aiac-service/internal/lib"
 	"errors"
+	"fmt"
+	"mime/multipart"
 	"net/http"
+	"path/filepath"
+	"regexp"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type KnowledgeHandler struct {
-	Queries db.Querier
+	Queries       db.Querier
+	ObjectStorage *lib.ObjectStorage
 }
 
-func NewKnowledgeHandler(conn *pgxpool.Pool) *KnowledgeHandler {
-	return &KnowledgeHandler{Queries: db.New(conn)}
+func NewKnowledgeHandler(conn *pgxpool.Pool, objectStorage *lib.ObjectStorage) *KnowledgeHandler {
+	return &KnowledgeHandler{Queries: db.New(conn), ObjectStorage: objectStorage}
 }
 
 type createKnowledgeRequest struct {
@@ -27,11 +33,11 @@ type createKnowledgeRequest struct {
 }
 
 func (h *KnowledgeHandler) Create(w http.ResponseWriter, r *http.Request) {
-	var req createKnowledgeRequest
-
-	if !lib.ParseJSONBody(w, r, &req) {
+	req, file, fileHeader, ok := parseCreateKnowledgeMultipart(w, r)
+	if !ok {
 		return
 	}
+	defer file.Close()
 
 	req.Name = strings.TrimSpace(req.Name)
 	req.SourceType = strings.TrimSpace(req.SourceType)
@@ -44,13 +50,19 @@ func (h *KnowledgeHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Insert the knowledge to milvus
+	objectKey := fmt.Sprintf("knowledges/%s/%s", uuid.NewString(), sanitizeObjectFilename(fileHeader.Filename))
+	sourceURI, err := h.ObjectStorage.Upload(r.Context(), objectKey, file, fileHeader.Header.Get("Content-Type"))
+	if err != nil {
+		fmt.Println(err)
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to upload knowledge file")
+		return
+	}
 
 	knowledge, err := h.Queries.InsertKnowledge(r.Context(), db.InsertKnowledgeParams{
 		Name:        req.Name,
 		Description: req.Description,
 		SourceType:  req.SourceType,
-		SourceUri:   req.SourceUri,
+		SourceUri:   &sourceURI,
 	})
 	if err != nil {
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to create knowledge")
@@ -58,6 +70,47 @@ func (h *KnowledgeHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, knowledge, nil)
+}
+
+func parseCreateKnowledgeMultipart(w http.ResponseWriter, r *http.Request) (createKnowledgeRequest, multipart.File, *multipart.FileHeader, bool) {
+	var req createKnowledgeRequest
+
+	if err := r.ParseMultipartForm(100 << 20); err != nil {
+		lib.ResponseJSONError(w, http.StatusBadRequest, "invalid multipart form")
+		return req, nil, nil, false
+	}
+
+	req.Name = r.FormValue("name")
+	req.Description = formStringPtr(r.FormValue("description"))
+	req.SourceType = r.FormValue("source_type")
+
+	file, fileHeader, err := r.FormFile("file")
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusBadRequest, "file is required")
+		return req, nil, nil, false
+	}
+
+	return req, file, fileHeader, true
+}
+
+func formStringPtr(v string) *string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil
+	}
+	return &v
+}
+
+var unsafeFilenameChars = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
+
+func sanitizeObjectFilename(filename string) string {
+	filename = filepath.Base(strings.TrimSpace(filename))
+	filename = unsafeFilenameChars.ReplaceAllString(filename, "-")
+	filename = strings.Trim(filename, ".-")
+	if filename == "" {
+		return "upload"
+	}
+	return filename
 }
 
 func (h *KnowledgeHandler) Read(w http.ResponseWriter, r *http.Request) {
