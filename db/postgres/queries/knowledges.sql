@@ -56,11 +56,23 @@ ORDER BY
     created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
--- -- -- name: GetKnowledgeAgents :many
--- -- SELECT a.* FROM agents a
--- -- JOIN agent_knowledges ak ON ak.agent_id = a.id
--- -- WHERE
--- --     a.deleted_at IS NULL
--- --     AND ak.deleted_at IS NULL
--- --     AND ak.knowledge_id = sqlc.arg(knowledge_id)
--- -- ORDER BY a.created_at DESC;
+-- name: CountKnowledgesByAgentId :one
+SELECT count(*)
+FROM knowledges_view kv
+JOIN agent_knowledges_view akv
+    ON akv.knowledge_id = kv.id
+WHERE akv.agent_id = sqlc.arg(agent_id);
+
+-- name: SelectKnowledgesByAgentId :many
+SELECT kv.*
+FROM knowledges_view kv
+JOIN agent_knowledges_view akv
+    ON akv.knowledge_id = kv.id
+WHERE akv.agent_id = sqlc.arg(agent_id)
+ORDER BY
+    CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN kv.name END ASC,
+    CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN kv.name END DESC,
+    CASE WHEN sqlc.narg('sort')::text = 'created_asc' THEN kv.created_at END ASC,
+    CASE WHEN sqlc.narg('sort')::text = 'created_desc' THEN kv.created_at END DESC,
+    kv.created_at DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');

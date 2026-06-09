@@ -23,6 +23,18 @@ func (q *Queries) CountMcps(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const countMcpsByAgentId = `-- name: CountMcpsByAgentId :one
+SELECT count(*) FROM mcps_view
+WHERE agent_id = $1
+`
+
+func (q *Queries) CountMcpsByAgentId(ctx context.Context, agentID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countMcpsByAgentId, agentID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const insertMcp = `-- name: InsertMcp :one
 INSERT INTO mcps (agent_id, name, description, uri)
 VALUES (
@@ -136,6 +148,77 @@ func (q *Queries) SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]Selec
 	items := []SelectMcpsRow{}
 	for rows.Next() {
 		var i SelectMcpsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AgentID,
+			&i.Name,
+			&i.Description,
+			&i.Uri,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ToolsCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectMcpsByAgentId = `-- name: SelectMcpsByAgentId :many
+SELECT
+    m.id, m.agent_id, m.name, m.description, m.uri, m.created_at, m.updated_at,
+    (
+        SELECT count(*)
+        FROM mcp_tools AS t
+        WHERE t.mcp_id = m.id AND t.deleted_at IS NULL
+    ) AS tools_count
+FROM mcps_view AS m
+WHERE m.agent_id = $1
+ORDER BY
+    CASE WHEN $2::text = 'name_asc' THEN m.name END ASC,
+    CASE WHEN $2::text = 'name_desc' THEN m.name END DESC,
+    CASE WHEN $2::text = 'created_asc' THEN m.created_at END ASC,
+    CASE WHEN $2::text = 'created_desc' THEN m.created_at END DESC,
+    m.created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type SelectMcpsByAgentIdParams struct {
+	AgentID uuid.UUID `json:"agent_id"`
+	Sort    *string   `json:"sort"`
+	Offset  int32     `json:"offset"`
+	Limit   int32     `json:"limit"`
+}
+
+type SelectMcpsByAgentIdRow struct {
+	ID          uuid.UUID `json:"id"`
+	AgentID     uuid.UUID `json:"agent_id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description"`
+	Uri         string    `json:"uri"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	ToolsCount  int64     `json:"tools_count"`
+}
+
+func (q *Queries) SelectMcpsByAgentId(ctx context.Context, arg SelectMcpsByAgentIdParams) ([]SelectMcpsByAgentIdRow, error) {
+	rows, err := q.db.Query(ctx, selectMcpsByAgentId,
+		arg.AgentID,
+		arg.Sort,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SelectMcpsByAgentIdRow{}
+	for rows.Next() {
+		var i SelectMcpsByAgentIdRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.AgentID,

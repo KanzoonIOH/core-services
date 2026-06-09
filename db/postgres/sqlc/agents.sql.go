@@ -23,6 +23,36 @@ func (q *Queries) CountAgents(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const countAgentsByKnowledgeId = `-- name: CountAgentsByKnowledgeId :one
+SELECT COUNT(*)
+FROM agents_view av
+JOIN agent_knowledges_view akv
+    ON akv.agent_id = av.id
+WHERE akv.knowledge_id = $1
+`
+
+func (q *Queries) CountAgentsByKnowledgeId(ctx context.Context, knowledgeID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countAgentsByKnowledgeId, knowledgeID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countAgentsByMcpId = `-- name: CountAgentsByMcpId :one
+SELECT COUNT(*)
+FROM agents_view av
+JOIN mcps_view mv
+    ON mv.agent_id = av.id
+WHERE mv.id = $1
+`
+
+func (q *Queries) CountAgentsByMcpId(ctx context.Context, mcpID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countAgentsByMcpId, mcpID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const insertAgent = `-- name: InsertAgent :one
 INSERT INTO agents (name, description, is_active, webhook_uri)
 VALUES (
@@ -220,6 +250,122 @@ func (q *Queries) SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]S
 			&i.UpdatedAt,
 			&i.KnowledgesCount,
 			&i.McpsCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectAgentsByKnowledgeId = `-- name: SelectAgentsByKnowledgeId :many
+SELECT av.id, av.name, av.description, av.is_active, av.webhook_uri, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at
+FROM agents_view av
+JOIN agent_knowledges_view akv
+    ON akv.agent_id = av.id
+WHERE akv.knowledge_id = $1
+ORDER BY
+    CASE WHEN $2::text = 'name_asc' THEN av.name END ASC,
+    CASE WHEN $2::text = 'name_desc' THEN av.name END DESC,
+    CASE WHEN $2::text = 'created_asc' THEN av.created_at END ASC,
+    CASE WHEN $2::text = 'created_desc' THEN av.created_at END DESC,
+    av.created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type SelectAgentsByKnowledgeIdParams struct {
+	KnowledgeID uuid.UUID `json:"knowledge_id"`
+	Sort        *string   `json:"sort"`
+	Offset      int32     `json:"offset"`
+	Limit       int32     `json:"limit"`
+}
+
+func (q *Queries) SelectAgentsByKnowledgeId(ctx context.Context, arg SelectAgentsByKnowledgeIdParams) ([]AgentsView, error) {
+	rows, err := q.db.Query(ctx, selectAgentsByKnowledgeId,
+		arg.KnowledgeID,
+		arg.Sort,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AgentsView{}
+	for rows.Next() {
+		var i AgentsView
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.IsActive,
+			&i.WebhookUri,
+			&i.Tone,
+			&i.ResponseLength,
+			&i.CommunicationStyle,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectAgentsByMcpId = `-- name: SelectAgentsByMcpId :many
+SELECT av.id, av.name, av.description, av.is_active, av.webhook_uri, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at
+FROM agents_view av
+JOIN mcps_view mv
+    ON mv.agent_id = av.id
+WHERE mv.id = $1
+ORDER BY
+    CASE WHEN $2::text = 'name_asc' THEN av.name END ASC,
+    CASE WHEN $2::text = 'name_desc' THEN av.name END DESC,
+    CASE WHEN $2::text = 'created_asc' THEN av.created_at END ASC,
+    CASE WHEN $2::text = 'created_desc' THEN av.created_at END DESC,
+    av.created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type SelectAgentsByMcpIdParams struct {
+	McpID  uuid.UUID `json:"mcp_id"`
+	Sort   *string   `json:"sort"`
+	Offset int32     `json:"offset"`
+	Limit  int32     `json:"limit"`
+}
+
+func (q *Queries) SelectAgentsByMcpId(ctx context.Context, arg SelectAgentsByMcpIdParams) ([]AgentsView, error) {
+	rows, err := q.db.Query(ctx, selectAgentsByMcpId,
+		arg.McpID,
+		arg.Sort,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AgentsView{}
+	for rows.Next() {
+		var i AgentsView
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.IsActive,
+			&i.WebhookUri,
+			&i.Tone,
+			&i.ResponseLength,
+			&i.CommunicationStyle,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

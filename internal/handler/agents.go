@@ -92,6 +92,66 @@ func (h *AgentHandler) Read(w http.ResponseWriter, r *http.Request) {
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agents, lib.ResponsePagination(int(pagination.Limit), int(pagination.Offset), len(agents), int(totalRow)))
 }
 
+func (h *AgentHandler) ReadByMcpId(w http.ResponseWriter, r *http.Request) {
+	mcp_id, ok := lib.ParseID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	params := r.URL.Query()
+
+	pagination := lib.ParsePaginationParams(params)
+
+	agents, err := h.Queries.SelectAgentsByMcpId(r.Context(), db.SelectAgentsByMcpIdParams{
+		McpID:  mcp_id,
+		Sort:   pagination.Sort,
+		Limit:  pagination.Limit,
+		Offset: pagination.Offset * pagination.Limit,
+	})
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agents")
+		return
+	}
+
+	totalRow, err := h.Queries.CountAgentsByMcpId(r.Context(), mcp_id)
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agents")
+		return
+	}
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agents, lib.ResponsePagination(int(pagination.Limit), int(pagination.Offset), len(agents), int(totalRow)))
+}
+
+func (h *AgentHandler) ReadByKnowledgeId(w http.ResponseWriter, r *http.Request) {
+	knowledge_id, ok := lib.ParseID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	params := r.URL.Query()
+
+	pagination := lib.ParsePaginationParams(params)
+
+	agents, err := h.Queries.SelectAgentsByKnowledgeId(r.Context(), db.SelectAgentsByKnowledgeIdParams{
+		KnowledgeID: knowledge_id,
+		Sort:        pagination.Sort,
+		Limit:       pagination.Limit,
+		Offset:      pagination.Offset * pagination.Limit,
+	})
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agents")
+		return
+	}
+
+	totalRow, err := h.Queries.CountAgentsByKnowledgeId(r.Context(), knowledge_id)
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agents")
+		return
+	}
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agents, lib.ResponsePagination(int(pagination.Limit), int(pagination.Offset), len(agents), int(totalRow)))
+}
+
 func (h *AgentHandler) ReadById(w http.ResponseWriter, r *http.Request) {
 	id, ok := lib.ParseID(w, r, "id")
 	if !ok {

@@ -77,6 +77,8 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 				r.Patch("/{id}", agentHandler.Update)
 				r.Delete("/{id}", agentHandler.Delete)
 				r.Patch("/{id}/persona", agentHandler.UpdatePersona)
+				r.Get("/{id}/mcps", mcpHandler.ReadByAgentId)
+				r.Get("/{id}/knowledges", knowledgeHandler.ReadByAgentId)
 			})
 			r.Route("/knowledges", func(r chi.Router) {
 				r.Post("/", knowledgeHandler.Create)
@@ -84,6 +86,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 				r.Get("/{id}", knowledgeHandler.ReadById)
 				r.Patch("/{id}", knowledgeHandler.Update)
 				r.Delete("/{id}", knowledgeHandler.Delete)
+				r.Get("/{id}/agents", agentHandler.ReadByKnowledgeId)
 			})
 			r.Route("/mcps", func(r chi.Router) {
 				r.Post("/", mcpHandler.Create)
@@ -93,6 +96,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 				r.Delete("/{id}", mcpHandler.Delete)
 				r.Get("/{id}/tools", mcpHandler.ReadTools)
 				r.Post("/{id}/refresh-tools", mcpHandler.RefreshTools)
+				r.Get("/{id}/agents", agentHandler.ReadByMcpId)
 			})
 			r.Route("/agent-knowledges", func(r chi.Router) {
 				r.Post("/agent/{id}", agentKnowledgeHandler.CreateByAgentId)

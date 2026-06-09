@@ -99,3 +99,45 @@ ORDER BY
     END DESC,
     av.created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: CountAgentsByMcpId :one
+SELECT COUNT(*)
+FROM agents_view av
+JOIN mcps_view mv
+    ON mv.agent_id = av.id
+WHERE mv.id = sqlc.arg(mcp_id);
+
+-- name: SelectAgentsByMcpId :many
+SELECT av.*
+FROM agents_view av
+JOIN mcps_view mv
+    ON mv.agent_id = av.id
+WHERE mv.id = sqlc.arg(mcp_id)
+ORDER BY
+    CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN av.name END ASC,
+    CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN av.name END DESC,
+    CASE WHEN sqlc.narg('sort')::text = 'created_asc' THEN av.created_at END ASC,
+    CASE WHEN sqlc.narg('sort')::text = 'created_desc' THEN av.created_at END DESC,
+    av.created_at DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: CountAgentsByKnowledgeId :one
+SELECT COUNT(*)
+FROM agents_view av
+JOIN agent_knowledges_view akv
+    ON akv.agent_id = av.id
+WHERE akv.knowledge_id = sqlc.arg(knowledge_id);
+
+-- name: SelectAgentsByKnowledgeId :many
+SELECT av.*
+FROM agents_view av
+JOIN agent_knowledges_view akv
+    ON akv.agent_id = av.id
+WHERE akv.knowledge_id = sqlc.arg(knowledge_id)
+ORDER BY
+    CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN av.name END ASC,
+    CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN av.name END DESC,
+    CASE WHEN sqlc.narg('sort')::text = 'created_asc' THEN av.created_at END ASC,
+    CASE WHEN sqlc.narg('sort')::text = 'created_desc' THEN av.created_at END DESC,
+    av.created_at DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');

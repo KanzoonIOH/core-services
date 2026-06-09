@@ -28,6 +28,21 @@ func (q *Queries) CountKnowledges(ctx context.Context, sourceType *string) (int6
 	return count, err
 }
 
+const countKnowledgesByAgentId = `-- name: CountKnowledgesByAgentId :one
+SELECT count(*)
+FROM knowledges_view kv
+JOIN agent_knowledges_view akv
+    ON akv.knowledge_id = kv.id
+WHERE akv.agent_id = $1
+`
+
+func (q *Queries) CountKnowledgesByAgentId(ctx context.Context, agentID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countKnowledgesByAgentId, agentID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const insertKnowledge = `-- name: InsertKnowledge :one
 INSERT INTO knowledges (name, description, source_type, source_uri)
 VALUES (
@@ -124,6 +139,61 @@ type SelectKnowledgesParams struct {
 func (q *Queries) SelectKnowledges(ctx context.Context, arg SelectKnowledgesParams) ([]KnowledgesView, error) {
 	rows, err := q.db.Query(ctx, selectKnowledges,
 		arg.SourceType,
+		arg.Sort,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []KnowledgesView{}
+	for rows.Next() {
+		var i KnowledgesView
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.SourceType,
+			&i.SourceUri,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectKnowledgesByAgentId = `-- name: SelectKnowledgesByAgentId :many
+SELECT kv.id, kv.name, kv.description, kv.source_type, kv.source_uri, kv.created_at, kv.updated_at
+FROM knowledges_view kv
+JOIN agent_knowledges_view akv
+    ON akv.knowledge_id = kv.id
+WHERE akv.agent_id = $1
+ORDER BY
+    CASE WHEN $2::text = 'name_asc' THEN kv.name END ASC,
+    CASE WHEN $2::text = 'name_desc' THEN kv.name END DESC,
+    CASE WHEN $2::text = 'created_asc' THEN kv.created_at END ASC,
+    CASE WHEN $2::text = 'created_desc' THEN kv.created_at END DESC,
+    kv.created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type SelectKnowledgesByAgentIdParams struct {
+	AgentID uuid.UUID `json:"agent_id"`
+	Sort    *string   `json:"sort"`
+	Offset  int32     `json:"offset"`
+	Limit   int32     `json:"limit"`
+}
+
+func (q *Queries) SelectKnowledgesByAgentId(ctx context.Context, arg SelectKnowledgesByAgentIdParams) ([]KnowledgesView, error) {
+	rows, err := q.db.Query(ctx, selectKnowledgesByAgentId,
+		arg.AgentID,
 		arg.Sort,
 		arg.Offset,
 		arg.Limit,
