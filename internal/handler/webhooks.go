@@ -24,8 +24,9 @@ import (
 
 // Topic names
 const (
-	TopicChatMessage     = "chat.webhook.message"
-	TopicConversationEnd = "chat.conversation.end"
+	TopicChatMessage          = "chat.webhook.message"
+	TopicConversationActivity = "chat.conversation.activity"
+	TopicConversationEnd      = "chat.conversation.end"
 )
 
 var insecureWebhookHosts = map[string]bool{
@@ -106,6 +107,7 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 	}
 
 	log.Printf("chat webhook proxy: agent=%s session=%s target=%s", id, conversationID, targetURL)
+	h.publishConversationActivity(id.String(), conversationID, hitTime)
 
 	// Read body and inject sessionId before forwarding.
 	bodyBytes, err := io.ReadAll(r.Body)
@@ -167,6 +169,20 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("X-Session-Id", conversationID)
 	w.WriteHeader(res.StatusCode)
 	_, _ = io.Copy(w, res.Body)
+}
+
+func (h *WebhookHandler) publishConversationActivity(agentID, conversationID string, occurredAt time.Time) {
+	if h.Kafka == nil {
+		return
+	}
+
+	if err := h.Kafka.Publish(context.Background(), TopicConversationActivity, map[string]any{
+		"agent_id":        agentID,
+		"conversation_id": conversationID,
+		"occurred_at":     occurredAt,
+	}); err != nil {
+		log.Printf("kafka publish %s: %v", TopicConversationActivity, err)
+	}
 }
 
 func (h *WebhookHandler) publishWebhookMessage(agentID, conversationID string, statusCode int, hitTime time.Time, errorMessage string) {

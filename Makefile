@@ -1,6 +1,8 @@
 APP_NAME         := aiac-service
+TIMER_APP_NAME   := aiac-timer-service
 BUILD_DIR        := build
 CMD_DIR          := ./cmd/api
+TIMER_CMD_DIR    := ./cmd/timer
 MIGRATION_DIR    := ./db/postgres/migrations
 CH_MIGRATION_DIR := ./db/clickhouse/migrations
 
@@ -10,13 +12,19 @@ ifneq (,$(wildcard ./.env))
     export
 endif
 
-.PHONY: dev build run tidy test format
+.PHONY: dev timer build build-timer run tidy test format
 
 dev:
 	go run $(CMD_DIR)
 
+timer:
+	go run $(TIMER_CMD_DIR)
+
 build:
 	go build -o $(BUILD_DIR)/$(APP_NAME) $(CMD_DIR)
+
+build-timer:
+	go build -o $(BUILD_DIR)/$(TIMER_APP_NAME) $(TIMER_CMD_DIR)
 
 run: build
 	./$(BUILD_DIR)/$(APP_NAME)
