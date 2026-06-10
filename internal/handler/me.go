@@ -184,8 +184,16 @@ func (h *MeHandler) UpdateEmailRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	changeToken, err := lib.GenerateSecureToken(32)
+	if err != nil {
+		fmt.Printf("change email request: generate token: %v\n", err)
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to request changes")
+		return
+	}
+
 	upc, err := h.Queries.InsertUpcomingChange(r.Context(), db.InsertUpcomingChangeParams{
-		Type:          db.UpcomingChangesTypeEmail,
+		Token:         changeToken,
+		Type:          db.UpcomingChangesTypeEMAIL,
 		UpcomingValue: &req.Email,
 		UserID:        user.ID,
 	})

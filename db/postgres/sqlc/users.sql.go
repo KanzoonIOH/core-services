@@ -15,12 +15,12 @@ import (
 const acceptMember = `-- name: AcceptMember :one
 UPDATE users
 SET
-    role = 'user',
+    role = 'VIEWER',
     updated_at = now()
 WHERE
     deleted_at IS NULL
     AND id = $1
-    AND role = 'new'
+    AND role = 'PENDING'
 RETURNING id, name, username, email, role, created_at, updated_at
 `
 
@@ -210,7 +210,7 @@ SET
 WHERE
     deleted_at IS NULL
     AND id = $2
-    AND role != 'new'
+    AND role != 'PENDING'
 RETURNING id, name, username, email, role, created_at, updated_at
 `
 

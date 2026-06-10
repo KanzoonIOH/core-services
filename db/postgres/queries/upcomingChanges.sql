@@ -1,10 +1,12 @@
 -- name: InsertUpcomingChange :one
 INSERT INTO upcoming_changes (
+    token,
     type,
     user_id,
     upcoming_value
 )
 VALUES (
+    sqlc.arg(token),
     sqlc.arg(type),
     sqlc.arg(user_id),
     sqlc.narg(upcoming_value)

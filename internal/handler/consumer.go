@@ -39,39 +39,77 @@ type ChatMessageRow struct {
 	OccurredAt     time.Time
 }
 
-// ConversationEndEvent is the shape of messages on chat.conversation.end.
-type ConversationEndEvent struct {
-	AgentID          string    `json:"agent_id"`
+// ConversationAnalyticsEvent is the shape of messages on chat.conversation.analytics.
+// Published by the post-conversation NLP/enrichment worker once analysis is complete.
+type ConversationAnalyticsEvent struct {
 	ConversationID   string    `json:"conversation_id"`
-	EndReason        string    `json:"end_reason"`        // "resolved" | "escalated" | "timed_out"
-	EscalationReason string    `json:"escalation_reason"` // non-empty only when escalated
+	AgentID          string    `json:"agent_id"`
+	SessionID        string    `json:"session_id"`
 	StartedAt        time.Time `json:"started_at"`
 	EndedAt          time.Time `json:"ended_at"`
 	ResolutionMs     int64     `json:"resolution_ms"`
+	EndReason        string    `json:"end_reason"`
+	MessageCount     int32     `json:"message_count"`
+	Channel          string    `json:"channel"`
+	Intent           string    `json:"intent"`
+	Intents          []string  `json:"intents"`
+	Topics           []string  `json:"topics"`
+	Sentiment        string    `json:"sentiment"`
+	SentimentScore   float32   `json:"sentiment_score"`
+	Language         string    `json:"language"`
+	IsResolved       bool      `json:"is_resolved"`
+	EscalationReason string    `json:"escalation_reason"`
+	FirstResponseMs  *int64    `json:"first_response_ms,omitempty"`
+	UserSatisfaction *int8     `json:"user_satisfaction,omitempty"`
+	Summary          string    `json:"summary"`
+	Keywords         []string  `json:"keywords"`
+	ExternalUserID   string    `json:"external_user_id"`
+	Tags             []string  `json:"tags"`
+	ModelVersion     string    `json:"model_version"`
 	OccurredAt       time.Time `json:"occurred_at"`
 }
 
-// ConversationEndRow is what gets written to ClickHouse conversation_events.
-type ConversationEndRow struct {
-	AgentID          string
+// ConversationAnalyticsRow is what gets written to ClickHouse conversation_analytics.
+type ConversationAnalyticsRow struct {
 	ConversationID   string
-	EndReason        string
-	EscalationReason *string
+	AgentID          string
+	SessionID        string
 	StartedAt        time.Time
 	EndedAt          time.Time
 	ResolutionMs     int64
+	EndReason        string
+	MessageCount     int32
+	Channel          string
+	Intent           string
+	Intents          []string
+	Topics           []string
+	Sentiment        string
+	SentimentScore   float32
+	Language         string
+	IsResolved       bool
+	EscalationReason *string
+	FirstResponseMs  *int64
+	UserSatisfaction *int8
+	Summary          string
+	Keywords         []string
+	ExternalUserID   *string
+	Tags             []string
+	ModelVersion     string
 	OccurredAt       time.Time
 }
 
 // StartChatConsumer runs a background goroutine that:
-//  1. Consumes chat.webhook.message and chat.conversation.end from Redpanda
+//  1. Consumes chat.webhook.message and chat.conversation.analytics from Redpanda
 //  2. Batches rows in memory per table
 //  3. Flushes to ClickHouse every flushEvery or when flushSize is reached
+//
+// chat.conversation.end is published by this service but consumed by the
+// external enrichment worker — this consumer does not act on it.
 func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouseClient) {
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(brokers...),
 		kgo.ConsumerGroup(consumerGroup),
-		kgo.ConsumeTopics(TopicChatMessage, TopicConversationEnd),
+		kgo.ConsumeTopics(TopicChatMessage, TopicConversationAnalytics),
 	)
 	if err != nil {
 		log.Fatalf("chat consumer: %v", err)
@@ -81,7 +119,7 @@ func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouse
 		defer client.Close()
 
 		var msgBatch []ChatMessageRow
-		var convBatch []ConversationEndRow
+		var analyticsBatch []ConversationAnalyticsRow
 
 		ticker := time.NewTicker(flushEvery)
 		defer ticker.Stop()
@@ -95,9 +133,9 @@ func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouse
 				flushMessages(flushCtx, ch, msgBatch)
 				msgBatch = msgBatch[:0]
 			}
-			if len(convBatch) > 0 {
-				flushConversations(flushCtx, ch, convBatch)
-				convBatch = convBatch[:0]
+			if len(analyticsBatch) > 0 {
+				flushAnalytics(flushCtx, ch, analyticsBatch)
+				analyticsBatch = analyticsBatch[:0]
 			}
 		}
 
@@ -128,42 +166,72 @@ func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouse
 						log.Printf("chat consumer unmarshal message: %v", err)
 						return
 					}
+					occurredAt := evt.OccurredAt
+					if occurredAt.IsZero() {
+						occurredAt = time.Now().UTC()
+					}
 					row := ChatMessageRow{
 						AgentID:        evt.AgentID,
 						ConversationID: evt.ConversationID,
 						StatusCode:     int32(evt.StatusCode),
 						ResponseTimeMs: evt.ResponseTimeMs,
 						IsSuccess:      evt.IsSuccess,
-						OccurredAt:     evt.OccurredAt,
+						OccurredAt:     occurredAt,
 					}
 					if evt.Error != "" {
 						row.Error = &evt.Error
 					}
 					msgBatch = append(msgBatch, row)
 
-				case TopicConversationEnd:
-					var evt ConversationEndEvent
+				case TopicConversationAnalytics:
+					var evt ConversationAnalyticsEvent
 					if err := json.Unmarshal(rec.Value, &evt); err != nil {
-						log.Printf("chat consumer unmarshal conversation: %v", err)
+						log.Printf("chat consumer unmarshal analytics: %v", err)
 						return
 					}
-					row := ConversationEndRow{
-						AgentID:        evt.AgentID,
+					occurredAt := evt.OccurredAt
+					if occurredAt.IsZero() {
+						occurredAt = evt.EndedAt
+					}
+					if occurredAt.IsZero() {
+						occurredAt = time.Now().UTC()
+					}
+					row := ConversationAnalyticsRow{
 						ConversationID: evt.ConversationID,
-						EndReason:      evt.EndReason,
+						AgentID:        evt.AgentID,
+						SessionID:      evt.SessionID,
 						StartedAt:      evt.StartedAt,
 						EndedAt:        evt.EndedAt,
 						ResolutionMs:   evt.ResolutionMs,
-						OccurredAt:     evt.OccurredAt,
+						EndReason:      evt.EndReason,
+						MessageCount:   evt.MessageCount,
+						Channel:        evt.Channel,
+						Intent:         evt.Intent,
+						Intents:        evt.Intents,
+						Topics:         evt.Topics,
+						Sentiment:      evt.Sentiment,
+						SentimentScore: evt.SentimentScore,
+						Language:       evt.Language,
+						IsResolved:     evt.IsResolved,
+						Summary:        evt.Summary,
+						Keywords:       evt.Keywords,
+						Tags:           evt.Tags,
+						ModelVersion:   evt.ModelVersion,
+						OccurredAt:     occurredAt,
 					}
 					if evt.EscalationReason != "" {
 						row.EscalationReason = &evt.EscalationReason
 					}
-					convBatch = append(convBatch, row)
+					if evt.ExternalUserID != "" {
+						row.ExternalUserID = &evt.ExternalUserID
+					}
+					row.FirstResponseMs = evt.FirstResponseMs
+					row.UserSatisfaction = evt.UserSatisfaction
+					analyticsBatch = append(analyticsBatch, row)
 				}
 			})
 
-			totalPending := len(msgBatch) + len(convBatch)
+			totalPending := len(msgBatch) + len(analyticsBatch)
 			if totalPending >= flushSize {
 				flushPending()
 			}
@@ -203,29 +271,43 @@ func flushMessages(ctx context.Context, ch *lib.ClickHouseClient, rows []ChatMes
 	log.Printf("clickhouse: flushed %d webhook messages", len(rows))
 }
 
-func flushConversations(ctx context.Context, ch *lib.ClickHouseClient, rows []ConversationEndRow) {
+func flushAnalytics(ctx context.Context, ch *lib.ClickHouseClient, rows []ConversationAnalyticsRow) {
 	b, err := ch.Conn().PrepareBatch(ctx,
-		"INSERT INTO conversation_events (agent_id, conversation_id, end_reason, escalation_reason, started_at, ended_at, resolution_ms, occurred_at)",
+		`INSERT INTO conversation_analytics (
+			conversation_id, agent_id, session_id,
+			started_at, ended_at, resolution_ms, end_reason, message_count, channel,
+			intent, intents, topics,
+			sentiment, sentiment_score, language,
+			is_resolved, escalation_reason,
+			first_response_ms, user_satisfaction,
+			summary, keywords, external_user_id, tags, model_version,
+			occurred_at
+		)`,
 	)
 	if err != nil {
-		log.Printf("clickhouse prepare batch (conversation_events): %v", err)
+		log.Printf("clickhouse prepare batch (conversation_analytics): %v", err)
 		return
 	}
 
 	for _, r := range rows {
-		var escalationReason *string
-		if r.EscalationReason != nil {
-			escalationReason = r.EscalationReason
-		}
-		if err := b.Append(r.AgentID, r.ConversationID, r.EndReason, escalationReason, r.StartedAt, r.EndedAt, r.ResolutionMs, r.OccurredAt); err != nil {
-			log.Printf("clickhouse append conversation_events: %v", err)
+		if err := b.Append(
+			r.ConversationID, r.AgentID, r.SessionID,
+			r.StartedAt, r.EndedAt, r.ResolutionMs, r.EndReason, r.MessageCount, r.Channel,
+			r.Intent, r.Intents, r.Topics,
+			r.Sentiment, r.SentimentScore, r.Language,
+			r.IsResolved, r.EscalationReason,
+			r.FirstResponseMs, r.UserSatisfaction,
+			r.Summary, r.Keywords, r.ExternalUserID, r.Tags, r.ModelVersion,
+			r.OccurredAt,
+		); err != nil {
+			log.Printf("clickhouse append conversation_analytics: %v", err)
 		}
 	}
 
 	if err := b.Send(); err != nil {
-		log.Printf("clickhouse batch send (conversation_events): %v", err)
+		log.Printf("clickhouse batch send (conversation_analytics): %v", err)
 		return
 	}
 
-	log.Printf("clickhouse: flushed %d conversation events", len(rows))
+	log.Printf("clickhouse: flushed %d conversation analytics rows", len(rows))
 }

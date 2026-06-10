@@ -8,5 +8,6 @@ type WebhookMessagesView struct {
 	StatusCode     int32     `json:"status_code"`
 	ResponseTimeMs int64     `json:"response_time_ms"`
 	IsSuccess      bool      `json:"is_success"`
+	Error          *string   `json:"error"`
 	OccurredAt     time.Time `json:"occurred_at"`
 }

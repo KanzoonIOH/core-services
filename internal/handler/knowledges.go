@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -50,7 +50,7 @@ func (h *KnowledgeHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	objectKey := fmt.Sprintf("knowledges/%s/%s", uuid.NewString(), sanitizeObjectFilename(fileHeader.Filename))
+	objectKey := fmt.Sprintf("knowledges/%s", timestampedObjectFilename(fileHeader.Filename))
 	sourceURI, err := h.ObjectStorage.Upload(r.Context(), objectKey, file, fileHeader.Header.Get("Content-Type"))
 	if err != nil {
 		fmt.Println(err)
@@ -111,6 +111,14 @@ func sanitizeObjectFilename(filename string) string {
 		return "upload"
 	}
 	return filename
+}
+
+func timestampedObjectFilename(filename string) string {
+	filename = sanitizeObjectFilename(filename)
+	ext := filepath.Ext(filename)
+	name := strings.TrimSuffix(filename, ext)
+
+	return fmt.Sprintf("%s_%d%s", name, time.Now().UnixMilli(), ext)
 }
 
 func (h *KnowledgeHandler) Read(w http.ResponseWriter, r *http.Request) {

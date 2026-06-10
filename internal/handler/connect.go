@@ -3,19 +3,33 @@ package handler
 import (
 	db "aiac-service/db/postgres/sqlc"
 	"aiac-service/internal/lib"
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// TODO: move to env config once the n8n workflow is finalized.
+const knowledgeWebhookURL = "http://localhost:5678/webhook/knowledge-conversion"
+
 type ConnectHandler struct {
-	Queries db.Querier
+	Queries    db.Querier
+	HTTPClient *http.Client
 }
 
 func NewConnectHandler(conn *pgxpool.Pool) *ConnectHandler {
-	return &ConnectHandler{Queries: db.New(conn)}
+	return &ConnectHandler{
+		Queries:    db.New(conn),
+		HTTPClient: &http.Client{Timeout: 30 * time.Second},
+	}
 }
 
 type connectAgentMcpRequest struct {
@@ -79,6 +93,16 @@ func (h *ConnectHandler) ConnectAgentKnowledge(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	knowledge, err := h.Queries.SelectKnowledgeById(r.Context(), req.KnowledgeId)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			lib.ResponseJSONError(w, http.StatusNotFound, "knowledge not found")
+			return
+		}
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to connect knowledge to agent")
+		return
+	}
+
 	agent_knowledge, err := h.Queries.InsertAgentKnowledge(r.Context(), db.InsertAgentKnowledgeParams{
 		AgentID:     req.AgentId,
 		KnowledgeID: req.KnowledgeId,
@@ -89,7 +113,62 @@ func (h *ConnectHandler) ConnectAgentKnowledge(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	go h.triggerKnowledgeConversion(agent_knowledge.ID, req.AgentId, req.KnowledgeId, knowledge.SourceUri)
+
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agent_knowledge, nil)
+}
+
+// triggerKnowledgeConversion fires the n8n conversion workflow webhook in the
+// background. It only reports trigger delivery: if the webhook cannot be
+// reached or rejects the request, the row is marked 'failed'. The final
+// 'completed'/'failed' status is reported by the workflow itself via the
+// agent-knowledge-status callback endpoint.
+func (h *ConnectHandler) triggerKnowledgeConversion(agentKnowledgeID, agentID, knowledgeID uuid.UUID, sourceURI *string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	payload, err := json.Marshal(map[string]any{
+		"agent_knowledge_id": agentKnowledgeID,
+		"agent_id":           agentID,
+		"knowledge_id":       knowledgeID,
+		"source_uri":         sourceURI,
+	})
+	if err != nil {
+		h.markKnowledgeConversionFailed(agentKnowledgeID, err)
+		return
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, knowledgeWebhookURL, bytes.NewReader(payload))
+	if err != nil {
+		h.markKnowledgeConversionFailed(agentKnowledgeID, err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := h.HTTPClient.Do(req)
+	if err != nil {
+		h.markKnowledgeConversionFailed(agentKnowledgeID, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		h.markKnowledgeConversionFailed(agentKnowledgeID, fmt.Errorf("webhook returned status %d", resp.StatusCode))
+	}
+}
+
+func (h *ConnectHandler) markKnowledgeConversionFailed(agentKnowledgeID uuid.UUID, cause error) {
+	log.Printf("knowledge conversion trigger failed for agent_knowledge %s: %v", agentKnowledgeID, cause)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if _, err := h.Queries.UpdateAgentKnowledgeStatus(ctx, db.UpdateAgentKnowledgeStatusParams{
+		Status: "failed",
+		ID:     agentKnowledgeID,
+	}); err != nil {
+		log.Printf("failed to mark agent_knowledge %s as failed: %v", agentKnowledgeID, err)
+	}
 }
 
 func (h *ConnectHandler) DisconnectAgentKnowledge(w http.ResponseWriter, r *http.Request) {

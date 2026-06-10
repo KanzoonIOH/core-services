@@ -35,7 +35,7 @@ VALUES (
     $5
 )
 RETURNING
-id, mcp_id, name, description, target_uri, input_schema, created_at, updated_at
+    id, mcp_id, name, description, target_uri, input_schema, created_at, updated_at
 `
 
 type InsertMcpToolParams struct {

@@ -83,10 +83,10 @@ func (h *MemberHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch req.Role {
-	case db.UserRoleAdmin, db.UserRoleUser:
+	case db.UserRoleADMIN, db.UserRoleVIEWER, db.UserRoleTECHNICAL:
 		// valid
 	default:
-		lib.ResponseJSONError(w, http.StatusBadRequest, "role must be one of: admin, user")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "role must be one of: ADMIN, VIEWER, TECHNICAL")
 		return
 	}
 

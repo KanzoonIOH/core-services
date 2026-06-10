@@ -24,9 +24,10 @@ import (
 
 // Topic names
 const (
-	TopicChatMessage          = "chat.webhook.message"
-	TopicConversationActivity = "chat.conversation.activity"
-	TopicConversationEnd      = "chat.conversation.end"
+	TopicChatMessage             = "chat.webhook.message"
+	TopicConversationActivity    = "chat.conversation.activity"
+	TopicConversationEnd         = "chat.conversation.end"
+	TopicConversationAnalytics   = "chat.conversation.analytics"
 )
 
 var insecureWebhookHosts = map[string]bool{

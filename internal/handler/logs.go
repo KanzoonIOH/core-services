@@ -4,6 +4,7 @@ import (
 	"aiac-service/db/clickhouse/store"
 	"aiac-service/internal/lib"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -50,6 +51,8 @@ func rangeSince(rng string) (since time.Time, step string) {
 		return now.AddDate(0, 0, -7), "day"
 	case "month":
 		return now.AddDate(0, -1, 0), "day"
+	case "3months":
+		return now.AddDate(0, -3, 0), "week"
 	default: // "day"
 		return now.Truncate(24 * time.Hour), "hour"
 	}
@@ -111,6 +114,41 @@ func (h *LogHandler) Timeseries(w http.ResponseWriter, r *http.Request) {
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, points, nil)
 }
 
+func (h *LogHandler) AgentPerformance(w http.ResponseWriter, r *http.Request) {
+	since, _ := rangeSince(r.URL.Query().Get("range"))
+
+	items, err := h.Queries.AgentPerformance(r.Context(), store.AgentPerformanceParams{
+		Since: since,
+		Limit: parseTopN(r),
+	})
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agent performance")
+		return
+	}
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, items, nil)
+}
+
+func (h *LogHandler) TrafficHeatmap(w http.ResponseWriter, r *http.Request) {
+	agentID, ok := parseAgentID(w, r)
+	if !ok {
+		return
+	}
+
+	since, _ := rangeSince(r.URL.Query().Get("range"))
+
+	items, err := h.Queries.TrafficHeatmap(r.Context(), store.TrafficHeatmapParams{
+		Since:   since,
+		AgentID: agentID,
+	})
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get traffic heatmap")
+		return
+	}
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, items, nil)
+}
+
 func (h *LogHandler) ReadMessagesByAgentId(w http.ResponseWriter, r *http.Request) {
 	id, ok := lib.ParseID(w, r, "id")
 	if !ok {
@@ -138,4 +176,138 @@ func (h *LogHandler) ReadMessagesByAgentId(w http.ResponseWriter, r *http.Reques
 	}
 
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, messages, lib.ResponsePagination(int(pagination.Limit), int(pagination.Offset), len(messages), int(totalRow)))
+}
+
+// ---------------------------------------------------------------------------
+// Conversation analytics handlers
+// ---------------------------------------------------------------------------
+
+// ConversationsSummary handles GET /api/logs/conversations/summary
+// Optional: ?agent_id=, ?range=day|week|month
+func (h *LogHandler) ConversationsSummary(w http.ResponseWriter, r *http.Request) {
+	agentID, ok := parseAgentID(w, r)
+	if !ok {
+		return
+	}
+
+	since, _ := rangeSince(r.URL.Query().Get("range"))
+
+	summary, err := h.Queries.ConversationsSummary(r.Context(), store.ConversationsSummaryParams{
+		AgentID: agentID,
+		Since:   since,
+	})
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get conversations summary")
+		return
+	}
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, summary, nil)
+}
+
+// ConversationsTimeseries handles GET /api/logs/conversations/timeseries
+// Optional: ?agent_id=, ?range=day|week|month
+func (h *LogHandler) ConversationsTimeseries(w http.ResponseWriter, r *http.Request) {
+	agentID, ok := parseAgentID(w, r)
+	if !ok {
+		return
+	}
+
+	since, step := rangeSince(r.URL.Query().Get("range"))
+
+	points, err := h.Queries.ConversationsTimeseries(r.Context(), store.ConversationsTimeseriesParams{
+		AgentID: agentID,
+		Since:   since,
+		Step:    step,
+	})
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get conversations timeseries")
+		return
+	}
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, points, nil)
+}
+
+// parseTopN reads the optional ?limit= query param for top-N breakdowns.
+// Defaults to 10, capped at 50.
+func parseTopN(r *http.Request) int32 {
+	raw := r.URL.Query().Get("limit")
+	if raw == "" {
+		return 10
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return 10
+	}
+	if n > 50 {
+		return 50
+	}
+	return int32(n)
+}
+
+// IntentStats handles GET /api/logs/conversations/intents
+// Optional: ?agent_id=, ?range=, ?limit=N (default 10, max 50)
+func (h *LogHandler) IntentStats(w http.ResponseWriter, r *http.Request) {
+	agentID, ok := parseAgentID(w, r)
+	if !ok {
+		return
+	}
+
+	since, _ := rangeSince(r.URL.Query().Get("range"))
+
+	stats, err := h.Queries.IntentStats(r.Context(), store.IntentStatsParams{
+		AgentID: agentID,
+		Since:   since,
+		Limit:   parseTopN(r),
+	})
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get intent stats")
+		return
+	}
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, stats, nil)
+}
+
+// TopicStats handles GET /api/logs/conversations/topics
+// Optional: ?agent_id=, ?range=, ?limit=N (default 10, max 50)
+func (h *LogHandler) TopicStats(w http.ResponseWriter, r *http.Request) {
+	agentID, ok := parseAgentID(w, r)
+	if !ok {
+		return
+	}
+
+	since, _ := rangeSince(r.URL.Query().Get("range"))
+
+	stats, err := h.Queries.TopicStats(r.Context(), store.TopicStatsParams{
+		AgentID: agentID,
+		Since:   since,
+		Limit:   parseTopN(r),
+	})
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get topic stats")
+		return
+	}
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, stats, nil)
+}
+
+// SentimentStats handles GET /api/logs/conversations/sentiment
+// Optional: ?agent_id=, ?range=
+func (h *LogHandler) SentimentStats(w http.ResponseWriter, r *http.Request) {
+	agentID, ok := parseAgentID(w, r)
+	if !ok {
+		return
+	}
+
+	since, _ := rangeSince(r.URL.Query().Get("range"))
+
+	stats, err := h.Queries.SentimentStats(r.Context(), store.SentimentStatsParams{
+		AgentID: agentID,
+		Since:   since,
+	})
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get sentiment stats")
+		return
+	}
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, stats, nil)
 }

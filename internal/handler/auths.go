@@ -156,8 +156,16 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	changeToken, err := lib.GenerateSecureToken(32)
+	if err != nil {
+		fmt.Printf("forgot-password: generate token: %v\n", err)
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to request changes")
+		return
+	}
+
 	upc, err := h.Queries.InsertUpcomingChange(r.Context(), db.InsertUpcomingChangeParams{
-		Type:   db.UpcomingChangesTypeForgotPassword,
+		Token:  changeToken,
+		Type:   db.UpcomingChangesTypeFORGOTPASSWORD,
 		UserID: user.ID,
 	})
 	if err != nil {

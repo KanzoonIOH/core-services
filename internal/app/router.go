@@ -33,6 +33,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 	knowledgeHandler := handler.NewKnowledgeHandler(conn, objectStorage)
 	agentKnowledgeHandler := handler.NewAgentKnowledgeHandler(conn)
 	connectHandler := handler.NewConnectHandler(conn)
+	callbackHandler := handler.NewCallbackHandler(conn)
 	authHandler := handler.NewAuthHandler(conn, signer, mailer)
 	meHandler := handler.NewMeHandler(conn, mailer)
 	confirmHandler := handler.NewConfirmHandler(conn)
@@ -58,6 +59,8 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 			// No timeout here — webhook forwards to upstream and may take a long time
 			r.Post("/chat/{id}", webhookHandler.ForwardChatWebhook)
 			r.Post("/chat/{id}/conversation/end", conversationHandler.EndConversation)
+			// Called by the n8n conversion workflow using an API key.
+			r.Patch("/callbacks/agent-knowledge-status", callbackHandler.UpdateAgentKnowledgeStatus)
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(signer))
@@ -119,10 +122,20 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 				r.Delete("/{id}", apiKeyHandler.Delete)
 			})
 			r.Route("/logs", func(r chi.Router) {
+				// webhook message logs
 				r.Get("/messages", logHandler.ReadMessages)
 				r.Get("/messages/{id}", logHandler.ReadMessagesByAgentId)
 				r.Get("/summary", logHandler.Summary)
 				r.Get("/timeseries", logHandler.Timeseries)
+				r.Get("/agents/performance", logHandler.AgentPerformance)
+				r.Get("/traffic-heatmap", logHandler.TrafficHeatmap)
+
+				// conversation analytics
+				r.Get("/conversations/summary", logHandler.ConversationsSummary)
+				r.Get("/conversations/timeseries", logHandler.ConversationsTimeseries)
+				r.Get("/conversations/intents", logHandler.IntentStats)
+				r.Get("/conversations/topics", logHandler.TopicStats)
+				r.Get("/conversations/sentiment", logHandler.SentimentStats)
 			})
 		})
 	})

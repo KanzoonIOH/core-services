@@ -13,11 +13,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// EndReason values for conversation_events.end_reason.
+// EndReason values for the mechanical conversation close trigger.
+// These mirror the PG CONVERSATION_END_REASON enum (lowercase on the wire).
+// Note: "resolved" is NOT an end_reason — resolution is a separate quality
+// outcome (is_resolved) derived later by the enrichment worker.
 const (
-	EndReasonResolved  = "resolved"
-	EndReasonEscalated = "escalated"
-	EndReasonTimedOut  = "timed_out"
+	EndReasonEscalated        = "escalated"
+	EndReasonTimedOut         = "timed_out"
+	EndReasonHumanConfirmed   = "human_confirmed"
+	EndReasonHumanIntercepted = "human_intercepted"
 )
 
 type ConversationHandler struct {
@@ -39,7 +43,7 @@ type endConversationRequest struct {
 	// SessionID is the conversation_id returned by ForwardChatWebhook via X-Session-Id.
 	SessionID string `json:"session_id"`
 
-	// EndReason must be one of: "resolved", "escalated", "timed_out".
+	// EndReason must be one of: "escalated", "timed_out", "human_confirmed", "human_intercepted".
 	EndReason string `json:"end_reason"`
 
 	// EscalationReason is required when end_reason is "escalated".
@@ -61,7 +65,8 @@ type endConversationRequest struct {
 //  3. TODO: read the Redis list for session_id to verify / enrich data.
 //  4. TODO: delete the Redis key after reading.
 //  5. Publish a chat.conversation.end event to Redpanda.
-//  6. The Kafka consumer will batch-flush this into ClickHouse conversation_events.
+//  6. The enrichment worker consumes this, runs NLP analysis, and publishes
+//     chat.conversation.analytics which the consumer flushes into ClickHouse.
 func (h *ConversationHandler) EndConversation(w http.ResponseWriter, r *http.Request) {
 	id, ok := lib.ParseID(w, r, "id")
 	if !ok {
@@ -89,10 +94,10 @@ func (h *ConversationHandler) EndConversation(w http.ResponseWriter, r *http.Req
 	}
 
 	switch req.EndReason {
-	case EndReasonResolved, EndReasonEscalated, EndReasonTimedOut:
+	case EndReasonEscalated, EndReasonTimedOut, EndReasonHumanConfirmed, EndReasonHumanIntercepted:
 		// valid
 	default:
-		lib.ResponseJSONError(w, http.StatusBadRequest, "end_reason must be one of: resolved, escalated, timed_out")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "end_reason must be one of: escalated, timed_out, human_confirmed, human_intercepted")
 		return
 	}
 

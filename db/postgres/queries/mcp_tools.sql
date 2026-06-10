@@ -8,7 +8,7 @@ VALUES (
     sqlc.narg(input_schema)
 )
 RETURNING
-id, mcp_id, name, description, target_uri, input_schema, created_at, updated_at;
+    id, mcp_id, name, description, target_uri, input_schema, created_at, updated_at;
 
 -- name: SelectMcpToolsByMcpId :many
 SELECT * FROM mcp_tools_view

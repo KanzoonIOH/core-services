@@ -13,6 +13,7 @@ import (
 
 const insertUpcomingChange = `-- name: InsertUpcomingChange :one
 INSERT INTO upcoming_changes (
+    token,
     type,
     user_id,
     upcoming_value
@@ -20,19 +21,26 @@ INSERT INTO upcoming_changes (
 VALUES (
     $1,
     $2,
-    $3
+    $3,
+    $4
 )
 RETURNING id, token, type, upcoming_value, user_id, created_at, expired_at, revoked_at
 `
 
 type InsertUpcomingChangeParams struct {
+	Token         string              `json:"token"`
 	Type          UpcomingChangesType `json:"type"`
 	UserID        uuid.UUID           `json:"user_id"`
 	UpcomingValue *string             `json:"upcoming_value"`
 }
 
 func (q *Queries) InsertUpcomingChange(ctx context.Context, arg InsertUpcomingChangeParams) (UpcomingChange, error) {
-	row := q.db.QueryRow(ctx, insertUpcomingChange, arg.Type, arg.UserID, arg.UpcomingValue)
+	row := q.db.QueryRow(ctx, insertUpcomingChange,
+		arg.Token,
+		arg.Type,
+		arg.UserID,
+		arg.UpcomingValue,
+	)
 	var i UpcomingChange
 	err := row.Scan(
 		&i.ID,

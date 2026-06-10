@@ -144,12 +144,100 @@ func (ns NullAgentTone) Value() (driver.Value, error) {
 	return string(ns.AgentTone), nil
 }
 
+type ConversationEndReason string
+
+const (
+	ConversationEndReasonRESOLVED  ConversationEndReason = "RESOLVED"
+	ConversationEndReasonESCALATED ConversationEndReason = "ESCALATED"
+	ConversationEndReasonTIMEDOUT  ConversationEndReason = "TIMED_OUT"
+)
+
+func (e *ConversationEndReason) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ConversationEndReason(s)
+	case string:
+		*e = ConversationEndReason(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ConversationEndReason: %T", src)
+	}
+	return nil
+}
+
+type NullConversationEndReason struct {
+	ConversationEndReason ConversationEndReason `json:"conversation_end_reason"`
+	Valid                 bool                  `json:"valid"` // Valid is true if ConversationEndReason is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullConversationEndReason) Scan(value interface{}) error {
+	if value == nil {
+		ns.ConversationEndReason, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ConversationEndReason.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullConversationEndReason) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ConversationEndReason), nil
+}
+
+type ConversationStatus string
+
+const (
+	ConversationStatusACTIVE           ConversationStatus = "ACTIVE"
+	ConversationStatusHUMANINTERCEPTED ConversationStatus = "HUMAN_INTERCEPTED"
+	ConversationStatusRESOLVED         ConversationStatus = "RESOLVED"
+	ConversationStatusESCALATED        ConversationStatus = "ESCALATED"
+	ConversationStatusTIMEDOUT         ConversationStatus = "TIMED_OUT"
+)
+
+func (e *ConversationStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ConversationStatus(s)
+	case string:
+		*e = ConversationStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ConversationStatus: %T", src)
+	}
+	return nil
+}
+
+type NullConversationStatus struct {
+	ConversationStatus ConversationStatus `json:"conversation_status"`
+	Valid              bool               `json:"valid"` // Valid is true if ConversationStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullConversationStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ConversationStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ConversationStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullConversationStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ConversationStatus), nil
+}
+
 type UpcomingChangesType string
 
 const (
-	UpcomingChangesTypeEmail          UpcomingChangesType = "email"
-	UpcomingChangesTypePassword       UpcomingChangesType = "password"
-	UpcomingChangesTypeForgotPassword UpcomingChangesType = "forgot-password"
+	UpcomingChangesTypeEMAIL          UpcomingChangesType = "EMAIL"
+	UpcomingChangesTypePASSWORD       UpcomingChangesType = "PASSWORD"
+	UpcomingChangesTypeFORGOTPASSWORD UpcomingChangesType = "FORGOT_PASSWORD"
 )
 
 func (e *UpcomingChangesType) Scan(src interface{}) error {
@@ -190,9 +278,11 @@ func (ns NullUpcomingChangesType) Value() (driver.Value, error) {
 type UserRole string
 
 const (
-	UserRoleAdmin UserRole = "admin"
-	UserRoleUser  UserRole = "user"
-	UserRoleNew   UserRole = "new"
+	UserRolePENDING    UserRole = "PENDING"
+	UserRoleVIEWER     UserRole = "VIEWER"
+	UserRoleTECHNICAL  UserRole = "TECHNICAL"
+	UserRoleADMIN      UserRole = "ADMIN"
+	UserRoleSUPERADMIN UserRole = "SUPERADMIN"
 )
 
 func (e *UserRole) Scan(src interface{}) error {
@@ -236,18 +326,19 @@ type Agent struct {
 	Description        *string                 `json:"description"`
 	IsActive           bool                    `json:"is_active"`
 	WebhookUri         string                  `json:"webhook_uri"`
-	CreatedAt          time.Time               `json:"created_at"`
-	UpdatedAt          time.Time               `json:"updated_at"`
-	DeletedAt          *time.Time              `json:"deleted_at"`
 	Tone               AgentTone               `json:"tone"`
 	ResponseLength     AgentResponseLength     `json:"response_length"`
 	CommunicationStyle AgentCommunicationStyle `json:"communication_style"`
+	CreatedAt          time.Time               `json:"created_at"`
+	UpdatedAt          time.Time               `json:"updated_at"`
+	DeletedAt          *time.Time              `json:"deleted_at"`
 }
 
 type AgentKnowledge struct {
 	ID           uuid.UUID  `json:"id"`
 	IsActiveProd bool       `json:"is_active_prod"`
 	IsActiveDev  bool       `json:"is_active_dev"`
+	Status       string     `json:"status"`
 	AgentID      uuid.UUID  `json:"agent_id"`
 	KnowledgeID  uuid.UUID  `json:"knowledge_id"`
 	CreatedAt    time.Time  `json:"created_at"`
@@ -263,6 +354,7 @@ type AgentKnowledgesView struct {
 	IsActiveDev  bool      `json:"is_active_dev"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+	Status       string    `json:"status"`
 }
 
 type AgentMcp struct {
@@ -310,6 +402,58 @@ type ApiKeysView struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type Conversation struct {
+	ID               uuid.UUID              `json:"id"`
+	SessionID        string                 `json:"session_id"`
+	Status           ConversationStatus     `json:"status"`
+	Channel          *string                `json:"channel"`
+	ExternalUserID   *string                `json:"external_user_id"`
+	Metadata         json.RawMessage        `json:"metadata"`
+	Tags             []string               `json:"tags"`
+	AgentID          uuid.UUID              `json:"agent_id"`
+	InterceptedBy    *uuid.UUID             `json:"intercepted_by"`
+	ClosedBy         *uuid.UUID             `json:"closed_by"`
+	StartedAt        time.Time              `json:"started_at"`
+	InterceptedAt    *time.Time             `json:"intercepted_at"`
+	EndedAt          *time.Time             `json:"ended_at"`
+	TimedOutAt       *time.Time             `json:"timed_out_at"`
+	DeletedAt        *time.Time             `json:"deleted_at"`
+	EndReason        *ConversationEndReason `json:"end_reason"`
+	EscalationReason *string                `json:"escalation_reason"`
+	CloseNote        *string                `json:"close_note"`
+	MessageCount     int32                  `json:"message_count"`
+	SuccessCount     int32                  `json:"success_count"`
+	FailureCount     int32                  `json:"failure_count"`
+	FirstResponseMs  *int64                 `json:"first_response_ms"`
+	ResolutionMs     *int64                 `json:"resolution_ms"`
+}
+
+type ConversationsView struct {
+	ID               uuid.UUID              `json:"id"`
+	SessionID        string                 `json:"session_id"`
+	Status           ConversationStatus     `json:"status"`
+	Channel          *string                `json:"channel"`
+	ExternalUserID   *string                `json:"external_user_id"`
+	Metadata         json.RawMessage        `json:"metadata"`
+	Tags             []string               `json:"tags"`
+	AgentID          uuid.UUID              `json:"agent_id"`
+	InterceptedBy    *uuid.UUID             `json:"intercepted_by"`
+	ClosedBy         *uuid.UUID             `json:"closed_by"`
+	StartedAt        time.Time              `json:"started_at"`
+	InterceptedAt    *time.Time             `json:"intercepted_at"`
+	EndedAt          *time.Time             `json:"ended_at"`
+	TimedOutAt       *time.Time             `json:"timed_out_at"`
+	EndReason        *ConversationEndReason `json:"end_reason"`
+	EscalationReason *string                `json:"escalation_reason"`
+	CloseNote        *string                `json:"close_note"`
+	MessageCount     int32                  `json:"message_count"`
+	SuccessCount     int32                  `json:"success_count"`
+	FailureCount     int32                  `json:"failure_count"`
+	FirstResponseMs  *int64                 `json:"first_response_ms"`
+	ResolutionMs     *int64                 `json:"resolution_ms"`
+	HumanIntercepted interface{}            `json:"human_intercepted"`
+}
+
 type Knowledge struct {
 	ID          uuid.UUID  `json:"id"`
 	Name        string     `json:"name"`
@@ -346,11 +490,11 @@ type McpTool struct {
 	Name        string          `json:"name"`
 	Description *string         `json:"description"`
 	TargetUri   string          `json:"target_uri"`
+	InputSchema json.RawMessage `json:"input_schema"`
 	McpID       uuid.UUID       `json:"mcp_id"`
 	CreatedAt   time.Time       `json:"created_at"`
 	UpdatedAt   time.Time       `json:"updated_at"`
 	DeletedAt   *time.Time      `json:"deleted_at"`
-	InputSchema json.RawMessage `json:"input_schema"`
 }
 
 type McpToolsView struct {

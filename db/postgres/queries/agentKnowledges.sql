@@ -5,7 +5,7 @@ VALUES (
     sqlc.arg(knowledge_id)
 )
 RETURNING
-    id, agent_id, knowledge_id, is_active_prod, is_active_dev, created_at, updated_at;
+    id, agent_id, knowledge_id, is_active_prod, is_active_dev, status, created_at, updated_at;
 
 -- name: CountAgentKnowledgesByAgentId :one
 SELECT COUNT(*)
@@ -42,7 +42,16 @@ WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id)
 RETURNING
-    id, agent_id, knowledge_id, is_active_prod, is_active_dev, created_at, updated_at;
+    id, agent_id, knowledge_id, is_active_prod, is_active_dev, status, created_at, updated_at;
+
+-- name: UpdateAgentKnowledgeStatus :execrows
+UPDATE agent_knowledges
+SET
+    status = sqlc.arg(status),
+    updated_at = NOW()
+WHERE
+    deleted_at IS NULL
+    AND id = sqlc.arg(id);
 
 -- name: SoftDeleteAgentKnowledge :execrows
 UPDATE agent_knowledges

@@ -20,6 +20,7 @@ SELECT
     status_code,
     response_time_ms,
     is_success,
+    error,
     occurred_at
 FROM webhook_messages
 ORDER BY occurred_at DESC
@@ -46,6 +47,7 @@ func (q *Queries) SelectMessages(ctx context.Context, arg SelectMessagesParams) 
 			&i.StatusCode,
 			&i.ResponseTimeMs,
 			&i.IsSuccess,
+			&i.Error,
 			&i.OccurredAt,
 		); err != nil {
 			return nil, err
@@ -77,6 +79,7 @@ SELECT
     status_code,
     response_time_ms,
     is_success,
+    error,
     occurred_at
 FROM webhook_messages
 WHERE agent_id = ?
@@ -105,6 +108,7 @@ func (q *Queries) SelectMessagesByAgentId(ctx context.Context, arg SelectMessage
 			&i.StatusCode,
 			&i.ResponseTimeMs,
 			&i.IsSuccess,
+			&i.Error,
 			&i.OccurredAt,
 		); err != nil {
 			return nil, err
