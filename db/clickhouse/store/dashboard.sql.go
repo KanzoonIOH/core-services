@@ -6,23 +6,18 @@ import (
 )
 
 type SummaryView struct {
-	Total               int64   `json:"total"`
-	SuccessCount        int64   `json:"success_count"`
-	FailureCount        int64   `json:"failure_count"`
-	SuccessRate         float64 `json:"success_rate"`
-	P50ResponseMs       float64 `json:"p50_response_ms"`
-	P95ResponseMs       float64 `json:"p95_response_ms"`
-	P99ResponseMs       float64 `json:"p99_response_ms"`
-	Success2xx          int64   `json:"success_2xx"`
-	Redirect3xx         int64   `json:"redirect_3xx"`
-	Client4xx           int64   `json:"client_4xx"`
-	Server5xx           int64   `json:"server_5xx"`
-	Gateway502          int64   `json:"gateway_502"`
-	NoResponse          int64   `json:"no_response"`
-	OtherStatus         int64   `json:"other_status"`
-	UniqConversations   int64   `json:"uniq_conversations"`
-	UniqAgents          int64   `json:"uniq_agents"`
-	AvgMessagesPerConvo float64 `json:"avg_messages_per_convo"`
+	Total                int64   `json:"total"`
+	SuccessCount         int64   `json:"success_count"`
+	FailureCount         int64   `json:"failure_count"`
+	SuccessRate          float64 `json:"success_rate"`
+	SuccessAvgResponseMs float64 `json:"success_avg_response_ms"`
+	P50ResponseMs        float64 `json:"p50_response_ms"`
+	P90ResponseMs        float64 `json:"p90_response_ms"`
+	P95ResponseMs        float64 `json:"p95_response_ms"`
+	P99ResponseMs        float64 `json:"p99_response_ms"`
+	UniqConversations    int64   `json:"uniq_conversations"`
+	UniqAgents           int64   `json:"uniq_agents"`
+	AvgMessagesPerConvo  float64 `json:"avg_messages_per_convo"`
 }
 
 type TimeseriesPointView struct {
@@ -31,18 +26,20 @@ type TimeseriesPointView struct {
 	SuccessCount  int64     `json:"success_count"`
 	SuccessRate   float64   `json:"success_rate"`
 	P50ResponseMs float64   `json:"p50_response_ms"`
+	P90ResponseMs float64   `json:"p90_response_ms"`
 	P95ResponseMs float64   `json:"p95_response_ms"`
 	P99ResponseMs float64   `json:"p99_response_ms"`
 }
 
 type AgentPerformanceRow struct {
-	AgentID       string  `json:"agent_id"`
-	Total         int64   `json:"total"`
-	SuccessCount  int64   `json:"success_count"`
-	SuccessRate   float64 `json:"success_rate"`
-	P95ResponseMs float64 `json:"p95_response_ms"`
-	Server5xx     int64   `json:"server_5xx"`
-	NoResponse    int64   `json:"no_response"`
+	AgentID              string  `json:"agent_id"`
+	Total                int64   `json:"total"`
+	SuccessCount         int64   `json:"success_count"`
+	FailureCount         int64   `json:"failure_count"`
+	SuccessRate          float64 `json:"success_rate"`
+	SuccessAvgResponseMs float64 `json:"success_avg_response_ms"`
+	P90ResponseMs        float64 `json:"p90_response_ms"`
+	P95ResponseMs        float64 `json:"p95_response_ms"`
 }
 
 type TrafficHeatmapRow struct {
@@ -58,14 +55,8 @@ SELECT
     countMerge(total),
     countIfMerge(success_count),
     countIfMerge(failure_count),
-    quantilesTDigestMerge(0.5, 0.95, 0.99)(resp_time_pct),
-    countIfMerge(success_2xx_count),
-    countIfMerge(redirect_3xx_count),
-    countIfMerge(client_4xx_count),
-    countIfMerge(server_5xx_count),
-    countIfMerge(gateway_502_count),
-    countIfMerge(no_response_count),
-    countIfMerge(other_status_count),
+    sumMerge(success_resp_time_sum),
+    quantilesTDigestMerge(0.5, 0.9, 0.95, 0.99)(resp_time_pct),
     uniqMerge(uniq_convos),
     uniqExact(agent_id)
 FROM webhook_messages_hourly
@@ -77,14 +68,8 @@ SELECT
     countMerge(total),
     countIfMerge(success_count),
     countIfMerge(failure_count),
-    quantilesTDigestMerge(0.5, 0.95, 0.99)(resp_time_pct),
-    countIfMerge(success_2xx_count),
-    countIfMerge(redirect_3xx_count),
-    countIfMerge(client_4xx_count),
-    countIfMerge(server_5xx_count),
-    countIfMerge(gateway_502_count),
-    countIfMerge(no_response_count),
-    countIfMerge(other_status_count),
+    sumMerge(success_resp_time_sum),
+    quantilesTDigestMerge(0.5, 0.9, 0.95, 0.99)(resp_time_pct),
     uniqMerge(uniq_convos),
     uniqExact(agent_id)
 FROM webhook_messages_hourly
@@ -108,29 +93,26 @@ func (q *Queries) MessagesSummary(ctx context.Context, arg MessagesSummaryParams
 	}
 
 	var (
-		total        uint64
-		successCount uint64
-		failureCount uint64
-		percentiles  []float64
-		success2xx   uint64
-		redirect3xx  uint64
-		client4xx    uint64
-		server5xx    uint64
-		gateway502   uint64
-		noResponse   uint64
-		otherStatus  uint64
-		uniqConvos   uint64
-		uniqAgents   uint64
+		total              uint64
+		successCount       uint64
+		failureCount       uint64
+		successRespTimeSum int64
+		percentiles        []float64
+		uniqConvos         uint64
+		uniqAgents         uint64
 	)
-	if err := row.Scan(&total, &successCount, &failureCount, &percentiles, &success2xx, &redirect3xx, &client4xx, &server5xx, &gateway502, &noResponse, &otherStatus, &uniqConvos, &uniqAgents); err != nil {
+	if err := row.Scan(&total, &successCount, &failureCount, &successRespTimeSum, &percentiles, &uniqConvos, &uniqAgents); err != nil {
 		return SummaryView{}, err
 	}
 
-	p50, p95, p99 := splitPercentiles(percentiles)
+	p50, p90, p95, p99 := splitPercentiles(percentiles)
 
-	var successRate float64
+	var successRate, successAvgResponseMs float64
 	if total > 0 {
 		successRate = float64(successCount) / float64(total)
+	}
+	if successCount > 0 {
+		successAvgResponseMs = float64(successRespTimeSum) / float64(successCount)
 	}
 
 	var avgMessagesPerConvo float64
@@ -139,23 +121,18 @@ func (q *Queries) MessagesSummary(ctx context.Context, arg MessagesSummaryParams
 	}
 
 	return SummaryView{
-		Total:               int64(total),
-		SuccessCount:        int64(successCount),
-		FailureCount:        int64(failureCount),
-		SuccessRate:         successRate,
-		P50ResponseMs:       p50,
-		P95ResponseMs:       p95,
-		P99ResponseMs:       p99,
-		Success2xx:          int64(success2xx),
-		Redirect3xx:         int64(redirect3xx),
-		Client4xx:           int64(client4xx),
-		Server5xx:           int64(server5xx),
-		Gateway502:          int64(gateway502),
-		NoResponse:          int64(noResponse),
-		OtherStatus:         int64(otherStatus),
-		UniqConversations:   int64(uniqConvos),
-		UniqAgents:          int64(uniqAgents),
-		AvgMessagesPerConvo: avgMessagesPerConvo,
+		Total:                int64(total),
+		SuccessCount:         int64(successCount),
+		FailureCount:         int64(failureCount),
+		SuccessRate:          successRate,
+		SuccessAvgResponseMs: successAvgResponseMs,
+		P50ResponseMs:        p50,
+		P90ResponseMs:        p90,
+		P95ResponseMs:        p95,
+		P99ResponseMs:        p99,
+		UniqConversations:    int64(uniqConvos),
+		UniqAgents:           int64(uniqAgents),
+		AvgMessagesPerConvo:  avgMessagesPerConvo,
 	}, nil
 }
 
@@ -164,7 +141,7 @@ SELECT
     toStartOfHour(bucket) AS step,
     countMerge(total) AS total,
     countIfMerge(success_count) AS success_count,
-    quantilesTDigestMerge(0.5, 0.95, 0.99)(resp_time_pct) AS response_percentiles
+    quantilesTDigestMerge(0.5, 0.9, 0.95, 0.99)(resp_time_pct) AS response_percentiles
 FROM webhook_messages_hourly
 WHERE bucket >= ?
 GROUP BY step
@@ -176,7 +153,7 @@ SELECT
     toStartOfHour(bucket) AS step,
     countMerge(total) AS total,
     countIfMerge(success_count) AS success_count,
-    quantilesTDigestMerge(0.5, 0.95, 0.99)(resp_time_pct) AS response_percentiles
+    quantilesTDigestMerge(0.5, 0.9, 0.95, 0.99)(resp_time_pct) AS response_percentiles
 FROM webhook_messages_hourly
 WHERE bucket >= ? AND agent_id = ?
 GROUP BY step
@@ -188,7 +165,7 @@ SELECT
     toStartOfDay(bucket) AS step,
     countMerge(total) AS total,
     countIfMerge(success_count) AS success_count,
-    quantilesTDigestMerge(0.5, 0.95, 0.99)(resp_time_pct) AS response_percentiles
+    quantilesTDigestMerge(0.5, 0.9, 0.95, 0.99)(resp_time_pct) AS response_percentiles
 FROM webhook_messages_hourly
 WHERE bucket >= ?
 GROUP BY step
@@ -200,7 +177,7 @@ SELECT
     toStartOfDay(bucket) AS step,
     countMerge(total) AS total,
     countIfMerge(success_count) AS success_count,
-    quantilesTDigestMerge(0.5, 0.95, 0.99)(resp_time_pct) AS response_percentiles
+    quantilesTDigestMerge(0.5, 0.9, 0.95, 0.99)(resp_time_pct) AS response_percentiles
 FROM webhook_messages_hourly
 WHERE bucket >= ? AND agent_id = ?
 GROUP BY step
@@ -257,7 +234,7 @@ func (q *Queries) MessagesTimeseries(ctx context.Context, arg MessagesTimeseries
 			return nil, err
 		}
 
-		p50, p95, p99 := splitPercentiles(percentiles)
+		p50, p90, p95, p99 := splitPercentiles(percentiles)
 
 		var rate float64
 		if total > 0 {
@@ -270,6 +247,7 @@ func (q *Queries) MessagesTimeseries(ctx context.Context, arg MessagesTimeseries
 			SuccessCount:  int64(successCount),
 			SuccessRate:   rate,
 			P50ResponseMs: p50,
+			P90ResponseMs: p90,
 			P95ResponseMs: p95,
 			P99ResponseMs: p99,
 		})
@@ -285,14 +263,14 @@ SELECT
     agent_id,
     countMerge(total) AS total,
     countIfMerge(success_count) AS success_count,
-    quantilesTDigestMerge(0.5, 0.95, 0.99)(resp_time_pct) AS response_percentiles,
-    countIfMerge(server_5xx_count) AS server_5xx,
-    countIfMerge(no_response_count) AS no_response
+    countIfMerge(failure_count) AS failure_count,
+    sumMerge(success_resp_time_sum) AS success_resp_time_sum,
+    quantilesTDigestMerge(0.5, 0.9, 0.95, 0.99)(resp_time_pct) AS response_percentiles
 FROM webhook_messages_hourly
 WHERE bucket >= ?
 GROUP BY agent_id
 HAVING total > 0
-ORDER BY success_count / total ASC, arrayElement(response_percentiles, 2) DESC
+ORDER BY success_count / total ASC, arrayElement(response_percentiles, 3) DESC
 LIMIT ?
 `
 
@@ -311,31 +289,35 @@ func (q *Queries) AgentPerformance(ctx context.Context, arg AgentPerformancePara
 	items := []AgentPerformanceRow{}
 	for rows.Next() {
 		var (
-			agentID      string
-			total        uint64
-			successCount uint64
-			percentiles  []float64
-			server5xx    uint64
-			noResponse   uint64
+			agentID            string
+			total              uint64
+			successCount       uint64
+			failureCount       uint64
+			successRespTimeSum int64
+			percentiles        []float64
 		)
-		if err := rows.Scan(&agentID, &total, &successCount, &percentiles, &server5xx, &noResponse); err != nil {
+		if err := rows.Scan(&agentID, &total, &successCount, &failureCount, &successRespTimeSum, &percentiles); err != nil {
 			return nil, err
 		}
 
-		_, p95, _ := splitPercentiles(percentiles)
-		var rate float64
+		_, p90, p95, _ := splitPercentiles(percentiles)
+		var rate, successAvgResponseMs float64
 		if total > 0 {
 			rate = float64(successCount) / float64(total)
 		}
+		if successCount > 0 {
+			successAvgResponseMs = float64(successRespTimeSum) / float64(successCount)
+		}
 
 		items = append(items, AgentPerformanceRow{
-			AgentID:       agentID,
-			Total:         int64(total),
-			SuccessCount:  int64(successCount),
-			SuccessRate:   rate,
-			P95ResponseMs: p95,
-			Server5xx:     int64(server5xx),
-			NoResponse:    int64(noResponse),
+			AgentID:              agentID,
+			Total:                int64(total),
+			SuccessCount:         int64(successCount),
+			FailureCount:         int64(failureCount),
+			SuccessRate:          rate,
+			SuccessAvgResponseMs: successAvgResponseMs,
+			P90ResponseMs:        p90,
+			P95ResponseMs:        p95,
 		})
 	}
 	return items, rows.Err()
@@ -413,17 +395,20 @@ func (q *Queries) TrafficHeatmap(ctx context.Context, arg TrafficHeatmapParams) 
 	return items, rows.Err()
 }
 
-func splitPercentiles(percentiles []float64) (p50, p95, p99 float64) {
+func splitPercentiles(percentiles []float64) (p50, p90, p95, p99 float64) {
 	if len(percentiles) > 0 {
 		p50 = percentiles[0]
 	}
 	if len(percentiles) > 1 {
-		p95 = percentiles[1]
+		p90 = percentiles[1]
 	}
 	if len(percentiles) > 2 {
-		p99 = percentiles[2]
+		p95 = percentiles[2]
 	}
-	return p50, p95, p99
+	if len(percentiles) > 3 {
+		p99 = percentiles[3]
+	}
+	return p50, p90, p95, p99
 }
 
 func truncateToDay(t time.Time) time.Time {

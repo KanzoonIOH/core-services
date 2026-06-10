@@ -34,7 +34,7 @@ type Config struct {
 // ConfigFromEnv builds a Config from the environment, applying defaults.
 func ConfigFromEnv() Config {
 	return Config{
-		ConversationTimeout: envDuration("TIMER_CONVERSATION_TIMEOUT", 5*time.Minute),
+		ConversationTimeout: envDuration("TIMER_CONVERSATION_TIMEOUT", 10*time.Second),
 		PollEvery:           envDuration("TIMER_POLL_INTERVAL", 500*time.Millisecond),
 		EventBuffer:         envInt("TIMER_EVENT_BUFFER", 256),
 		PollBatch:           envInt("TIMER_POLL_BATCH", 100),

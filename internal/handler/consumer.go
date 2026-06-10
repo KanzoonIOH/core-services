@@ -8,6 +8,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -69,6 +70,21 @@ type ConversationAnalyticsEvent struct {
 	OccurredAt       time.Time `json:"occurred_at"`
 }
 
+// ConversationEndEvent is published when a conversation mechanically ends. For
+// now only timed-out events are inserted directly, so dashboards can show
+// timeout insight before the enrichment worker exists.
+type ConversationEndEvent struct {
+	ConversationID   string    `json:"conversation_id"`
+	AgentID          string    `json:"agent_id"`
+	SessionID        string    `json:"session_id"`
+	StartedAt        time.Time `json:"started_at"`
+	EndedAt          time.Time `json:"ended_at"`
+	ResolutionMs     int64     `json:"resolution_ms"`
+	EndReason        string    `json:"end_reason"`
+	EscalationReason string    `json:"escalation_reason"`
+	OccurredAt       time.Time `json:"occurred_at"`
+}
+
 // ConversationAnalyticsRow is what gets written to ClickHouse conversation_analytics.
 type ConversationAnalyticsRow struct {
 	ConversationID   string
@@ -99,17 +115,14 @@ type ConversationAnalyticsRow struct {
 }
 
 // StartChatConsumer runs a background goroutine that:
-//  1. Consumes chat.webhook.message and chat.conversation.analytics from Redpanda
+//  1. Consumes chat webhook/conversation events from Redpanda
 //  2. Batches rows in memory per table
 //  3. Flushes to ClickHouse every flushEvery or when flushSize is reached
-//
-// chat.conversation.end is published by this service but consumed by the
-// external enrichment worker — this consumer does not act on it.
 func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouseClient) {
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(brokers...),
 		kgo.ConsumerGroup(consumerGroup),
-		kgo.ConsumeTopics(TopicChatMessage, TopicConversationAnalytics),
+		kgo.ConsumeTopics(TopicChatMessage, TopicConversationAnalytics, TopicConversationEnd),
 	)
 	if err != nil {
 		log.Fatalf("chat consumer: %v", err)
@@ -166,6 +179,10 @@ func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouse
 						log.Printf("chat consumer unmarshal message: %v", err)
 						return
 					}
+					if _, err := uuid.Parse(evt.AgentID); err != nil {
+						log.Printf("chat consumer skip message with invalid agent_id=%q", evt.AgentID)
+						return
+					}
 					occurredAt := evt.OccurredAt
 					if occurredAt.IsZero() {
 						occurredAt = time.Now().UTC()
@@ -187,6 +204,10 @@ func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouse
 					var evt ConversationAnalyticsEvent
 					if err := json.Unmarshal(rec.Value, &evt); err != nil {
 						log.Printf("chat consumer unmarshal analytics: %v", err)
+						return
+					}
+					if _, err := uuid.Parse(evt.AgentID); err != nil {
+						log.Printf("chat consumer skip analytics with invalid agent_id=%q", evt.AgentID)
 						return
 					}
 					occurredAt := evt.OccurredAt
@@ -228,6 +249,21 @@ func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouse
 					row.FirstResponseMs = evt.FirstResponseMs
 					row.UserSatisfaction = evt.UserSatisfaction
 					analyticsBatch = append(analyticsBatch, row)
+
+				case TopicConversationEnd:
+					var evt ConversationEndEvent
+					if err := json.Unmarshal(rec.Value, &evt); err != nil {
+						log.Printf("chat consumer unmarshal conversation end: %v", err)
+						return
+					}
+					if evt.EndReason != EndReasonTimedOut {
+						return
+					}
+					row, ok := timedOutAnalyticsRow(evt)
+					if !ok {
+						return
+					}
+					analyticsBatch = append(analyticsBatch, row)
 				}
 			})
 
@@ -246,6 +282,78 @@ func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouse
 			}
 		}
 	}()
+}
+
+func timedOutAnalyticsRow(evt ConversationEndEvent) (ConversationAnalyticsRow, bool) {
+	if _, err := uuid.Parse(evt.AgentID); err != nil {
+		log.Printf("chat consumer skip conversation end with invalid agent_id=%q", evt.AgentID)
+		return ConversationAnalyticsRow{}, false
+	}
+	if evt.ConversationID == "" {
+		log.Printf("chat consumer skip conversation end with empty conversation_id")
+		return ConversationAnalyticsRow{}, false
+	}
+
+	endedAt := evt.EndedAt
+	if endedAt.IsZero() {
+		endedAt = evt.OccurredAt
+	}
+	if endedAt.IsZero() {
+		endedAt = time.Now().UTC()
+	}
+
+	startedAt := evt.StartedAt
+	if startedAt.IsZero() {
+		startedAt = endedAt
+	}
+
+	resolutionMs := evt.ResolutionMs
+	if resolutionMs <= 0 {
+		resolutionMs = endedAt.Sub(startedAt).Milliseconds()
+		if resolutionMs < 0 {
+			resolutionMs = 0
+		}
+	}
+
+	occurredAt := evt.OccurredAt
+	if occurredAt.IsZero() {
+		occurredAt = endedAt
+	}
+
+	sessionID := evt.SessionID
+	if sessionID == "" {
+		sessionID = evt.ConversationID
+	}
+
+	var escalationReason *string
+	if evt.EscalationReason != "" {
+		escalationReason = &evt.EscalationReason
+	}
+
+	return ConversationAnalyticsRow{
+		ConversationID:   evt.ConversationID,
+		AgentID:          evt.AgentID,
+		SessionID:        sessionID,
+		StartedAt:        startedAt,
+		EndedAt:          endedAt,
+		ResolutionMs:     resolutionMs,
+		EndReason:        EndReasonTimedOut,
+		MessageCount:     0,
+		Channel:          "webhook",
+		Intent:           "",
+		Intents:          []string{},
+		Topics:           []string{},
+		Sentiment:        "unknown",
+		SentimentScore:   0,
+		Language:         "",
+		IsResolved:       false,
+		EscalationReason: escalationReason,
+		Summary:          "Conversation timed out",
+		Keywords:         []string{},
+		Tags:             []string{"timed_out"},
+		ModelVersion:     "system-timeout",
+		OccurredAt:       occurredAt,
+	}, true
 }
 
 func flushMessages(ctx context.Context, ch *lib.ClickHouseClient, rows []ChatMessageRow) {
