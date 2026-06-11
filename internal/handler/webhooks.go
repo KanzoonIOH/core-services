@@ -24,10 +24,10 @@ import (
 
 // Topic names
 const (
-	TopicChatMessage             = "chat.webhook.message"
-	TopicConversationActivity    = "chat.conversation.activity"
-	TopicConversationEnd         = "chat.conversation.end"
-	TopicConversationAnalytics   = "chat.conversation.analytics"
+	TopicChatMessage           = "chat.webhook.message"
+	TopicConversationActivity  = "chat.conversation.activity"
+	TopicConversationEnd       = "chat.conversation.end"
+	TopicConversationAnalytics = "chat.conversation.analytics"
 )
 
 var insecureWebhookHosts = map[string]bool{
@@ -206,6 +206,7 @@ func (h *WebhookHandler) publishWebhookMessage(agentID, conversationID string, s
 	}); err != nil {
 		log.Printf("kafka publish %s: %v", TopicChatMessage, err)
 	}
+	log.Printf("kafka publish %s: published", TopicChatMessage)
 }
 
 func copyForwardHeaders(dst http.Header, src http.Header) {
