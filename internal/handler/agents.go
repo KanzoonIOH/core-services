@@ -143,7 +143,7 @@ func (h *AgentHandler) ReadByKnowledgeId(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	totalRow, err := h.Queries.CountAgentsByKnowledgeId(r.Context(), knowledge_id)
+	totalRow, err := h.Queries.CountAgentsByKnowledgeId(r.Context())
 	if err != nil {
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agents")
 		return

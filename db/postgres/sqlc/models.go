@@ -147,9 +147,10 @@ func (ns NullAgentTone) Value() (driver.Value, error) {
 type ConversationEndReason string
 
 const (
-	ConversationEndReasonRESOLVED  ConversationEndReason = "RESOLVED"
-	ConversationEndReasonESCALATED ConversationEndReason = "ESCALATED"
-	ConversationEndReasonTIMEDOUT  ConversationEndReason = "TIMED_OUT"
+	ConversationEndReasonESCALATED        ConversationEndReason = "ESCALATED"
+	ConversationEndReasonTIMEDOUT         ConversationEndReason = "TIMED_OUT"
+	ConversationEndReasonHUMANCONFIRMED   ConversationEndReason = "HUMAN_CONFIRMED"
+	ConversationEndReasonHUMANINTERCEPTED ConversationEndReason = "HUMAN_INTERCEPTED"
 )
 
 func (e *ConversationEndReason) Scan(src interface{}) error {
@@ -185,51 +186,6 @@ func (ns NullConversationEndReason) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return string(ns.ConversationEndReason), nil
-}
-
-type ConversationStatus string
-
-const (
-	ConversationStatusACTIVE           ConversationStatus = "ACTIVE"
-	ConversationStatusHUMANINTERCEPTED ConversationStatus = "HUMAN_INTERCEPTED"
-	ConversationStatusRESOLVED         ConversationStatus = "RESOLVED"
-	ConversationStatusESCALATED        ConversationStatus = "ESCALATED"
-	ConversationStatusTIMEDOUT         ConversationStatus = "TIMED_OUT"
-)
-
-func (e *ConversationStatus) Scan(src interface{}) error {
-	switch s := src.(type) {
-	case []byte:
-		*e = ConversationStatus(s)
-	case string:
-		*e = ConversationStatus(s)
-	default:
-		return fmt.Errorf("unsupported scan type for ConversationStatus: %T", src)
-	}
-	return nil
-}
-
-type NullConversationStatus struct {
-	ConversationStatus ConversationStatus `json:"conversation_status"`
-	Valid              bool               `json:"valid"` // Valid is true if ConversationStatus is not NULL
-}
-
-// Scan implements the Scanner interface.
-func (ns *NullConversationStatus) Scan(value interface{}) error {
-	if value == nil {
-		ns.ConversationStatus, ns.Valid = "", false
-		return nil
-	}
-	ns.Valid = true
-	return ns.ConversationStatus.Scan(value)
-}
-
-// Value implements the driver Valuer interface.
-func (ns NullConversationStatus) Value() (driver.Value, error) {
-	if !ns.Valid {
-		return nil, nil
-	}
-	return string(ns.ConversationStatus), nil
 }
 
 type UpcomingChangesType string
@@ -403,55 +359,28 @@ type ApiKeysView struct {
 }
 
 type Conversation struct {
-	ID               uuid.UUID              `json:"id"`
-	SessionID        string                 `json:"session_id"`
-	Status           ConversationStatus     `json:"status"`
-	Channel          *string                `json:"channel"`
-	ExternalUserID   *string                `json:"external_user_id"`
-	Metadata         json.RawMessage        `json:"metadata"`
-	Tags             []string               `json:"tags"`
-	AgentID          uuid.UUID              `json:"agent_id"`
-	InterceptedBy    *uuid.UUID             `json:"intercepted_by"`
-	ClosedBy         *uuid.UUID             `json:"closed_by"`
-	StartedAt        time.Time              `json:"started_at"`
-	InterceptedAt    *time.Time             `json:"intercepted_at"`
-	EndedAt          *time.Time             `json:"ended_at"`
-	TimedOutAt       *time.Time             `json:"timed_out_at"`
-	DeletedAt        *time.Time             `json:"deleted_at"`
-	EndReason        *ConversationEndReason `json:"end_reason"`
-	EscalationReason *string                `json:"escalation_reason"`
-	CloseNote        *string                `json:"close_note"`
-	MessageCount     int32                  `json:"message_count"`
-	SuccessCount     int32                  `json:"success_count"`
-	FailureCount     int32                  `json:"failure_count"`
-	FirstResponseMs  *int64                 `json:"first_response_ms"`
-	ResolutionMs     *int64                 `json:"resolution_ms"`
+	ID           uuid.UUID              `json:"id"`
+	IsActive     bool                   `json:"is_active"`
+	AgentID      uuid.UUID              `json:"agent_id"`
+	StartedAt    time.Time              `json:"started_at"`
+	EndedAt      *time.Time             `json:"ended_at"`
+	EndReason    *ConversationEndReason `json:"end_reason"`
+	IsResolved   *bool                  `json:"is_resolved"`
+	DeletedAt    *time.Time             `json:"deleted_at"`
+	MessageCount int32                  `json:"message_count"`
+	ResolutionMs *int64                 `json:"resolution_ms"`
 }
 
 type ConversationsView struct {
-	ID               uuid.UUID              `json:"id"`
-	SessionID        string                 `json:"session_id"`
-	Status           ConversationStatus     `json:"status"`
-	Channel          *string                `json:"channel"`
-	ExternalUserID   *string                `json:"external_user_id"`
-	Metadata         json.RawMessage        `json:"metadata"`
-	Tags             []string               `json:"tags"`
-	AgentID          uuid.UUID              `json:"agent_id"`
-	InterceptedBy    *uuid.UUID             `json:"intercepted_by"`
-	ClosedBy         *uuid.UUID             `json:"closed_by"`
-	StartedAt        time.Time              `json:"started_at"`
-	InterceptedAt    *time.Time             `json:"intercepted_at"`
-	EndedAt          *time.Time             `json:"ended_at"`
-	TimedOutAt       *time.Time             `json:"timed_out_at"`
-	EndReason        *ConversationEndReason `json:"end_reason"`
-	EscalationReason *string                `json:"escalation_reason"`
-	CloseNote        *string                `json:"close_note"`
-	MessageCount     int32                  `json:"message_count"`
-	SuccessCount     int32                  `json:"success_count"`
-	FailureCount     int32                  `json:"failure_count"`
-	FirstResponseMs  *int64                 `json:"first_response_ms"`
-	ResolutionMs     *int64                 `json:"resolution_ms"`
-	HumanIntercepted interface{}            `json:"human_intercepted"`
+	ID           uuid.UUID              `json:"id"`
+	IsActive     bool                   `json:"is_active"`
+	AgentID      uuid.UUID              `json:"agent_id"`
+	StartedAt    time.Time              `json:"started_at"`
+	EndedAt      *time.Time             `json:"ended_at"`
+	EndReason    *ConversationEndReason `json:"end_reason"`
+	IsResolved   *bool                  `json:"is_resolved"`
+	MessageCount int32                  `json:"message_count"`
+	ResolutionMs *int64                 `json:"resolution_ms"`
 }
 
 type Knowledge struct {

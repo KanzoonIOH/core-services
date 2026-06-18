@@ -177,6 +177,36 @@ func (h *KnowledgeHandler) ReadByAgentId(w http.ResponseWriter, r *http.Request)
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, knowledges, lib.ResponsePagination(int(pagination.Limit), int(pagination.Offset), len(knowledges), int(totalRow)))
 }
 
+func (h *KnowledgeHandler) ReadAllByAgentId(w http.ResponseWriter, r *http.Request) {
+	agent_id, ok := lib.ParseID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	params := r.URL.Query()
+
+	pagination := lib.ParsePaginationParams(params)
+
+	knowledges, err := h.Queries.SelectKnowledgesWithAgentStatus(r.Context(), db.SelectKnowledgesWithAgentStatusParams{
+		AgentID: agent_id,
+		Sort:    pagination.Sort,
+		Limit:   pagination.Limit,
+		Offset:  pagination.Offset * pagination.Limit,
+	})
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get knowledges")
+		return
+	}
+
+	totalRow, err := h.Queries.CountAllKnowledges(r.Context())
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get knowledges")
+		return
+	}
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, knowledges, lib.ResponsePagination(int(pagination.Limit), int(pagination.Offset), len(knowledges), int(totalRow)))
+}
+
 func (h *KnowledgeHandler) ReadById(w http.ResponseWriter, r *http.Request) {
 	id, ok := lib.ParseID(w, r, "id")
 	if !ok {

@@ -7,9 +7,9 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source and build a static binary
+# Copy source and build a static binary for the timer service
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o server ./cmd/api
+RUN CGO_ENABLED=0 GOOS=linux go build -o timer ./cmd/timer
 
 # ── Runtime stage ───────────────────────────────────────────────────────────────
 FROM alpine:3.21
@@ -17,12 +17,6 @@ FROM alpine:3.21
 WORKDIR /app
 
 # Copy the compiled binary from the builder
-COPY --from=builder /app/server .
+COPY --from=builder /app/timer .
 
-# No .env is baked into the image. Configuration is supplied at runtime via
-# docker-compose `env_file:`/`environment:`. godotenv.Load() simply no-ops when
-# no ./.env exists, and never overrides already-set env vars.
-
-EXPOSE 6767
-
-CMD ["./server"]
+CMD ["./timer"]

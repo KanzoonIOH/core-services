@@ -42,11 +42,13 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 	conversationHandler := handler.NewConversationHandler(conn, kafka)
 	memberHandler := handler.NewMemberHandler(conn)
 	logHandler := handler.NewLogHandler(ch)
+	dropdownHandler := handler.NewDropdownHandler(conn)
 
 	r.Get("/health", handler.Health)
 	r.Get("/all-functions", handler.AllFunctions(r))
 	r.Get("/email-tester", handler.MailerDummy(r, mailer))
 	r.Route("/api", func(r chi.Router) {
+		// r.Post("/registersuperadmin", authHandler.RegisterSuperAdmin)
 		r.Route("/auth", func(r chi.Router) {
 			r.Post("/register", authHandler.Register)
 			r.Post("/login", authHandler.Login)
@@ -85,6 +87,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 				r.Patch("/{id}/persona", agentHandler.UpdatePersona)
 				r.Get("/{id}/mcps", mcpHandler.ReadByAgentId)
 				r.Get("/{id}/knowledges", knowledgeHandler.ReadByAgentId)
+				r.Get("/{id}/knowledges/all", knowledgeHandler.ReadAllByAgentId)
 			})
 			r.Route("/knowledges", func(r chi.Router) {
 				r.Post("/", knowledgeHandler.Create)
@@ -116,6 +119,9 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 				r.Post("/agent-knowledge", connectHandler.ConnectAgentKnowledge)
 				r.Delete("/agent-knowledge", connectHandler.DisconnectAgentKnowledge)
 			})
+			r.Route("/dropdown", func(r chi.Router) {
+				r.Get("/agents", dropdownHandler.ReadAgents)
+			})
 			r.Route("/api-keys", func(r chi.Router) {
 				r.Post("/", apiKeyHandler.Create)
 				r.Get("/", apiKeyHandler.Read)
@@ -126,6 +132,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 				r.Get("/messages", logHandler.ReadMessages)
 				r.Get("/messages/{id}", logHandler.ReadMessagesByAgentId)
 				r.Get("/summary", logHandler.Summary)
+				r.Get("/summary-conv", logHandler.ConversationsSummary)
 				r.Get("/timeseries", logHandler.Timeseries)
 				r.Get("/agents/performance", logHandler.AgentPerformance)
 				r.Get("/traffic-heatmap", logHandler.TrafficHeatmap)

@@ -64,12 +64,38 @@ JOIN agent_knowledges_view akv
 WHERE akv.agent_id = sqlc.arg(agent_id);
 
 -- name: SelectKnowledgesByAgentId :many
-SELECT kv.*
+SELECT
+    kv.*,
+    akv.status
 FROM knowledges_view kv
 JOIN agent_knowledges_view akv
     ON akv.knowledge_id = kv.id
 WHERE akv.agent_id = sqlc.arg(agent_id)
 ORDER BY
+    CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN kv.name END ASC,
+    CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN kv.name END DESC,
+    CASE
+        WHEN sqlc.narg('sort')::text = 'created_asc' THEN kv.created_at
+    END ASC,
+    CASE
+        WHEN sqlc.narg('sort')::text = 'created_desc' THEN kv.created_at
+    END DESC,
+    kv.created_at DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+-- name: CountAllKnowledges :one
+SELECT count(*) FROM knowledges_view;
+
+-- name: SelectKnowledgesWithAgentStatus :many
+SELECT
+    kv.*,
+    (akv.id IS NOT NULL)::bool AS connected
+FROM knowledges_view kv
+LEFT JOIN agent_knowledges_view akv
+    ON akv.knowledge_id = kv.id
+    AND akv.agent_id = sqlc.arg(agent_id)
+ORDER BY
+    connected DESC,
     CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN kv.name END ASC,
     CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN kv.name END DESC,
     CASE

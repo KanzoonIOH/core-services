@@ -1,0 +1,18 @@
+# =============================================================================
+# Migrations image: goose CLI + the Postgres/ClickHouse migration SQL.
+# Used by the k8s migration Job (k8s/31-job-migrate.yaml) and re-usable anywhere.
+#
+# Build (context = ./service):
+#   docker build -f Dockerfile.migrations -t <registry>/aiac-migrations:TAG .
+# =============================================================================
+FROM golang:1.25-alpine AS build
+RUN go install github.com/pressly/goose/v3/cmd/goose@latest
+
+FROM alpine:3.21
+WORKDIR /
+COPY --from=build /go/bin/goose /usr/local/bin/goose
+# Bundle the migration SQL under /migrations/{postgres,clickhouse}.
+COPY db/postgres/migrations   /migrations/postgres
+COPY db/clickhouse/migrations /migrations/clickhouse
+# Default command is overridden by the Job; this is a convenience for manual runs.
+CMD ["goose", "-version"]

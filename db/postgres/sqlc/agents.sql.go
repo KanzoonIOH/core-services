@@ -24,15 +24,11 @@ func (q *Queries) CountAgents(ctx context.Context) (int64, error) {
 }
 
 const countAgentsByKnowledgeId = `-- name: CountAgentsByKnowledgeId :one
-SELECT COUNT(*)
-FROM agents_view av
-JOIN agent_knowledges_view akv
-    ON akv.agent_id = av.id
-WHERE akv.knowledge_id = $1
+SELECT COUNT(*) FROM agents_view
 `
 
-func (q *Queries) CountAgentsByKnowledgeId(ctx context.Context, knowledgeID uuid.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countAgentsByKnowledgeId, knowledgeID)
+func (q *Queries) CountAgentsByKnowledgeId(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countAgentsByKnowledgeId)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -263,12 +259,15 @@ func (q *Queries) SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]S
 }
 
 const selectAgentsByKnowledgeId = `-- name: SelectAgentsByKnowledgeId :many
-SELECT av.id, av.name, av.description, av.is_active, av.webhook_uri, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at
+SELECT
+    av.id, av.name, av.description, av.is_active, av.webhook_uri, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at,
+    (akv.id IS NOT NULL)::bool AS connected
 FROM agents_view av
-JOIN agent_knowledges_view akv
+LEFT JOIN agent_knowledges_view akv
     ON akv.agent_id = av.id
-WHERE akv.knowledge_id = $1
+    AND akv.knowledge_id = $1
 ORDER BY
+    connected DESC,
     CASE WHEN $2::text = 'name_asc' THEN av.name END ASC,
     CASE WHEN $2::text = 'name_desc' THEN av.name END DESC,
     CASE
@@ -288,7 +287,21 @@ type SelectAgentsByKnowledgeIdParams struct {
 	Limit       int32     `json:"limit"`
 }
 
-func (q *Queries) SelectAgentsByKnowledgeId(ctx context.Context, arg SelectAgentsByKnowledgeIdParams) ([]AgentsView, error) {
+type SelectAgentsByKnowledgeIdRow struct {
+	ID                 uuid.UUID               `json:"id"`
+	Name               string                  `json:"name"`
+	Description        *string                 `json:"description"`
+	IsActive           bool                    `json:"is_active"`
+	WebhookUri         string                  `json:"webhook_uri"`
+	Tone               AgentTone               `json:"tone"`
+	ResponseLength     AgentResponseLength     `json:"response_length"`
+	CommunicationStyle AgentCommunicationStyle `json:"communication_style"`
+	CreatedAt          time.Time               `json:"created_at"`
+	UpdatedAt          time.Time               `json:"updated_at"`
+	Connected          bool                    `json:"connected"`
+}
+
+func (q *Queries) SelectAgentsByKnowledgeId(ctx context.Context, arg SelectAgentsByKnowledgeIdParams) ([]SelectAgentsByKnowledgeIdRow, error) {
 	rows, err := q.db.Query(ctx, selectAgentsByKnowledgeId,
 		arg.KnowledgeID,
 		arg.Sort,
@@ -299,9 +312,9 @@ func (q *Queries) SelectAgentsByKnowledgeId(ctx context.Context, arg SelectAgent
 		return nil, err
 	}
 	defer rows.Close()
-	items := []AgentsView{}
+	items := []SelectAgentsByKnowledgeIdRow{}
 	for rows.Next() {
-		var i AgentsView
+		var i SelectAgentsByKnowledgeIdRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
@@ -313,6 +326,7 @@ func (q *Queries) SelectAgentsByKnowledgeId(ctx context.Context, arg SelectAgent
 			&i.CommunicationStyle,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Connected,
 		); err != nil {
 			return nil, err
 		}

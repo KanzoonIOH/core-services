@@ -24,10 +24,10 @@ CREATE TABLE conversations (
 );
 
 CREATE INDEX idx_conversations_agent_id ON conversations (agent_id)
-WHERE deleted_at IS NULL;
+WHERE deleted_at IS null;
 
 CREATE INDEX idx_conversations_is_active ON conversations (is_active)
-WHERE deleted_at IS NULL;
+WHERE deleted_at IS null;
 
 CREATE VIEW conversations_view AS
 SELECT
@@ -41,7 +41,7 @@ SELECT
     message_count,
     resolution_ms
 FROM conversations
-WHERE deleted_at IS NULL;
+WHERE deleted_at IS null;
 
 -- +goose Down
 DROP VIEW IF EXISTS conversations_view;

@@ -12,6 +12,17 @@ import (
 	"github.com/google/uuid"
 )
 
+const countAllKnowledges = `-- name: CountAllKnowledges :one
+SELECT count(*) FROM knowledges_view
+`
+
+func (q *Queries) CountAllKnowledges(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countAllKnowledges)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countKnowledges = `-- name: CountKnowledges :one
 SELECT count(*) FROM knowledges_view
 WHERE (
@@ -170,7 +181,9 @@ func (q *Queries) SelectKnowledges(ctx context.Context, arg SelectKnowledgesPara
 }
 
 const selectKnowledgesByAgentId = `-- name: SelectKnowledgesByAgentId :many
-SELECT kv.id, kv.name, kv.description, kv.source_type, kv.source_uri, kv.created_at, kv.updated_at
+SELECT
+    kv.id, kv.name, kv.description, kv.source_type, kv.source_uri, kv.created_at, kv.updated_at,
+    akv.status
 FROM knowledges_view kv
 JOIN agent_knowledges_view akv
     ON akv.knowledge_id = kv.id
@@ -195,7 +208,18 @@ type SelectKnowledgesByAgentIdParams struct {
 	Limit   int32     `json:"limit"`
 }
 
-func (q *Queries) SelectKnowledgesByAgentId(ctx context.Context, arg SelectKnowledgesByAgentIdParams) ([]KnowledgesView, error) {
+type SelectKnowledgesByAgentIdRow struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description"`
+	SourceType  string    `json:"source_type"`
+	SourceUri   *string   `json:"source_uri"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	Status      string    `json:"status"`
+}
+
+func (q *Queries) SelectKnowledgesByAgentId(ctx context.Context, arg SelectKnowledgesByAgentIdParams) ([]SelectKnowledgesByAgentIdRow, error) {
 	rows, err := q.db.Query(ctx, selectKnowledgesByAgentId,
 		arg.AgentID,
 		arg.Sort,
@@ -206,9 +230,9 @@ func (q *Queries) SelectKnowledgesByAgentId(ctx context.Context, arg SelectKnowl
 		return nil, err
 	}
 	defer rows.Close()
-	items := []KnowledgesView{}
+	items := []SelectKnowledgesByAgentIdRow{}
 	for rows.Next() {
-		var i KnowledgesView
+		var i SelectKnowledgesByAgentIdRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
@@ -217,6 +241,81 @@ func (q *Queries) SelectKnowledgesByAgentId(ctx context.Context, arg SelectKnowl
 			&i.SourceUri,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Status,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectKnowledgesWithAgentStatus = `-- name: SelectKnowledgesWithAgentStatus :many
+SELECT
+    kv.id, kv.name, kv.description, kv.source_type, kv.source_uri, kv.created_at, kv.updated_at,
+    (akv.id IS NOT NULL)::bool AS connected
+FROM knowledges_view kv
+LEFT JOIN agent_knowledges_view akv
+    ON akv.knowledge_id = kv.id
+    AND akv.agent_id = $1
+ORDER BY
+    connected DESC,
+    CASE WHEN $2::text = 'name_asc' THEN kv.name END ASC,
+    CASE WHEN $2::text = 'name_desc' THEN kv.name END DESC,
+    CASE
+        WHEN $2::text = 'created_asc' THEN kv.created_at
+    END ASC,
+    CASE
+        WHEN $2::text = 'created_desc' THEN kv.created_at
+    END DESC,
+    kv.created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type SelectKnowledgesWithAgentStatusParams struct {
+	AgentID uuid.UUID `json:"agent_id"`
+	Sort    *string   `json:"sort"`
+	Offset  int32     `json:"offset"`
+	Limit   int32     `json:"limit"`
+}
+
+type SelectKnowledgesWithAgentStatusRow struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description"`
+	SourceType  string    `json:"source_type"`
+	SourceUri   *string   `json:"source_uri"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	Connected   bool      `json:"connected"`
+}
+
+func (q *Queries) SelectKnowledgesWithAgentStatus(ctx context.Context, arg SelectKnowledgesWithAgentStatusParams) ([]SelectKnowledgesWithAgentStatusRow, error) {
+	rows, err := q.db.Query(ctx, selectKnowledgesWithAgentStatus,
+		arg.AgentID,
+		arg.Sort,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SelectKnowledgesWithAgentStatusRow{}
+	for rows.Next() {
+		var i SelectKnowledgesWithAgentStatusRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.SourceType,
+			&i.SourceUri,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Connected,
 		); err != nil {
 			return nil, err
 		}

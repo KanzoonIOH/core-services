@@ -5,6 +5,7 @@ import (
 	"aiac-service/internal/lib"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,7 +19,11 @@ import (
 )
 
 // TODO: move to env config once the n8n workflow is finalized.
-const knowledgeWebhookURL = "http://localhost:5678/webhook/knowledge-conversion"
+const (
+	knowledgeAPIBaseURL = "https://103.67.43.198:8443/milvus"
+	knowledgeAddURL     = knowledgeAPIBaseURL + "/knowledge/add"
+	knowledgeDeleteURL  = knowledgeAPIBaseURL + "/knowledge/%s" // DELETE /knowledge/{knowledge_id}
+)
 
 type ConnectHandler struct {
 	Queries    db.Querier
@@ -27,8 +32,16 @@ type ConnectHandler struct {
 
 func NewConnectHandler(conn *pgxpool.Pool) *ConnectHandler {
 	return &ConnectHandler{
-		Queries:    db.New(conn),
-		HTTPClient: &http.Client{Timeout: 30 * time.Second},
+		Queries: db.New(conn),
+		HTTPClient: &http.Client{
+			Timeout: 10 * time.Minute,
+			Transport: &hostTLSBypassTransport{
+				secure: http.DefaultTransport,
+				insecure: &http.Transport{
+					TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				},
+			},
+		},
 	}
 }
 
@@ -128,17 +141,17 @@ func (h *ConnectHandler) triggerKnowledgeConversion(agentKnowledgeID, agentID, k
 	defer cancel()
 
 	payload, err := json.Marshal(map[string]any{
-		"agent_knowledge_id": agentKnowledgeID,
-		"agent_id":           agentID,
-		"knowledge_id":       knowledgeID,
-		"source_uri":         sourceURI,
+		// "agent_knowledge_id": agentKnowledgeID,
+		// "agent_id":           agentID,
+		"document_id":   knowledgeID,
+		"document_link": sourceURI,
 	})
 	if err != nil {
 		h.markKnowledgeConversionFailed(agentKnowledgeID, err)
 		return
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, knowledgeWebhookURL, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, knowledgeAddURL, bytes.NewReader(payload))
 	if err != nil {
 		h.markKnowledgeConversionFailed(agentKnowledgeID, err)
 		return
@@ -192,5 +205,34 @@ func (h *ConnectHandler) DisconnectAgentKnowledge(w http.ResponseWriter, r *http
 		return
 	}
 
+	go h.triggerKnowledgeDeletion(req.KnowledgeId)
+
 	lib.ResponseJSONTemplate(w, http.StatusNoContent, nil, nil, nil)
+}
+
+// triggerKnowledgeDeletion fires the knowledge REST API delete endpoint in the
+// background. Failures are logged only; the local disconnect has already
+// succeeded by the time this runs.
+func (h *ConnectHandler) triggerKnowledgeDeletion(knowledgeID uuid.UUID) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	url := fmt.Sprintf(knowledgeDeleteURL, knowledgeID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
+	if err != nil {
+		log.Printf("knowledge deletion trigger failed for knowledge %s: %v", knowledgeID, err)
+		return
+	}
+
+	resp, err := h.HTTPClient.Do(req)
+	if err != nil {
+		log.Printf("knowledge deletion trigger failed for knowledge %s: %v", knowledgeID, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		log.Printf("knowledge deletion trigger failed for knowledge %s: API returned status %d", knowledgeID, resp.StatusCode)
+	}
 }

@@ -129,19 +129,18 @@ ORDER BY
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: CountAgentsByKnowledgeId :one
-SELECT COUNT(*)
-FROM agents_view av
-JOIN agent_knowledges_view akv
-    ON akv.agent_id = av.id
-WHERE akv.knowledge_id = sqlc.arg(knowledge_id);
+SELECT COUNT(*) FROM agents_view;
 
 -- name: SelectAgentsByKnowledgeId :many
-SELECT av.*
+SELECT
+    av.*,
+    (akv.id IS NOT NULL)::bool AS connected
 FROM agents_view av
-JOIN agent_knowledges_view akv
+LEFT JOIN agent_knowledges_view akv
     ON akv.agent_id = av.id
-WHERE akv.knowledge_id = sqlc.arg(knowledge_id)
+    AND akv.knowledge_id = sqlc.arg(knowledge_id)
 ORDER BY
+    connected DESC,
     CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN av.name END ASC,
     CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN av.name END DESC,
     CASE
