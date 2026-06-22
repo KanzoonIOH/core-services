@@ -1,8 +1,8 @@
 package handler
 
 import (
-	db "aiac-service/db/postgres/sqlc"
-	"aiac-service/internal/lib"
+	db "aic3-service/db/postgres/sqlc"
+	"aic3-service/internal/lib"
 	"errors"
 	"fmt"
 	"mime/multipart"

@@ -1,9 +1,9 @@
 package app
 
 import (
-	"aiac-service/internal/app/middleware"
-	"aiac-service/internal/handler"
-	"aiac-service/internal/lib"
+	"aic3-service/internal/app/middleware"
+	"aic3-service/internal/handler"
+	"aic3-service/internal/lib"
 	"context"
 	"log"
 	"net/http"
@@ -188,28 +188,28 @@ func newMailer() *lib.Mailer {
 }
 
 func newObjectStorage() *lib.ObjectStorage {
-	endpoint := os.Getenv("RUSTFS_ENDPOINT")
+	endpoint := os.Getenv("S3_ENDPOINT")
 	if endpoint == "" {
-		log.Fatal("RUSTFS_ENDPOINT is required")
+		log.Fatal("S3_ENDPOINT is required")
 	}
-	accessKey := os.Getenv("RUSTFS_ACCESS_KEY")
+	accessKey := os.Getenv("S3_ACCESS_KEY")
 	if accessKey == "" {
-		log.Fatal("RUSTFS_ACCESS_KEY is required")
+		log.Fatal("S3_ACCESS_KEY is required")
 	}
-	secretKey := os.Getenv("RUSTFS_SECRET_KEY")
+	secretKey := os.Getenv("S3_SECRET_KEY")
 	if secretKey == "" {
-		log.Fatal("RUSTFS_SECRET_KEY is required")
+		log.Fatal("S3_SECRET_KEY is required")
 	}
-	bucket := os.Getenv("RUSTFS_BUCKET")
+	bucket := os.Getenv("S3_BUCKET")
 	if bucket == "" {
-		log.Fatal("RUSTFS_BUCKET is required")
+		log.Fatal("S3_BUCKET is required")
 	}
-	region := os.Getenv("RUSTFS_REGION")
+	region := os.Getenv("S3_REGION")
 	if region == "" {
-		log.Fatal("RUSTFS_REGION is required")
+		log.Fatal("S3_REGION is required")
 	}
 
-	storage, err := lib.NewObjectStorage(context.Background(), endpoint, os.Getenv("RUSTFS_PUBLIC_ENDPOINT"), region, accessKey, secretKey, bucket)
+	storage, err := lib.NewObjectStorage(context.Background(), endpoint, os.Getenv("S3_PUBLIC_ENDPOINT"), region, accessKey, secretKey, bucket)
 	if err != nil {
 		log.Fatalf("object storage: %v", err)
 	}

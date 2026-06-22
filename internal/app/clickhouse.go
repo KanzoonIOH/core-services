@@ -1,7 +1,7 @@
 package app
 
 import (
-	"aiac-service/internal/lib"
+	"aic3-service/internal/lib"
 	"log"
 	"os"
 	"strconv"

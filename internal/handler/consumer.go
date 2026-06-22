@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"aiac-service/internal/lib"
+	"aic3-service/internal/lib"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,7 +15,7 @@ import (
 const (
 	flushSize     = 100
 	flushEvery    = 5 * time.Second
-	consumerGroup = "aiac-service"
+	consumerGroup = "aic3-service"
 )
 
 // ChatMessageEvent is the shape of messages on chat.webhook.message.

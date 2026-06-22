@@ -1,8 +1,8 @@
 package timer
 
 import (
-	"aiac-service/internal/handler"
-	"aiac-service/internal/lib"
+	"aic3-service/internal/handler"
+	"aic3-service/internal/lib"
 	"container/heap"
 	"context"
 	"encoding/json"
@@ -14,7 +14,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
-const consumerGroup = "aiac-timer-service"
+const consumerGroup = "aic3-timer-service"
 
 type activityEvent struct {
 	AgentID        string    `json:"agent_id"`

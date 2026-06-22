@@ -1,9 +1,9 @@
 package handler
 
 import (
-	db "aiac-service/db/postgres/sqlc"
-	"aiac-service/internal/app/middleware"
-	"aiac-service/internal/lib"
+	db "aic3-service/db/postgres/sqlc"
+	"aic3-service/internal/app/middleware"
+	"aic3-service/internal/lib"
 	"bytes"
 	"context"
 	"crypto/tls"

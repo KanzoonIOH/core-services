@@ -1,7 +1,7 @@
 package lib
 
 import (
-	db "aiac-service/db/postgres/sqlc"
+	db "aic3-service/db/postgres/sqlc"
 )
 
 func ToUserResponse(u db.SelectUserByLoginIdWithPasswordRow) db.UsersView {

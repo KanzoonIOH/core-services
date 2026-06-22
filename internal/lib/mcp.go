@@ -35,7 +35,7 @@ func DiscoverMcpTools(ctx context.Context, uri string) ([]McpToolInfo, error) {
 	initReq := mcp.InitializeRequest{}
 	initReq.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
 	initReq.Params.ClientInfo = mcp.Implementation{
-		Name:    "aiac-service",
+		Name:    "aic3-service",
 		Version: "1.0.0",
 	}
 	if _, err := c.Initialize(ctx, initReq); err != nil {

@@ -1,8 +1,8 @@
 package handler
 
 import (
-	db "aiac-service/db/postgres/sqlc"
-	"aiac-service/internal/lib"
+	db "aic3-service/db/postgres/sqlc"
+	"aic3-service/internal/lib"
 	"bytes"
 	"context"
 	"crypto/tls"
@@ -141,7 +141,7 @@ func (h *ConnectHandler) triggerKnowledgeConversion(agentKnowledgeID, agentID, k
 	defer cancel()
 
 	payload, err := json.Marshal(map[string]any{
-		// "agent_knowledge_id": agentKnowledgeID,
+		"agent_knowledge_id": agentKnowledgeID,
 		// "agent_id":           agentID,
 		"document_id":   knowledgeID,
 		"document_link": sourceURI,

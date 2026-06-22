@@ -1,4 +1,4 @@
-module aiac-service
+module aic3-service
 
 go 1.25.5
 

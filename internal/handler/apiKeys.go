@@ -1,8 +1,8 @@
 package handler
 
 import (
-	db "aiac-service/db/postgres/sqlc"
-	"aiac-service/internal/lib"
+	db "aic3-service/db/postgres/sqlc"
+	"aic3-service/internal/lib"
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
@@ -25,7 +25,7 @@ func generateApiToken() (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
-	return "aiac_" + base64.RawURLEncoding.EncodeToString(b), nil
+	return "aic3_" + base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 type apiKeyCreateRequest struct {

@@ -3,10 +3,11 @@
 # Used by the k8s migration Job (k8s/31-job-migrate.yaml) and re-usable anywhere.
 #
 # Build (context = ./service):
-#   docker build -f Dockerfile.migrations -t <registry>/aiac-migrations:TAG .
+#   docker build -f Dockerfile.migrations -t <registry>/aic3-migrations:TAG .
 # =============================================================================
 FROM golang:1.25-alpine AS build
-RUN go install github.com/pressly/goose/v3/cmd/goose@latest
+# Pin goose so image rebuilds are reproducible (match dev's goose-docker:3.24.1).
+RUN go install github.com/pressly/goose/v3/cmd/goose@v3.24.1
 
 FROM alpine:3.21
 WORKDIR /

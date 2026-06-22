@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"aiac-service/internal/lib"
+	"aic3-service/internal/lib"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"

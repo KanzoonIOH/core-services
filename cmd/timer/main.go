@@ -1,8 +1,8 @@
 package main
 
 import (
-	"aiac-service/internal/app"
-	"aiac-service/internal/timer"
+	"aic3-service/internal/app"
+	"aic3-service/internal/timer"
 	"context"
 	"errors"
 	"log"

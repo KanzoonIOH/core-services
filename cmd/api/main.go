@@ -9,8 +9,8 @@ import (
 	"strings"
 	"syscall"
 
-	"aiac-service/internal/app"
-	"aiac-service/internal/handler"
+	"aic3-service/internal/app"
+	"aic3-service/internal/handler"
 
 	"github.com/joho/godotenv"
 )

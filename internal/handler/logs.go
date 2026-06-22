@@ -1,8 +1,8 @@
 package handler
 
 import (
-	"aiac-service/db/clickhouse/store"
-	"aiac-service/internal/lib"
+	"aic3-service/db/clickhouse/store"
+	"aic3-service/internal/lib"
 	"net/http"
 	"strconv"
 	"time"
