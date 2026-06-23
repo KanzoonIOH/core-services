@@ -12,7 +12,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -39,6 +41,45 @@ type WebhookHandler struct {
 	HTTPClient *http.Client
 	Queries    db.Querier
 	Kafka      *lib.KafkaProducer
+}
+
+// clientIP returns the caller's source IP. It trusts X-Forwarded-For (first
+// hop) when present, since this service runs behind a proxy/load balancer.
+// ponytail: trusts XFF unconditionally; tighten to trusted-proxy-only if the
+// service is ever exposed directly to untrusted clients.
+func clientIP(r *http.Request) netip.Addr {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		first := strings.TrimSpace(strings.Split(xff, ",")[0])
+		if addr, err := netip.ParseAddr(first); err == nil {
+			return addr
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	addr, _ := netip.ParseAddr(host)
+	return addr
+}
+
+func ipAllowed(ip netip.Addr, allowed []netip.Addr) bool {
+	for _, a := range allowed {
+		if a == ip {
+			return true
+		}
+	}
+	return false
+}
+
+// originAllowed does exact-string matching, same as the global CORS middleware.
+// ponytail: exact match only; add *.example.com wildcards if a widget needs them.
+func originAllowed(origin string, allowed []string) bool {
+	for _, a := range allowed {
+		if a == origin {
+			return true
+		}
+	}
+	return false
 }
 
 type hostTLSBypassTransport struct {
@@ -100,6 +141,27 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 		h.publishWebhookMessage(id.String(), conversationID, http.StatusForbidden, hitTime, "agent is not active")
 		lib.ResponseJSONError(w, http.StatusForbidden, "agent is not active")
 		return
+	}
+
+	// Empty list = allow all (backward compatible). Otherwise the caller's IP
+	// must be in the agent's whitelist.
+	if len(agent.WebhookAllowedIps) > 0 && !ipAllowed(clientIP(r), agent.WebhookAllowedIps) {
+		h.publishWebhookMessage(id.String(), conversationID, http.StatusForbidden, hitTime, "caller ip not allowed")
+		lib.ResponseJSONError(w, http.StatusForbidden, "caller ip not allowed")
+		return
+	}
+
+	// Browser request (Origin present): must pass the per-agent origin allowlist,
+	// and we reflect ACAO so the browser accepts the response. Server-to-server
+	// calls carry no Origin and are governed by the IP whitelist above.
+	if origin := r.Header.Get("Origin"); origin != "" {
+		if len(agent.WebhookAllowedOrigins) > 0 && !originAllowed(origin, agent.WebhookAllowedOrigins) {
+			h.publishWebhookMessage(id.String(), conversationID, http.StatusForbidden, hitTime, "origin not allowed")
+			lib.ResponseJSONError(w, http.StatusForbidden, "origin not allowed")
+			return
+		}
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Vary", "Origin")
 	}
 
 	targetURL := agent.WebhookUri
@@ -170,6 +232,27 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("X-Session-Id", conversationID)
 	w.WriteHeader(res.StatusCode)
 	_, _ = io.Copy(w, res.Body)
+}
+
+// PreflightChatWebhook answers the browser's CORS preflight (OPTIONS) for a
+// specific agent. No auth, no body. Reflects ACAO when the Origin is allowed by
+// the agent (or the agent has no restriction).
+func (h *WebhookHandler) PreflightChatWebhook(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil || origin == "" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	agent, err := h.Queries.SelectAgentById(r.Context(), id)
+	if err == nil && (len(agent.WebhookAllowedOrigins) == 0 || originAllowed(origin, agent.WebhookAllowedOrigins)) {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Vary", "Origin")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Session-Id")
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *WebhookHandler) publishConversationActivity(agentID, conversationID string, occurredAt time.Time) {

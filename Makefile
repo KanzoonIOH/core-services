@@ -14,8 +14,12 @@ endif
 
 .PHONY: dev timer build build-timer run tidy test format
 
+# air with hot reload. ENV picks the env file: `make dev` -> .env,
+# `make dev ENV=local` -> .env.local, `make dev ENV=staging` -> .env.staging.
+ENV ?=
+ENV_FILE = $(if $(ENV),.env.$(ENV),.env)
 dev:
-	go run $(CMD_DIR)
+	air -env_files $(ENV_FILE)
 
 timer:
 	go run $(TIMER_CMD_DIR)
@@ -131,9 +135,9 @@ COMPOSE_PROJECT  ?= aic3
 COMPOSE_NETWORK  ?= $(COMPOSE_PROJECT)_aic3-net
 GOOSE_IMAGE      ?= ghcr.io/kukymbr/goose-docker:3.24.1
 
-# Load the root .env (one dir up) for DB creds.
-ifneq (,$(wildcard ../.env))
-    include ../.env
+# Load the orchestrator .env for DB creds.
+ifneq (,$(wildcard ../compose-orchestrator/.env))
+    include ../compose-orchestrator/.env
     export
 endif
 

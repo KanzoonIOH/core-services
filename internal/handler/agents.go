@@ -6,11 +6,42 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// trimNonEmpty trims each entry and drops blanks. Returns a non-nil empty
+// slice for "allow all".
+func trimNonEmpty(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// parseAllowedIPs converts a list of IP strings into netip.Addr.
+// Empty/nil means "allow all". Invalid entries are rejected.
+func parseAllowedIPs(in []string) ([]netip.Addr, error) {
+	out := make([]netip.Addr, 0, len(in))
+	for _, s := range in {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		addr, err := netip.ParseAddr(s)
+		if err != nil {
+			return nil, fmt.Errorf("invalid ip %q", s)
+		}
+		out = append(out, addr)
+	}
+	return out, nil
+}
 
 type AgentHandler struct {
 	Queries db.Querier
@@ -21,10 +52,12 @@ func NewAgentHandler(conn *pgxpool.Pool) *AgentHandler {
 }
 
 type createAgentRequest struct {
-	Name        string  `json:"name"`
-	Description *string `json:"description"`
-	IsActive    *bool   `json:"is_active"`
-	WebhookUri  string  `json:"webhook_uri"`
+	Name                  string   `json:"name"`
+	Description           *string  `json:"description"`
+	IsActive              *bool    `json:"is_active"`
+	WebhookUri            string   `json:"webhook_uri"`
+	WebhookAllowedIps     []string `json:"webhook_allowed_ips"`
+	WebhookAllowedOrigins []string `json:"webhook_allowed_origins"`
 }
 
 func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -46,13 +79,19 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("%v", req.Name)
-	fmt.Printf("%v", req.IsActive)
+	allowedIPs, err := parseAllowedIPs(req.WebhookAllowedIps)
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	agent, err := h.Queries.InsertAgent(r.Context(), db.InsertAgentParams{
-		Name:        req.Name,
-		Description: req.Description,
-		IsActive:    lib.NullBoolean(req.IsActive),
-		WebhookUri:  req.WebhookUri,
+		Name:                  req.Name,
+		Description:           req.Description,
+		IsActive:              lib.NullBoolean(req.IsActive),
+		WebhookUri:            req.WebhookUri,
+		WebhookAllowedIps:     allowedIPs,
+		WebhookAllowedOrigins: trimNonEmpty(req.WebhookAllowedOrigins),
 	})
 	if err != nil {
 		fmt.Printf("%v", err)
@@ -173,10 +212,12 @@ func (h *AgentHandler) ReadById(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateAgentRequest struct {
-	Name        string  `json:"name"`
-	Description *string `json:"description"`
-	IsActive    bool    `json:"is_active"`
-	WebhookUri  string  `json:"webhook_uri"`
+	Name                  string   `json:"name"`
+	Description           *string  `json:"description"`
+	IsActive              bool     `json:"is_active"`
+	WebhookUri            string   `json:"webhook_uri"`
+	WebhookAllowedIps     []string `json:"webhook_allowed_ips"`
+	WebhookAllowedOrigins []string `json:"webhook_allowed_origins"`
 }
 
 func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -202,12 +243,20 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	allowedIPs, err := parseAllowedIPs(req.WebhookAllowedIps)
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	agent, err := h.Queries.UpdateAgent(r.Context(), db.UpdateAgentParams{
-		Name:        req.Name,
-		Description: req.Description,
-		IsActive:    req.IsActive,
-		WebhookUri:  req.WebhookUri,
-		ID:          id,
+		Name:                  req.Name,
+		Description:           req.Description,
+		IsActive:              req.IsActive,
+		WebhookUri:            req.WebhookUri,
+		WebhookAllowedIps:     allowedIPs,
+		WebhookAllowedOrigins: trimNonEmpty(req.WebhookAllowedOrigins),
+		ID:                    id,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

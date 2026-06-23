@@ -56,6 +56,9 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 			r.Post("/password/reset", authHandler.ResetPassword)
 		})
 		r.Get("/confirm", confirmHandler.UpdateEmailConfirm)
+		// CORS preflight for the widget-embeddable chat endpoint. No auth: a
+		// preflight never carries credentials.
+		r.Options("/chat/{id}", webhookHandler.PreflightChatWebhook)
 		r.Route("/", func(r chi.Router) {
 			r.Use(middleware.AuthOrApiKey(signer, webhookHandler.Queries))
 			// No timeout here — webhook forwards to upstream and may take a long time

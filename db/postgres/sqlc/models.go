@@ -8,6 +8,7 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
+	"net/netip"
 	"time"
 
 	"github.com/google/uuid"
@@ -277,17 +278,19 @@ func (ns NullUserRole) Value() (driver.Value, error) {
 }
 
 type Agent struct {
-	ID                 uuid.UUID               `json:"id"`
-	Name               string                  `json:"name"`
-	Description        *string                 `json:"description"`
-	IsActive           bool                    `json:"is_active"`
-	WebhookUri         string                  `json:"webhook_uri"`
-	Tone               AgentTone               `json:"tone"`
-	ResponseLength     AgentResponseLength     `json:"response_length"`
-	CommunicationStyle AgentCommunicationStyle `json:"communication_style"`
-	CreatedAt          time.Time               `json:"created_at"`
-	UpdatedAt          time.Time               `json:"updated_at"`
-	DeletedAt          *time.Time              `json:"deleted_at"`
+	ID                    uuid.UUID               `json:"id"`
+	Name                  string                  `json:"name"`
+	Description           *string                 `json:"description"`
+	IsActive              bool                    `json:"is_active"`
+	WebhookUri            string                  `json:"webhook_uri"`
+	Tone                  AgentTone               `json:"tone"`
+	ResponseLength        AgentResponseLength     `json:"response_length"`
+	CommunicationStyle    AgentCommunicationStyle `json:"communication_style"`
+	CreatedAt             time.Time               `json:"created_at"`
+	UpdatedAt             time.Time               `json:"updated_at"`
+	DeletedAt             *time.Time              `json:"deleted_at"`
+	WebhookAllowedIps     []netip.Addr            `json:"webhook_allowed_ips"`
+	WebhookAllowedOrigins []string                `json:"webhook_allowed_origins"`
 }
 
 type AgentKnowledge struct {
@@ -331,16 +334,18 @@ type AgentMcpsView struct {
 }
 
 type AgentsView struct {
-	ID                 uuid.UUID               `json:"id"`
-	Name               string                  `json:"name"`
-	Description        *string                 `json:"description"`
-	IsActive           bool                    `json:"is_active"`
-	WebhookUri         string                  `json:"webhook_uri"`
-	Tone               AgentTone               `json:"tone"`
-	ResponseLength     AgentResponseLength     `json:"response_length"`
-	CommunicationStyle AgentCommunicationStyle `json:"communication_style"`
-	CreatedAt          time.Time               `json:"created_at"`
-	UpdatedAt          time.Time               `json:"updated_at"`
+	ID                    uuid.UUID               `json:"id"`
+	Name                  string                  `json:"name"`
+	Description           *string                 `json:"description"`
+	IsActive              bool                    `json:"is_active"`
+	WebhookUri            string                  `json:"webhook_uri"`
+	WebhookAllowedIps     []netip.Addr            `json:"webhook_allowed_ips"`
+	WebhookAllowedOrigins []string                `json:"webhook_allowed_origins"`
+	Tone                  AgentTone               `json:"tone"`
+	ResponseLength        AgentResponseLength     `json:"response_length"`
+	CommunicationStyle    AgentCommunicationStyle `json:"communication_style"`
+	CreatedAt             time.Time               `json:"created_at"`
+	UpdatedAt             time.Time               `json:"updated_at"`
 }
 
 type ApiKey struct {
