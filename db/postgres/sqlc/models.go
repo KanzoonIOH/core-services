@@ -145,6 +145,48 @@ func (ns NullAgentTone) Value() (driver.Value, error) {
 	return string(ns.AgentTone), nil
 }
 
+type AgentType string
+
+const (
+	AgentTypeCHAT   AgentType = "CHAT"
+	AgentTypeREPORT AgentType = "REPORT"
+)
+
+func (e *AgentType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = AgentType(s)
+	case string:
+		*e = AgentType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for AgentType: %T", src)
+	}
+	return nil
+}
+
+type NullAgentType struct {
+	AgentType AgentType `json:"agent_type"`
+	Valid     bool      `json:"valid"` // Valid is true if AgentType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullAgentType) Scan(value interface{}) error {
+	if value == nil {
+		ns.AgentType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.AgentType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullAgentType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.AgentType), nil
+}
+
 type ConversationEndReason string
 
 const (
@@ -187,6 +229,49 @@ func (ns NullConversationEndReason) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return string(ns.ConversationEndReason), nil
+}
+
+type MessageRole string
+
+const (
+	MessageRoleUser      MessageRole = "user"
+	MessageRoleAssistant MessageRole = "assistant"
+	MessageRoleSystem    MessageRole = "system"
+)
+
+func (e *MessageRole) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = MessageRole(s)
+	case string:
+		*e = MessageRole(s)
+	default:
+		return fmt.Errorf("unsupported scan type for MessageRole: %T", src)
+	}
+	return nil
+}
+
+type NullMessageRole struct {
+	MessageRole MessageRole `json:"message_role"`
+	Valid       bool        `json:"valid"` // Valid is true if MessageRole is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullMessageRole) Scan(value interface{}) error {
+	if value == nil {
+		ns.MessageRole, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.MessageRole.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullMessageRole) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.MessageRole), nil
 }
 
 type UpcomingChangesType string
@@ -281,16 +366,17 @@ type Agent struct {
 	ID                    uuid.UUID               `json:"id"`
 	Name                  string                  `json:"name"`
 	Description           *string                 `json:"description"`
+	Type                  AgentType               `json:"type"`
 	IsActive              bool                    `json:"is_active"`
 	WebhookUri            string                  `json:"webhook_uri"`
+	WebhookAllowedIps     []netip.Addr            `json:"webhook_allowed_ips"`
+	WebhookAllowedOrigins []string                `json:"webhook_allowed_origins"`
 	Tone                  AgentTone               `json:"tone"`
 	ResponseLength        AgentResponseLength     `json:"response_length"`
 	CommunicationStyle    AgentCommunicationStyle `json:"communication_style"`
 	CreatedAt             time.Time               `json:"created_at"`
 	UpdatedAt             time.Time               `json:"updated_at"`
 	DeletedAt             *time.Time              `json:"deleted_at"`
-	WebhookAllowedIps     []netip.Addr            `json:"webhook_allowed_ips"`
-	WebhookAllowedOrigins []string                `json:"webhook_allowed_origins"`
 }
 
 type AgentKnowledge struct {
@@ -337,6 +423,7 @@ type AgentsView struct {
 	ID                    uuid.UUID               `json:"id"`
 	Name                  string                  `json:"name"`
 	Description           *string                 `json:"description"`
+	Type                  AgentType               `json:"type"`
 	IsActive              bool                    `json:"is_active"`
 	WebhookUri            string                  `json:"webhook_uri"`
 	WebhookAllowedIps     []netip.Addr            `json:"webhook_allowed_ips"`
@@ -449,6 +536,16 @@ type McpsView struct {
 	Uri         string    `json:"uri"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type Message struct {
+	ID             uuid.UUID       `json:"id"`
+	ConversationID uuid.UUID       `json:"conversation_id"`
+	Role           MessageRole     `json:"role"`
+	Content        *string         `json:"content"`
+	Attachments    json.RawMessage `json:"attachments"`
+	Data           json.RawMessage `json:"data"`
+	CreatedAt      time.Time       `json:"created_at"`
 }
 
 type UpcomingChange struct {

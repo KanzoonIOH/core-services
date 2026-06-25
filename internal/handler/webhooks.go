@@ -190,6 +190,10 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 	} else {
 		bodyMap = map[string]any{}
 	}
+	// Persist the user's message: text (chatInput) + any uploaded docs/images.
+	// ponytail: hardcoded field names; make per-agent when other vendors differ.
+	h.storeMessage(conversationID, db.MessageRoleUser, bodyMap["chatInput"], bodyMap["attachments"], nil)
+
 	bodyMap["sessionId"] = conversationID
 	bodyMap["tone"] = string(agent.Tone)
 	bodyMap["length"] = string(agent.ResponseLength)
@@ -227,11 +231,22 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 	}
 	h.publishWebhookMessage(id.String(), conversationID, res.StatusCode, hitTime, errorMessage)
 
+	// Buffer the response so we can persist the AI reply, then relay it verbatim.
+	respBytes, _ := io.ReadAll(res.Body)
+	if isSuccess {
+		var respMap map[string]any
+		if json.Unmarshal(respBytes, &respMap) == nil {
+			// CHAT agents reply with text (output); REPORT agents reply with
+			// structured data/visuals (data). Store whichever is present.
+			h.storeMessage(conversationID, db.MessageRoleAssistant, respMap["output"], respMap["attachments"], respMap["data"])
+		}
+	}
+
 	// Echo the conversation_id back so the caller can reuse it on subsequent messages.
 	copyResponseHeaders(w.Header(), res.Header)
 	w.Header().Set("X-Session-Id", conversationID)
 	w.WriteHeader(res.StatusCode)
-	_, _ = io.Copy(w, res.Body)
+	_, _ = w.Write(respBytes)
 }
 
 // PreflightChatWebhook answers the browser's CORS preflight (OPTIONS) for a
@@ -253,6 +268,54 @@ func (h *WebhookHandler) PreflightChatWebhook(w http.ResponseWriter, r *http.Req
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Session-Id")
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// storeMessage persists one chat message to Postgres. Best-effort and off the
+// request path: history is durable truth, but a failure here must never break
+// the live proxy (which Redis already backs). text, attachments and data are
+// all optional — a chat turn has text, an upload-only turn has attachments,
+// a REPORT reply has data. Skips a turn that carries none of them.
+func (h *WebhookHandler) storeMessage(conversationID string, role db.MessageRole, text any, attachments any, data any) {
+	var content *string
+	if s, ok := text.(string); ok && s != "" {
+		content = &s
+	}
+	// attachments defaults to [] (column is NOT NULL); data stays NULL when absent.
+	attachJSON := jsonOrDefault(attachments, []byte("[]"))
+	dataJSON := jsonOrDefault(data, nil)
+
+	if content == nil && len(dataJSON) == 0 && string(attachJSON) == "[]" {
+		return
+	}
+	convID, err := uuid.Parse(conversationID)
+	if err != nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := h.Queries.InsertMessage(ctx, db.InsertMessageParams{
+			ConversationID: convID,
+			Role:           role,
+			Content:        content,
+			Attachments:    attachJSON,
+			Data:           dataJSON,
+		}); err != nil {
+			log.Printf("store message conv=%s role=%s: %v", conversationID, role, err)
+		}
+	}()
+}
+
+// jsonOrDefault marshals v to JSON, returning def if v is nil or fails to marshal.
+func jsonOrDefault(v any, def []byte) json.RawMessage {
+	if v == nil {
+		return def
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return def
+	}
+	return b
 }
 
 func (h *WebhookHandler) publishConversationActivity(agentID, conversationID string, occurredAt time.Time) {

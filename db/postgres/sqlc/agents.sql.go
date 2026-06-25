@@ -51,22 +51,24 @@ func (q *Queries) CountAgentsByMcpId(ctx context.Context, mcpID uuid.UUID) (int6
 }
 
 const insertAgent = `-- name: InsertAgent :one
-INSERT INTO agents (name, description, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins)
+INSERT INTO agents (name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins)
 VALUES (
     $1,
     $2,
     $3,
     $4,
     $5,
-    $6
+    $6,
+    $7
 )
 RETURNING
-    id, name, description, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at
 `
 
 type InsertAgentParams struct {
 	Name                  string       `json:"name"`
 	Description           *string      `json:"description"`
+	Type                  AgentType    `json:"type"`
 	IsActive              bool         `json:"is_active"`
 	WebhookUri            string       `json:"webhook_uri"`
 	WebhookAllowedIps     []netip.Addr `json:"webhook_allowed_ips"`
@@ -77,6 +79,7 @@ type InsertAgentRow struct {
 	ID                    uuid.UUID               `json:"id"`
 	Name                  string                  `json:"name"`
 	Description           *string                 `json:"description"`
+	Type                  AgentType               `json:"type"`
 	IsActive              bool                    `json:"is_active"`
 	WebhookUri            string                  `json:"webhook_uri"`
 	WebhookAllowedIps     []netip.Addr            `json:"webhook_allowed_ips"`
@@ -92,6 +95,7 @@ func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (Inser
 	row := q.db.QueryRow(ctx, insertAgent,
 		arg.Name,
 		arg.Description,
+		arg.Type,
 		arg.IsActive,
 		arg.WebhookUri,
 		arg.WebhookAllowedIps,
@@ -102,6 +106,7 @@ func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (Inser
 		&i.ID,
 		&i.Name,
 		&i.Description,
+		&i.Type,
 		&i.IsActive,
 		&i.WebhookUri,
 		&i.WebhookAllowedIps,
@@ -117,7 +122,7 @@ func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (Inser
 
 const selectAgentById = `-- name: SelectAgentById :one
 SELECT
-    av.id, av.name, av.description, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at,
+    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at,
     (
         SELECT COUNT(*) FROM agent_knowledges_view akv
         WHERE akv.agent_id = av.id
@@ -135,6 +140,7 @@ type SelectAgentByIdRow struct {
 	ID                    uuid.UUID               `json:"id"`
 	Name                  string                  `json:"name"`
 	Description           *string                 `json:"description"`
+	Type                  AgentType               `json:"type"`
 	IsActive              bool                    `json:"is_active"`
 	WebhookUri            string                  `json:"webhook_uri"`
 	WebhookAllowedIps     []netip.Addr            `json:"webhook_allowed_ips"`
@@ -155,6 +161,7 @@ func (q *Queries) SelectAgentById(ctx context.Context, id uuid.UUID) (SelectAgen
 		&i.ID,
 		&i.Name,
 		&i.Description,
+		&i.Type,
 		&i.IsActive,
 		&i.WebhookUri,
 		&i.WebhookAllowedIps,
@@ -172,7 +179,7 @@ func (q *Queries) SelectAgentById(ctx context.Context, id uuid.UUID) (SelectAgen
 
 const selectAgents = `-- name: SelectAgents :many
 SELECT
-    av.id, av.name, av.description, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at,
+    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at,
     COALESCE(ak.knowledges_count, 0) AS knowledges_count,
     COALESCE(m.mcps_count, 0) AS mcps_count
 FROM agents_view av
@@ -224,6 +231,7 @@ type SelectAgentsRow struct {
 	ID                    uuid.UUID               `json:"id"`
 	Name                  string                  `json:"name"`
 	Description           *string                 `json:"description"`
+	Type                  AgentType               `json:"type"`
 	IsActive              bool                    `json:"is_active"`
 	WebhookUri            string                  `json:"webhook_uri"`
 	WebhookAllowedIps     []netip.Addr            `json:"webhook_allowed_ips"`
@@ -255,6 +263,7 @@ func (q *Queries) SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]S
 			&i.ID,
 			&i.Name,
 			&i.Description,
+			&i.Type,
 			&i.IsActive,
 			&i.WebhookUri,
 			&i.WebhookAllowedIps,
@@ -279,7 +288,7 @@ func (q *Queries) SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]S
 
 const selectAgentsByKnowledgeId = `-- name: SelectAgentsByKnowledgeId :many
 SELECT
-    av.id, av.name, av.description, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at,
+    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at,
     (akv.id IS NOT NULL)::bool AS connected
 FROM agents_view av
 LEFT JOIN agent_knowledges_view akv
@@ -310,6 +319,7 @@ type SelectAgentsByKnowledgeIdRow struct {
 	ID                    uuid.UUID               `json:"id"`
 	Name                  string                  `json:"name"`
 	Description           *string                 `json:"description"`
+	Type                  AgentType               `json:"type"`
 	IsActive              bool                    `json:"is_active"`
 	WebhookUri            string                  `json:"webhook_uri"`
 	WebhookAllowedIps     []netip.Addr            `json:"webhook_allowed_ips"`
@@ -340,6 +350,7 @@ func (q *Queries) SelectAgentsByKnowledgeId(ctx context.Context, arg SelectAgent
 			&i.ID,
 			&i.Name,
 			&i.Description,
+			&i.Type,
 			&i.IsActive,
 			&i.WebhookUri,
 			&i.WebhookAllowedIps,
@@ -362,7 +373,7 @@ func (q *Queries) SelectAgentsByKnowledgeId(ctx context.Context, arg SelectAgent
 }
 
 const selectAgentsByMcpId = `-- name: SelectAgentsByMcpId :many
-SELECT av.id, av.name, av.description, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at
+SELECT av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at
 FROM agents_view av
 JOIN agent_mcps_view amv
     ON amv.agent_id = av.id
@@ -405,6 +416,7 @@ func (q *Queries) SelectAgentsByMcpId(ctx context.Context, arg SelectAgentsByMcp
 			&i.ID,
 			&i.Name,
 			&i.Description,
+			&i.Type,
 			&i.IsActive,
 			&i.WebhookUri,
 			&i.WebhookAllowedIps,
@@ -455,7 +467,7 @@ WHERE
     deleted_at IS NULL
     AND id = $7
 RETURNING
-    id, name, description, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at
 `
 
 type UpdateAgentParams struct {
@@ -472,6 +484,7 @@ type UpdateAgentRow struct {
 	ID                    uuid.UUID               `json:"id"`
 	Name                  string                  `json:"name"`
 	Description           *string                 `json:"description"`
+	Type                  AgentType               `json:"type"`
 	IsActive              bool                    `json:"is_active"`
 	WebhookUri            string                  `json:"webhook_uri"`
 	WebhookAllowedIps     []netip.Addr            `json:"webhook_allowed_ips"`
@@ -498,6 +511,7 @@ func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Updat
 		&i.ID,
 		&i.Name,
 		&i.Description,
+		&i.Type,
 		&i.IsActive,
 		&i.WebhookUri,
 		&i.WebhookAllowedIps,
@@ -522,7 +536,7 @@ WHERE
     deleted_at IS NULL
     AND id = $4
 RETURNING
-    id, name, description, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at
 `
 
 type UpdateAgentPersonaParams struct {
@@ -536,6 +550,7 @@ type UpdateAgentPersonaRow struct {
 	ID                    uuid.UUID               `json:"id"`
 	Name                  string                  `json:"name"`
 	Description           *string                 `json:"description"`
+	Type                  AgentType               `json:"type"`
 	IsActive              bool                    `json:"is_active"`
 	WebhookUri            string                  `json:"webhook_uri"`
 	WebhookAllowedIps     []netip.Addr            `json:"webhook_allowed_ips"`
@@ -559,6 +574,7 @@ func (q *Queries) UpdateAgentPersona(ctx context.Context, arg UpdateAgentPersona
 		&i.ID,
 		&i.Name,
 		&i.Description,
+		&i.Type,
 		&i.IsActive,
 		&i.WebhookUri,
 		&i.WebhookAllowedIps,

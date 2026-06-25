@@ -54,6 +54,7 @@ func NewAgentHandler(conn *pgxpool.Pool) *AgentHandler {
 type createAgentRequest struct {
 	Name                  string   `json:"name"`
 	Description           *string  `json:"description"`
+	Type                  string   `json:"type"`
 	IsActive              *bool    `json:"is_active"`
 	WebhookUri            string   `json:"webhook_uri"`
 	WebhookAllowedIps     []string `json:"webhook_allowed_ips"`
@@ -79,6 +80,17 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	agentType := db.AgentTypeCHAT
+	switch req.Type {
+	case "", string(db.AgentTypeCHAT):
+		agentType = db.AgentTypeCHAT
+	case string(db.AgentTypeREPORT):
+		agentType = db.AgentTypeREPORT
+	default:
+		lib.ResponseJSONError(w, http.StatusBadRequest, "invalid type value")
+		return
+	}
+
 	allowedIPs, err := parseAllowedIPs(req.WebhookAllowedIps)
 	if err != nil {
 		lib.ResponseJSONError(w, http.StatusBadRequest, err.Error())
@@ -88,6 +100,7 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 	agent, err := h.Queries.InsertAgent(r.Context(), db.InsertAgentParams{
 		Name:                  req.Name,
 		Description:           req.Description,
+		Type:                  agentType,
 		IsActive:              lib.NullBoolean(req.IsActive),
 		WebhookUri:            req.WebhookUri,
 		WebhookAllowedIps:     allowedIPs,

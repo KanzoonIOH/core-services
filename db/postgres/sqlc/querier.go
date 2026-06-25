@@ -31,8 +31,10 @@ type Querier interface {
 	InsertKnowledge(ctx context.Context, arg InsertKnowledgeParams) (InsertKnowledgeRow, error)
 	InsertMcp(ctx context.Context, arg InsertMcpParams) (InsertMcpRow, error)
 	InsertMcpTool(ctx context.Context, arg InsertMcpToolParams) (InsertMcpToolRow, error)
+	InsertMessage(ctx context.Context, arg InsertMessageParams) error
 	InsertUpcomingChange(ctx context.Context, arg InsertUpcomingChangeParams) (UpcomingChange, error)
 	InsertUserRegister(ctx context.Context, arg InsertUserRegisterParams) (InsertUserRegisterRow, error)
+	ListMessagesByConversation(ctx context.Context, conversationID uuid.UUID) ([]Message, error)
 	RevokeApiKey(ctx context.Context, id uuid.UUID) (int64, error)
 	RevokeUpcomingChangeByID(ctx context.Context, id uuid.UUID) error
 	SelectAgentById(ctx context.Context, id uuid.UUID) (SelectAgentByIdRow, error)

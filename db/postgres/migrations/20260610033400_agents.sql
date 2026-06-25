@@ -1,4 +1,9 @@
 -- +goose Up
+CREATE TYPE AGENT_TYPE AS ENUM (
+    'CHAT',
+    'REPORT'
+);
+
 CREATE TYPE AGENT_TONE AS ENUM (
     'FRIENDLY',
     'PROFESSIONAL',
@@ -23,8 +28,12 @@ CREATE TABLE agents (
     id UUID PRIMARY KEY DEFAULT uuidv7(),
     name TEXT NOT NULL,
     description TEXT,
+    type AGENT_TYPE NOT NULL DEFAULT 'CHAT',
     is_active BOOLEAN NOT NULL DEFAULT false,
     webhook_uri TEXT NOT NULL,
+    -- Empty array means allow all callers / browser origins.
+    webhook_allowed_ips INET[] NOT NULL DEFAULT '{}',
+    webhook_allowed_origins TEXT[] NOT NULL DEFAULT '{}',
     tone AGENT_TONE NOT NULL DEFAULT 'FRIENDLY',
     response_length AGENT_RESPONSE_LENGTH NOT NULL DEFAULT 'MEDIUM',
     communication_style AGENT_COMMUNICATION_STYLE NOT NULL
@@ -39,8 +48,11 @@ SELECT
     id,
     name,
     description,
+    type,
     is_active,
     webhook_uri,
+    webhook_allowed_ips,
+    webhook_allowed_origins,
     tone,
     response_length,
     communication_style,
@@ -57,3 +69,4 @@ DROP TABLE IF EXISTS agents;
 DROP TYPE IF EXISTS AGENT_COMMUNICATION_STYLE;
 DROP TYPE IF EXISTS AGENT_RESPONSE_LENGTH;
 DROP TYPE IF EXISTS AGENT_TONE;
+DROP TYPE IF EXISTS AGENT_TYPE;
