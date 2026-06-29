@@ -19,4 +19,6 @@ WORKDIR /app
 # Copy the compiled binary from the builder
 COPY --from=builder /app/timer .
 
+EXPOSE 6702
+
 CMD ["./timer"]

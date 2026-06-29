@@ -23,4 +23,6 @@ COPY --from=builder /app/server .
 # docker-compose `env_file:`/`environment:`. godotenv.Load() simply no-ops when
 # no ./.env exists, and never overrides already-set env vars.
 
+EXPOSE 6701
+
 CMD ["./server"]
