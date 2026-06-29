@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -18,21 +20,28 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// TODO: move to env config once the n8n workflow is finalized.
-const (
-	knowledgeAPIBaseURL = "https://103.67.43.198:8443/milvus"
-	knowledgeAddURL     = knowledgeAPIBaseURL + "/knowledge/add"
-	knowledgeDeleteURL  = knowledgeAPIBaseURL + "/knowledge/%s" // DELETE /knowledge/{knowledge_id}
-)
+// Default knowledge (Milvus/n8n) API base URL, overridable via KNOWLEDGE_API_BASE_URL.
+const defaultKnowledgeAPIBaseURL = "https://103.67.43.198:8443/milvus"
 
 type ConnectHandler struct {
 	Queries    db.Querier
 	HTTPClient *http.Client
+	// knowledgeAddURL is POSTed to on connect; knowledgeDeleteURL is a
+	// fmt template ("...%s") DELETEd on disconnect.
+	knowledgeAddURL    string
+	knowledgeDeleteURL string
 }
 
 func NewConnectHandler(conn *pgxpool.Pool) *ConnectHandler {
+	base := strings.TrimRight(os.Getenv("KNOWLEDGE_API_BASE_URL"), "/")
+	if base == "" {
+		base = defaultKnowledgeAPIBaseURL
+	}
+
 	return &ConnectHandler{
-		Queries: db.New(conn),
+		Queries:            db.New(conn),
+		knowledgeAddURL:    base + "/knowledge/add",
+		knowledgeDeleteURL: base + "/knowledge/%s", // DELETE /knowledge/{knowledge_id}
 		HTTPClient: &http.Client{
 			Timeout: 10 * time.Minute,
 			Transport: &hostTLSBypassTransport{
@@ -151,7 +160,7 @@ func (h *ConnectHandler) triggerKnowledgeConversion(agentKnowledgeID, agentID, k
 		return
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, knowledgeAddURL, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.knowledgeAddURL, bytes.NewReader(payload))
 	if err != nil {
 		h.markKnowledgeConversionFailed(agentKnowledgeID, err)
 		return
@@ -217,7 +226,7 @@ func (h *ConnectHandler) triggerKnowledgeDeletion(knowledgeID uuid.UUID) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	url := fmt.Sprintf(knowledgeDeleteURL, knowledgeID)
+	url := fmt.Sprintf(h.knowledgeDeleteURL, knowledgeID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
 	if err != nil {
