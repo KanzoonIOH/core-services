@@ -89,6 +89,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 				r.Delete("/{id}", agentHandler.Delete)
 				r.Patch("/{id}/persona", agentHandler.UpdatePersona)
 				r.Get("/{id}/mcps", mcpHandler.ReadByAgentId)
+				r.Get("/{id}/mcps/all", mcpHandler.ReadAllByAgentId)
 				r.Get("/{id}/knowledges", knowledgeHandler.ReadByAgentId)
 				r.Get("/{id}/knowledges/all", knowledgeHandler.ReadAllByAgentId)
 			})

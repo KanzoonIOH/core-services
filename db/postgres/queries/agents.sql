@@ -109,19 +109,18 @@ ORDER BY
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: CountAgentsByMcpId :one
-SELECT COUNT(*)
-FROM agents_view av
-JOIN agent_mcps_view amv
-    ON amv.agent_id = av.id
-WHERE amv.mcp_id = sqlc.arg(mcp_id);
+SELECT COUNT(*) FROM agents_view;
 
 -- name: SelectAgentsByMcpId :many
-SELECT av.*
+SELECT
+    av.*,
+    (amv.id IS NOT NULL)::bool AS connected
 FROM agents_view av
-JOIN agent_mcps_view amv
+LEFT JOIN agent_mcps_view amv
     ON amv.agent_id = av.id
-WHERE amv.mcp_id = sqlc.arg(mcp_id)
+    AND amv.mcp_id = sqlc.arg(mcp_id)
 ORDER BY
+    connected DESC,
     CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN av.name END ASC,
     CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN av.name END DESC,
     CASE

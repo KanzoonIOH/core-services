@@ -165,7 +165,7 @@ func (h *AgentHandler) ReadByMcpId(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totalRow, err := h.Queries.CountAgentsByMcpId(r.Context(), mcp_id)
+	totalRow, err := h.Queries.CountAgentsByMcpId(r.Context())
 	if err != nil {
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agents")
 		return

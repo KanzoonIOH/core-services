@@ -36,15 +36,11 @@ func (q *Queries) CountAgentsByKnowledgeId(ctx context.Context) (int64, error) {
 }
 
 const countAgentsByMcpId = `-- name: CountAgentsByMcpId :one
-SELECT COUNT(*)
-FROM agents_view av
-JOIN agent_mcps_view amv
-    ON amv.agent_id = av.id
-WHERE amv.mcp_id = $1
+SELECT COUNT(*) FROM agents_view
 `
 
-func (q *Queries) CountAgentsByMcpId(ctx context.Context, mcpID uuid.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countAgentsByMcpId, mcpID)
+func (q *Queries) CountAgentsByMcpId(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countAgentsByMcpId)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -373,12 +369,15 @@ func (q *Queries) SelectAgentsByKnowledgeId(ctx context.Context, arg SelectAgent
 }
 
 const selectAgentsByMcpId = `-- name: SelectAgentsByMcpId :many
-SELECT av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at
+SELECT
+    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at,
+    (amv.id IS NOT NULL)::bool AS connected
 FROM agents_view av
-JOIN agent_mcps_view amv
+LEFT JOIN agent_mcps_view amv
     ON amv.agent_id = av.id
-WHERE amv.mcp_id = $1
+    AND amv.mcp_id = $1
 ORDER BY
+    connected DESC,
     CASE WHEN $2::text = 'name_asc' THEN av.name END ASC,
     CASE WHEN $2::text = 'name_desc' THEN av.name END DESC,
     CASE
@@ -398,7 +397,24 @@ type SelectAgentsByMcpIdParams struct {
 	Limit  int32     `json:"limit"`
 }
 
-func (q *Queries) SelectAgentsByMcpId(ctx context.Context, arg SelectAgentsByMcpIdParams) ([]AgentsView, error) {
+type SelectAgentsByMcpIdRow struct {
+	ID                    uuid.UUID               `json:"id"`
+	Name                  string                  `json:"name"`
+	Description           *string                 `json:"description"`
+	Type                  AgentType               `json:"type"`
+	IsActive              bool                    `json:"is_active"`
+	WebhookUri            string                  `json:"webhook_uri"`
+	WebhookAllowedIps     []netip.Addr            `json:"webhook_allowed_ips"`
+	WebhookAllowedOrigins []string                `json:"webhook_allowed_origins"`
+	Tone                  AgentTone               `json:"tone"`
+	ResponseLength        AgentResponseLength     `json:"response_length"`
+	CommunicationStyle    AgentCommunicationStyle `json:"communication_style"`
+	CreatedAt             time.Time               `json:"created_at"`
+	UpdatedAt             time.Time               `json:"updated_at"`
+	Connected             bool                    `json:"connected"`
+}
+
+func (q *Queries) SelectAgentsByMcpId(ctx context.Context, arg SelectAgentsByMcpIdParams) ([]SelectAgentsByMcpIdRow, error) {
 	rows, err := q.db.Query(ctx, selectAgentsByMcpId,
 		arg.McpID,
 		arg.Sort,
@@ -409,9 +425,9 @@ func (q *Queries) SelectAgentsByMcpId(ctx context.Context, arg SelectAgentsByMcp
 		return nil, err
 	}
 	defer rows.Close()
-	items := []AgentsView{}
+	items := []SelectAgentsByMcpIdRow{}
 	for rows.Next() {
-		var i AgentsView
+		var i SelectAgentsByMcpIdRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
@@ -426,6 +442,7 @@ func (q *Queries) SelectAgentsByMcpId(ctx context.Context, arg SelectAgentsByMcp
 			&i.CommunicationStyle,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Connected,
 		); err != nil {
 			return nil, err
 		}

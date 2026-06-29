@@ -59,6 +59,30 @@ JOIN agent_mcps_view amv
     ON amv.mcp_id = m.id
 WHERE amv.agent_id = sqlc.arg(agent_id);
 
+-- name: SelectMcpsWithAgentStatus :many
+SELECT
+    m.*,
+    (
+        SELECT count(*)
+        FROM mcp_tools AS t
+        WHERE t.mcp_id = m.id AND t.deleted_at IS NULL
+    ) AS tools_count,
+    (amv.id IS NOT NULL)::bool AS connected
+FROM mcps_view AS m
+LEFT JOIN agent_mcps_view amv
+    ON amv.mcp_id = m.id
+    AND amv.agent_id = sqlc.arg(agent_id)
+ORDER BY
+    connected DESC,
+    CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN m.name END ASC,
+    CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN m.name END DESC,
+    CASE WHEN sqlc.narg('sort')::text = 'created_asc' THEN m.created_at END ASC,
+    CASE
+        WHEN sqlc.narg('sort')::text = 'created_desc' THEN m.created_at
+    END DESC,
+    m.created_at DESC
+LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
 -- name: SelectMcpsByAgentId :many
 SELECT
     m.*,

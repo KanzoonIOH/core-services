@@ -156,6 +156,36 @@ func (h *McpHandler) ReadByAgentId(w http.ResponseWriter, r *http.Request) {
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, mcps, lib.ResponsePagination(int(pagination.Limit), int(pagination.Offset), len(mcps), int(totalRow)))
 }
 
+func (h *McpHandler) ReadAllByAgentId(w http.ResponseWriter, r *http.Request) {
+	agent_id, ok := lib.ParseID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	params := r.URL.Query()
+
+	pagination := lib.ParsePaginationParams(params)
+
+	mcps, err := h.Queries.SelectMcpsWithAgentStatus(r.Context(), db.SelectMcpsWithAgentStatusParams{
+		AgentID: agent_id,
+		Sort:    pagination.Sort,
+		Limit:   pagination.Limit,
+		Offset:  pagination.Offset * pagination.Limit,
+	})
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get mcps")
+		return
+	}
+
+	totalRow, err := h.Queries.CountMcps(r.Context())
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get mcps")
+		return
+	}
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, mcps, lib.ResponsePagination(int(pagination.Limit), int(pagination.Offset), len(mcps), int(totalRow)))
+}
+
 func (h *McpHandler) ReadById(w http.ResponseWriter, r *http.Request) {
 	id, ok := lib.ParseID(w, r, "id")
 	if !ok {

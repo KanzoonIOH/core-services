@@ -234,6 +234,83 @@ func (q *Queries) SelectMcpsByAgentId(ctx context.Context, arg SelectMcpsByAgent
 	return items, nil
 }
 
+const selectMcpsWithAgentStatus = `-- name: SelectMcpsWithAgentStatus :many
+SELECT
+    m.id, m.name, m.description, m.uri, m.created_at, m.updated_at,
+    (
+        SELECT count(*)
+        FROM mcp_tools AS t
+        WHERE t.mcp_id = m.id AND t.deleted_at IS NULL
+    ) AS tools_count,
+    (amv.id IS NOT NULL)::bool AS connected
+FROM mcps_view AS m
+LEFT JOIN agent_mcps_view amv
+    ON amv.mcp_id = m.id
+    AND amv.agent_id = $1
+ORDER BY
+    connected DESC,
+    CASE WHEN $2::text = 'name_asc' THEN m.name END ASC,
+    CASE WHEN $2::text = 'name_desc' THEN m.name END DESC,
+    CASE WHEN $2::text = 'created_asc' THEN m.created_at END ASC,
+    CASE
+        WHEN $2::text = 'created_desc' THEN m.created_at
+    END DESC,
+    m.created_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type SelectMcpsWithAgentStatusParams struct {
+	AgentID uuid.UUID `json:"agent_id"`
+	Sort    *string   `json:"sort"`
+	Offset  int32     `json:"offset"`
+	Limit   int32     `json:"limit"`
+}
+
+type SelectMcpsWithAgentStatusRow struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description"`
+	Uri         string    `json:"uri"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	ToolsCount  int64     `json:"tools_count"`
+	Connected   bool      `json:"connected"`
+}
+
+func (q *Queries) SelectMcpsWithAgentStatus(ctx context.Context, arg SelectMcpsWithAgentStatusParams) ([]SelectMcpsWithAgentStatusRow, error) {
+	rows, err := q.db.Query(ctx, selectMcpsWithAgentStatus,
+		arg.AgentID,
+		arg.Sort,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SelectMcpsWithAgentStatusRow{}
+	for rows.Next() {
+		var i SelectMcpsWithAgentStatusRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Description,
+			&i.Uri,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ToolsCount,
+			&i.Connected,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const softDeleteMcp = `-- name: SoftDeleteMcp :execrows
 UPDATE mcps
 SET deleted_at = now()
