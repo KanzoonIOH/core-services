@@ -1,0 +1,13 @@
+services:
+    timer-service:
+        build:
+            context: .
+            dockerfile: Dockerfile.timer
+        environment:
+            REDPANDA_BROKER: ${REDPANDA_BROKER:?}
+        restart: unless-stopped
+        networks:
+            - dokploy-network
+networks:
+    dokploy-network:
+        external: true
