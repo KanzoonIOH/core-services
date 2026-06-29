@@ -50,7 +50,7 @@ func (h *KnowledgeHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	objectKey := fmt.Sprintf("knowledges/%s", timestampedObjectFilename(fileHeader.Filename))
+	objectKey := fmt.Sprintf("%s", timestampedObjectFilename(fileHeader.Filename))
 	sourceURI, err := h.ObjectStorage.Upload(r.Context(), objectKey, file, fileHeader.Header.Get("Content-Type"))
 	if err != nil {
 		fmt.Println(err)
