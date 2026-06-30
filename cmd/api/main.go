@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"aic3-service/internal/app"
@@ -42,8 +41,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	brokers := strings.Split(os.Getenv("REDPANDA_BROKER"), ",")
-	handler.StartChatConsumer(ctx, brokers, ch)
+	handler.StartChatConsumer(ctx, app.KafkaBrokers(), ch)
 
 	r := app.AppRouter(conn, kafka, ch)
 
