@@ -44,6 +44,9 @@ func NewConnectHandler(conn *pgxpool.Pool) *ConnectHandler {
 		knowledgeDeleteURL: base + "/knowledge/%s", // DELETE /knowledge/{knowledge_id}
 		HTTPClient: &http.Client{
 			Timeout: 10 * time.Minute,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
 			Transport: &hostTLSBypassTransport{
 				secure: http.DefaultTransport,
 				insecure: &http.Transport{
