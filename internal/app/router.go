@@ -56,6 +56,13 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 			r.Post("/password/reset", authHandler.ResetPassword)
 		})
 		r.Get("/confirm", confirmHandler.UpdateEmailConfirm)
+		// Internal service-to-service routes: no login, guarded by a static
+		// key (INTERNAL_API_KEY env) sent in the X-Internal-Key header.
+		r.Route("/internal", func(r chi.Router) {
+			r.Use(middleware.InternalKey(mustEnv("INTERNAL_API_KEY")))
+			r.Get("/agent/{id}", agentHandler.ReadById)
+			r.Get("/mcp/{id}", mcpHandler.ReadByAgentId)
+		})
 		// CORS preflight for the widget-embeddable chat endpoint. No auth: a
 		// preflight never carries credentials.
 		r.Options("/chat/{id}", webhookHandler.PreflightChatWebhook)
@@ -152,6 +159,14 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 	})
 
 	return r
+}
+
+func mustEnv(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		log.Fatalf("%s is required", key)
+	}
+	return v
 }
 
 func newJWTSigner() *lib.JWTSigner {

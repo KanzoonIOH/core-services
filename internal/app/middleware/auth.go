@@ -4,6 +4,7 @@ import (
 	db "aic3-service/db/postgres/sqlc"
 	"aic3-service/internal/lib"
 	"context"
+	"crypto/subtle"
 	"errors"
 	"net/http"
 	"strings"
@@ -69,6 +70,22 @@ func AuthOrApiKey(signer *lib.JWTSigner, queries db.Querier) func(http.Handler) 
 			}
 
 			lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to verify api key")
+		})
+	}
+}
+
+// InternalKey guards internal service-to-service routes with a static key from
+// env, passed in the X-Internal-Key header. No login, no JWT.
+// ponytail: constant-time compare avoids timing leaks; static key, rotate via env.
+func InternalKey(key string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			got := r.Header.Get("X-Internal-Key")
+			if got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(key)) != 1 {
+				lib.ResponseJSONError(w, http.StatusUnauthorized, "invalid internal key")
+				return
+			}
+			next.ServeHTTP(w, r)
 		})
 	}
 }
