@@ -5,6 +5,7 @@ import (
 	"aic3-service/internal/lib"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/netip"
 	"strings"
@@ -62,20 +63,25 @@ type createAgentRequest struct {
 }
 
 func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[core-service][agent-create] api hit method=%s path=%s", r.Method, r.URL.Path)
 	var req createAgentRequest
 
 	if !lib.ParseJSONBody(w, r, &req) {
+		log.Printf("[core-service][agent-create] api error invalid JSON body")
 		return
 	}
+	log.Printf("[core-service][agent-create] request params=%s", jsonForLog(req))
 
 	req.Name = strings.TrimSpace(req.Name)
 	req.WebhookUri = strings.TrimSpace(req.WebhookUri)
 
 	if req.Name == "" {
+		log.Printf("[core-service][agent-create] api error status=%d reason=name is required", http.StatusBadRequest)
 		lib.ResponseJSONError(w, http.StatusBadRequest, "name are required")
 		return
 	}
 	if req.WebhookUri == "" {
+		log.Printf("[core-service][agent-create] api error status=%d reason=webhook_uri is required", http.StatusBadRequest)
 		lib.ResponseJSONError(w, http.StatusBadRequest, "webhook_uri are required")
 		return
 	}
@@ -87,12 +93,14 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 	case string(db.AgentTypeREPORT):
 		agentType = db.AgentTypeREPORT
 	default:
+		log.Printf("[core-service][agent-create] api error status=%d reason=invalid type value type=%q", http.StatusBadRequest, req.Type)
 		lib.ResponseJSONError(w, http.StatusBadRequest, "invalid type value")
 		return
 	}
 
 	allowedIPs, err := parseAllowedIPs(req.WebhookAllowedIps)
 	if err != nil {
+		log.Printf("[core-service][agent-create] api error status=%d reason=%v", http.StatusBadRequest, err)
 		lib.ResponseJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -107,19 +115,22 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		WebhookAllowedOrigins: trimNonEmpty(req.WebhookAllowedOrigins),
 	})
 	if err != nil {
-		fmt.Printf("%v", err)
+		log.Printf("[core-service][agent-create] db insert error params=%s error=%v", jsonForLog(req), err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to create agent")
 		return
 	}
 
+	log.Printf("[core-service][agent-create] api success status=%d response=%s", http.StatusOK, jsonForLog(agent))
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agent, nil)
 }
 
 func (h *AgentHandler) Read(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[core-service][agent-read] api hit method=%s path=%s query=%s", r.Method, r.URL.Path, r.URL.RawQuery)
 	params := r.URL.Query()
 
 	pagination := lib.ParsePaginationParams(params)
 	isActive := lib.ParseParamsBool(params, "is_active")
+	log.Printf("[core-service][agent-read] request params={is_active:%v sort:%v limit:%d offset:%d}", isActive, pagination.Sort, pagination.Limit, pagination.Offset)
 
 	agents, err := h.Queries.SelectAgents(r.Context(), db.SelectAgentsParams{
 		IsActive: isActive,
@@ -128,31 +139,34 @@ func (h *AgentHandler) Read(w http.ResponseWriter, r *http.Request) {
 		Offset:   pagination.Offset * pagination.Limit,
 	})
 	if err != nil {
-		fmt.Printf("%v", err)
+		log.Printf("[core-service][agent-read] db select error error=%v", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agents")
 		return
 	}
 
 	totalRow, err := h.Queries.CountAgents(r.Context())
 	if err != nil {
-		fmt.Printf("%v", err)
+		log.Printf("[core-service][agent-read] db count error error=%v", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agents")
 		return
 	}
 
-	fmt.Printf("%v", len(agents))
+	log.Printf("[core-service][agent-read] api success status=%d count=%d total=%d", http.StatusOK, len(agents), totalRow)
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agents, lib.ResponsePagination(int(pagination.Limit), int(pagination.Offset), len(agents), int(totalRow)))
 }
 
 func (h *AgentHandler) ReadByMcpId(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[core-service][agent-read-by-mcp] api hit method=%s path=%s query=%s", r.Method, r.URL.Path, r.URL.RawQuery)
 	mcp_id, ok := lib.ParseID(w, r, "id")
 	if !ok {
+		log.Printf("[core-service][agent-read-by-mcp] api error invalid mcp id")
 		return
 	}
 
 	params := r.URL.Query()
 
 	pagination := lib.ParsePaginationParams(params)
+	log.Printf("[core-service][agent-read-by-mcp] request params={mcp_id:%s sort:%v limit:%d offset:%d}", mcp_id, pagination.Sort, pagination.Limit, pagination.Offset)
 
 	agents, err := h.Queries.SelectAgentsByMcpId(r.Context(), db.SelectAgentsByMcpIdParams{
 		McpID:  mcp_id,
@@ -161,28 +175,34 @@ func (h *AgentHandler) ReadByMcpId(w http.ResponseWriter, r *http.Request) {
 		Offset: pagination.Offset * pagination.Limit,
 	})
 	if err != nil {
+		log.Printf("[core-service][agent-read-by-mcp] db select error mcp_id=%s error=%v", mcp_id, err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agents")
 		return
 	}
 
 	totalRow, err := h.Queries.CountAgentsByMcpId(r.Context())
 	if err != nil {
+		log.Printf("[core-service][agent-read-by-mcp] db count error mcp_id=%s error=%v", mcp_id, err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agents")
 		return
 	}
 
+	log.Printf("[core-service][agent-read-by-mcp] api success status=%d mcp_id=%s count=%d total=%d", http.StatusOK, mcp_id, len(agents), totalRow)
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agents, lib.ResponsePagination(int(pagination.Limit), int(pagination.Offset), len(agents), int(totalRow)))
 }
 
 func (h *AgentHandler) ReadByKnowledgeId(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[core-service][agent-read-by-knowledge] api hit method=%s path=%s query=%s", r.Method, r.URL.Path, r.URL.RawQuery)
 	knowledge_id, ok := lib.ParseID(w, r, "id")
 	if !ok {
+		log.Printf("[core-service][agent-read-by-knowledge] api error invalid knowledge id")
 		return
 	}
 
 	params := r.URL.Query()
 
 	pagination := lib.ParsePaginationParams(params)
+	log.Printf("[core-service][agent-read-by-knowledge] request params={knowledge_id:%s sort:%v limit:%d offset:%d}", knowledge_id, pagination.Sort, pagination.Limit, pagination.Offset)
 
 	agents, err := h.Queries.SelectAgentsByKnowledgeId(r.Context(), db.SelectAgentsByKnowledgeIdParams{
 		KnowledgeID: knowledge_id,
@@ -191,36 +211,45 @@ func (h *AgentHandler) ReadByKnowledgeId(w http.ResponseWriter, r *http.Request)
 		Offset:      pagination.Offset * pagination.Limit,
 	})
 	if err != nil {
+		log.Printf("[core-service][agent-read-by-knowledge] db select error knowledge_id=%s error=%v", knowledge_id, err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agents")
 		return
 	}
 
 	totalRow, err := h.Queries.CountAgentsByKnowledgeId(r.Context())
 	if err != nil {
+		log.Printf("[core-service][agent-read-by-knowledge] db count error knowledge_id=%s error=%v", knowledge_id, err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agents")
 		return
 	}
 
+	log.Printf("[core-service][agent-read-by-knowledge] api success status=%d knowledge_id=%s count=%d total=%d", http.StatusOK, knowledge_id, len(agents), totalRow)
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agents, lib.ResponsePagination(int(pagination.Limit), int(pagination.Offset), len(agents), int(totalRow)))
 }
 
 func (h *AgentHandler) ReadById(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[core-service][agent-read-by-id] api hit method=%s path=%s", r.Method, r.URL.Path)
 	id, ok := lib.ParseID(w, r, "id")
 	if !ok {
+		log.Printf("[core-service][agent-read-by-id] api error invalid id")
 		return
 	}
+	log.Printf("[core-service][agent-read-by-id] request params={id:%s}", id)
 
 	agent, err := h.Queries.SelectAgentById(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			log.Printf("[core-service][agent-read-by-id] api error status=%d reason=agent not found id=%s", http.StatusNotFound, id)
 			lib.ResponseJSONError(w, http.StatusNotFound, "agent not found")
 			return
 		}
 
+		log.Printf("[core-service][agent-read-by-id] db select error id=%s error=%v", id, err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agent")
 		return
 	}
 
+	log.Printf("[core-service][agent-read-by-id] api success status=%d response=%s", http.StatusOK, jsonForLog(agent))
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agent, nil)
 }
 
@@ -234,30 +263,37 @@ type updateAgentRequest struct {
 }
 
 func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[core-service][agent-update] api hit method=%s path=%s", r.Method, r.URL.Path)
 	id, ok := lib.ParseID(w, r, "id")
 	if !ok {
+		log.Printf("[core-service][agent-update] api error invalid id")
 		return
 	}
 
 	var req updateAgentRequest
 	if !lib.ParseJSONBody(w, r, &req) {
+		log.Printf("[core-service][agent-update] api error invalid JSON body id=%s", id)
 		return
 	}
+	log.Printf("[core-service][agent-update] request params={id:%s body:%s}", id, jsonForLog(req))
 
 	req.Name = strings.TrimSpace(req.Name)
 	req.WebhookUri = strings.TrimSpace(req.WebhookUri)
 
 	if req.Name == "" {
+		log.Printf("[core-service][agent-update] api error status=%d reason=name is required id=%s", http.StatusBadRequest, id)
 		lib.ResponseJSONError(w, http.StatusBadRequest, "name are required")
 		return
 	}
 	if req.WebhookUri == "" {
+		log.Printf("[core-service][agent-update] api error status=%d reason=webhook_uri is required id=%s", http.StatusBadRequest, id)
 		lib.ResponseJSONError(w, http.StatusBadRequest, "webhook_uri are required")
 		return
 	}
 
 	allowedIPs, err := parseAllowedIPs(req.WebhookAllowedIps)
 	if err != nil {
+		log.Printf("[core-service][agent-update] api error status=%d reason=%v id=%s", http.StatusBadRequest, err, id)
 		lib.ResponseJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -273,34 +309,43 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			log.Printf("[core-service][agent-update] api error status=%d reason=agent not found id=%s", http.StatusNotFound, id)
 			lib.ResponseJSONError(w, http.StatusNotFound, "agent not found")
 			return
 		}
 
+		log.Printf("[core-service][agent-update] db update error id=%s error=%v", id, err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to update agent")
 		return
 	}
 
+	log.Printf("[core-service][agent-update] api success status=%d response=%s", http.StatusOK, jsonForLog(agent))
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agent, nil)
 }
 
 func (h *AgentHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[core-service][agent-delete] api hit method=%s path=%s", r.Method, r.URL.Path)
 	id, ok := lib.ParseID(w, r, "id")
 	if !ok {
+		log.Printf("[core-service][agent-delete] api error invalid id")
 		return
 	}
+	log.Printf("[core-service][agent-delete] request params={id:%s}", id)
 
 	rowsAffected, err := h.Queries.SoftDeleteAgent(r.Context(), id)
 	if err != nil {
+		log.Printf("[core-service][agent-delete] db soft-delete error id=%s error=%v", id, err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to delete agent")
 		return
 	}
 
 	if rowsAffected == 0 {
+		log.Printf("[core-service][agent-delete] api error status=%d reason=agent not found id=%s", http.StatusNotFound, id)
 		lib.ResponseJSONError(w, http.StatusNotFound, "agent not found")
 		return
 	}
 
+	log.Printf("[core-service][agent-delete] api success status=%d rows_affected=%d", http.StatusNoContent, rowsAffected)
 	lib.ResponseJSONTemplate(w, http.StatusNoContent, nil, nil, nil)
 }
 

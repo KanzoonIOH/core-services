@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -63,46 +64,56 @@ type connectAgentMcpRequest struct {
 }
 
 func (h *ConnectHandler) ConnectAgentMcp(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[core-service][connect-agent-mcp] api hit method=%s path=%s", r.Method, r.URL.Path)
 	var req connectAgentMcpRequest
 
 	if !lib.ParseJSONBody(w, r, &req) {
+		log.Printf("[core-service][connect-agent-mcp] api error invalid JSON body")
 		return
 	}
+	log.Printf("[core-service][connect-agent-mcp] request params=%s", jsonForLog(req))
 
 	agent_mcp, err := h.Queries.InsertAgentMcp(r.Context(), db.InsertAgentMcpParams{
 		AgentID: req.AgentId,
 		McpID:   req.McpId,
 	})
 	if err != nil {
-		fmt.Printf("%v\n", err)
+		log.Printf("[core-service][connect-agent-mcp] db insert error agent_id=%s mcp_id=%s error=%v", req.AgentId, req.McpId, err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to connect mcp to agent")
 		return
 	}
 
+	log.Printf("[core-service][connect-agent-mcp] api success status=%d response=%s", http.StatusOK, jsonForLog(agent_mcp))
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agent_mcp, nil)
 }
 
 func (h *ConnectHandler) DisconnectAgentMcp(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[core-service][disconnect-agent-mcp] api hit method=%s path=%s", r.Method, r.URL.Path)
 	var req connectAgentMcpRequest
 
 	if !lib.ParseJSONBody(w, r, &req) {
+		log.Printf("[core-service][disconnect-agent-mcp] api error invalid JSON body")
 		return
 	}
+	log.Printf("[core-service][disconnect-agent-mcp] request params=%s", jsonForLog(req))
 
 	rowsAffected, err := h.Queries.SoftDeleteAgentMcp(r.Context(), db.SoftDeleteAgentMcpParams{
 		AgentID: req.AgentId,
 		McpID:   req.McpId,
 	})
 	if err != nil {
+		log.Printf("[core-service][disconnect-agent-mcp] db soft-delete error agent_id=%s mcp_id=%s error=%v", req.AgentId, req.McpId, err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to disconnect mcp from agent")
 		return
 	}
 
 	if rowsAffected == 0 {
+		log.Printf("[core-service][disconnect-agent-mcp] api error status=%d reason=agent mcp not found params=%s", http.StatusNotFound, jsonForLog(req))
 		lib.ResponseJSONError(w, http.StatusNotFound, "agent mcp not found")
 		return
 	}
 
+	log.Printf("[core-service][disconnect-agent-mcp] api success status=%d rows_affected=%d", http.StatusNoContent, rowsAffected)
 	lib.ResponseJSONTemplate(w, http.StatusNoContent, nil, nil, nil)
 }
 
@@ -112,34 +123,43 @@ type connectAgentKnowledgeRequest struct {
 }
 
 func (h *ConnectHandler) ConnectAgentKnowledge(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[core-service][connect-agent-knowledge] api hit method=%s path=%s", r.Method, r.URL.Path)
 	var req connectAgentKnowledgeRequest
 
 	if !lib.ParseJSONBody(w, r, &req) {
+		log.Printf("[core-service][connect-agent-knowledge] api error invalid JSON body")
 		return
 	}
+	log.Printf("[core-service][connect-agent-knowledge] request params=%s", jsonForLog(req))
 
 	knowledge, err := h.Queries.SelectKnowledgeById(r.Context(), req.KnowledgeId)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			log.Printf("[core-service][connect-agent-knowledge] api error status=%d reason=knowledge not found knowledge_id=%s", http.StatusNotFound, req.KnowledgeId)
 			lib.ResponseJSONError(w, http.StatusNotFound, "knowledge not found")
 			return
 		}
+		log.Printf("[core-service][connect-agent-knowledge] db select knowledge error knowledge_id=%s error=%v", req.KnowledgeId, err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to connect knowledge to agent")
 		return
 	}
+	log.Printf("[core-service][connect-agent-knowledge] selected knowledge id=%s source_uri=%v", req.KnowledgeId, knowledge.SourceUri)
 
 	agent_knowledge, err := h.Queries.InsertAgentKnowledge(r.Context(), db.InsertAgentKnowledgeParams{
 		AgentID:     req.AgentId,
 		KnowledgeID: req.KnowledgeId,
 	})
 	if err != nil {
-		fmt.Printf("%v\n", err)
+		log.Printf("[core-service][connect-agent-knowledge] db insert error agent_id=%s knowledge_id=%s error=%v", req.AgentId, req.KnowledgeId, err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to connect knowledge to agent")
 		return
 	}
+	log.Printf("[core-service][connect-agent-knowledge] db insert success agent_knowledge=%s", jsonForLog(agent_knowledge))
 
 	go h.triggerKnowledgeConversion(agent_knowledge.ID, req.AgentId, req.KnowledgeId, knowledge.SourceUri)
+	log.Printf("[core-service][connect-agent-knowledge] rag conversion trigger queued agent_knowledge_id=%s agent_id=%s knowledge_id=%s", agent_knowledge.ID, req.AgentId, req.KnowledgeId)
 
+	log.Printf("[core-service][connect-agent-knowledge] api success status=%d response=%s", http.StatusOK, jsonForLog(agent_knowledge))
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agent_knowledge, nil)
 }
 
@@ -159,27 +179,46 @@ func (h *ConnectHandler) triggerKnowledgeConversion(agentKnowledgeID, agentID, k
 		"document_link": sourceURI,
 	})
 	if err != nil {
+		log.Printf("[core-service][rag-knowledge-add] payload marshal error agent_knowledge_id=%s agent_id=%s knowledge_id=%s source_uri=%v error=%v", agentKnowledgeID, agentID, knowledgeID, sourceURI, err)
 		h.markKnowledgeConversionFailed(agentKnowledgeID, err)
 		return
 	}
 
+	log.Printf("[core-service][rag-knowledge-add] fetch start method=%s url=%s params={agent_knowledge_id:%s agent_id:%s knowledge_id:%s source_uri:%v} payload=%s", http.MethodPost, h.knowledgeAddURL, agentKnowledgeID, agentID, knowledgeID, sourceURI, string(payload))
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.knowledgeAddURL, bytes.NewReader(payload))
 	if err != nil {
+		log.Printf("[core-service][rag-knowledge-add] request build error url=%s payload=%s error=%v", h.knowledgeAddURL, string(payload), err)
 		h.markKnowledgeConversionFailed(agentKnowledgeID, err)
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 
+	started := time.Now()
 	resp, err := h.HTTPClient.Do(req)
+	duration := time.Since(started)
 	if err != nil {
+		log.Printf("[core-service][rag-knowledge-add] fetch error method=%s url=%s duration=%s payload=%s error=%v", http.MethodPost, h.knowledgeAddURL, duration, string(payload), err)
 		h.markKnowledgeConversionFailed(agentKnowledgeID, err)
 		return
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		h.markKnowledgeConversionFailed(agentKnowledgeID, fmt.Errorf("webhook returned status %d", resp.StatusCode))
+	body, readErr := io.ReadAll(resp.Body)
+	bodyText := truncateForLog(string(body), 4096)
+	if readErr != nil {
+		log.Printf("[core-service][rag-knowledge-add] response body read error status=%d duration=%s error=%v", resp.StatusCode, duration, readErr)
 	}
+
+	log.Printf("[core-service][rag-knowledge-add] fetch returned method=%s url=%s status=%d duration=%s response_body=%q", http.MethodPost, h.knowledgeAddURL, resp.StatusCode, duration, bodyText)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		err := fmt.Errorf("webhook returned status %d body=%q", resp.StatusCode, bodyText)
+		log.Printf("[core-service][rag-knowledge-add] fetch failed agent_knowledge_id=%s status=%d reason=%v", agentKnowledgeID, resp.StatusCode, err)
+		h.markKnowledgeConversionFailed(agentKnowledgeID, err)
+		return
+	}
+
+	log.Printf("[core-service][rag-knowledge-add] fetch success agent_knowledge_id=%s status=%d body=%q", agentKnowledgeID, resp.StatusCode, bodyText)
 }
 
 func (h *ConnectHandler) markKnowledgeConversionFailed(agentKnowledgeID uuid.UUID, cause error) {
@@ -197,28 +236,35 @@ func (h *ConnectHandler) markKnowledgeConversionFailed(agentKnowledgeID uuid.UUI
 }
 
 func (h *ConnectHandler) DisconnectAgentKnowledge(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[core-service][disconnect-agent-knowledge] api hit method=%s path=%s", r.Method, r.URL.Path)
 	var req connectAgentKnowledgeRequest
 
 	if !lib.ParseJSONBody(w, r, &req) {
+		log.Printf("[core-service][disconnect-agent-knowledge] api error invalid JSON body")
 		return
 	}
+	log.Printf("[core-service][disconnect-agent-knowledge] request params=%s", jsonForLog(req))
 
 	rowsAffected, err := h.Queries.SoftDeleteAgentKnowledgeByPair(r.Context(), db.SoftDeleteAgentKnowledgeByPairParams{
 		AgentID:     req.AgentId,
 		KnowledgeID: req.KnowledgeId,
 	})
 	if err != nil {
+		log.Printf("[core-service][disconnect-agent-knowledge] db soft-delete error agent_id=%s knowledge_id=%s error=%v", req.AgentId, req.KnowledgeId, err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to disconnect knowledge from agent")
 		return
 	}
 
 	if rowsAffected == 0 {
+		log.Printf("[core-service][disconnect-agent-knowledge] api error status=%d reason=agent knowledge not found params=%s", http.StatusNotFound, jsonForLog(req))
 		lib.ResponseJSONError(w, http.StatusNotFound, "agent knowledge not found")
 		return
 	}
 
 	go h.triggerKnowledgeDeletion(req.KnowledgeId)
+	log.Printf("[core-service][disconnect-agent-knowledge] rag deletion trigger queued knowledge_id=%s rows_affected=%d", req.KnowledgeId, rowsAffected)
 
+	log.Printf("[core-service][disconnect-agent-knowledge] api success status=%d rows_affected=%d", http.StatusNoContent, rowsAffected)
 	lib.ResponseJSONTemplate(w, http.StatusNoContent, nil, nil, nil)
 }
 
@@ -230,21 +276,34 @@ func (h *ConnectHandler) triggerKnowledgeDeletion(knowledgeID uuid.UUID) {
 	defer cancel()
 
 	url := fmt.Sprintf(h.knowledgeDeleteURL, knowledgeID)
+	log.Printf("[core-service][rag-knowledge-delete] fetch start method=%s url=%s params={knowledge_id:%s}", http.MethodDelete, url, knowledgeID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
 	if err != nil {
-		log.Printf("knowledge deletion trigger failed for knowledge %s: %v", knowledgeID, err)
+		log.Printf("[core-service][rag-knowledge-delete] request build error knowledge_id=%s url=%s error=%v", knowledgeID, url, err)
 		return
 	}
 
+	started := time.Now()
 	resp, err := h.HTTPClient.Do(req)
+	duration := time.Since(started)
 	if err != nil {
-		log.Printf("knowledge deletion trigger failed for knowledge %s: %v", knowledgeID, err)
+		log.Printf("[core-service][rag-knowledge-delete] fetch error method=%s url=%s duration=%s knowledge_id=%s error=%v", http.MethodDelete, url, duration, knowledgeID, err)
 		return
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		log.Printf("knowledge deletion trigger failed for knowledge %s: API returned status %d", knowledgeID, resp.StatusCode)
+	body, readErr := io.ReadAll(resp.Body)
+	bodyText := truncateForLog(string(body), 4096)
+	if readErr != nil {
+		log.Printf("[core-service][rag-knowledge-delete] response body read error status=%d duration=%s error=%v", resp.StatusCode, duration, readErr)
 	}
+
+	log.Printf("[core-service][rag-knowledge-delete] fetch returned method=%s url=%s status=%d duration=%s response_body=%q", http.MethodDelete, url, resp.StatusCode, duration, bodyText)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		log.Printf("[core-service][rag-knowledge-delete] fetch failed knowledge_id=%s status=%d reason=API returned non-2xx body=%q", knowledgeID, resp.StatusCode, bodyText)
+		return
+	}
+
+	log.Printf("[core-service][rag-knowledge-delete] fetch success knowledge_id=%s status=%d body=%q", knowledgeID, resp.StatusCode, bodyText)
 }
