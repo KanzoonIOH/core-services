@@ -43,18 +43,19 @@ func (h *LogHandler) ReadMessages(w http.ResponseWriter, r *http.Request) {
 
 // rangeSince maps a dashboard range param to the inclusive lower bound for
 // `bucket >= since`, and reports the timeseries bucket step ("hour" or "day").
-// Defaults to "day" (today, hourly step) for unknown/empty values.
+// Windows are rolling relative to now (24h = the last 24 hours, not since
+// midnight). Defaults to a rolling 24h (hourly step) for unknown/empty values.
 func rangeSince(rng string) (since time.Time, step string) {
 	now := time.Now().UTC()
 	switch rng {
-	case "week":
+	case "7d", "week":
 		return now.AddDate(0, 0, -7), "day"
-	case "month":
-		return now.AddDate(0, -1, 0), "day"
+	case "30d", "month":
+		return now.AddDate(0, 0, -30), "day"
 	case "3months":
 		return now.AddDate(0, -3, 0), "week"
-	default: // "day"
-		return now.Truncate(24 * time.Hour), "hour"
+	default: // "24h"
+		return now.Add(-24 * time.Hour), "hour"
 	}
 }
 
