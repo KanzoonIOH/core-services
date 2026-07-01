@@ -27,7 +27,7 @@ services:
             S3_BUCKET: ${S3_BUCKET:?}
             INTERNAL_API_KEY: ${INTERNAL_API_KEY:?}
         ports:
-            - "${API_SERVICE_PORT:-6701}:${SERVER_PORT:-6701}"
+            - "${SERVER_PORT:-6701}:${SERVER_PORT:-6701}"
         restart: unless-stopped
         networks:
             - dokploy-network
