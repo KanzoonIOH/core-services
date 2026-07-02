@@ -190,15 +190,80 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 	} else {
 		bodyMap = map[string]any{}
 	}
-	// Persist the user's message: text + any uploaded docs/images. The input
-	// field name is per-agent (defaults to n8n's "chatInput").
-	h.storeMessage(conversationID, db.MessageRoleUser, bodyMap[agent.WebhookInputField], bodyMap["attachments"], nil)
+	// Callers always send the message under "chatInput". Map it to the agent's
+	// configured input field (e.g. "query") before forwarding, so the upstream
+	// agent receives the field name it expects. Persist before the rename so the
+	// stored value is the same either way.
+	h.storeMessage(conversationID, db.MessageRoleUser, bodyMap["chatInput"], bodyMap["attachments"], nil)
+
+	if agent.WebhookInputField != "" && agent.WebhookInputField != "chatInput" {
+		if v, ok := bodyMap["chatInput"]; ok {
+			bodyMap[agent.WebhookInputField] = v
+			delete(bodyMap, "chatInput")
+		}
+	}
 
 	bodyMap["sessionId"] = conversationID
 	bodyMap["agent_id"] = id.String()
 	bodyMap["tone"] = string(agent.Tone)
 	bodyMap["length"] = string(agent.ResponseLength)
 	bodyMap["style"] = string(agent.CommunicationStyle)
+
+	// Reserved "headers" object in the incoming body carries per-request
+	// dynamic header values. Pull it out so it isn't forwarded in the body.
+	callerHeaders := map[string]string{}
+	if raw, ok := bodyMap["headers"]; ok {
+		if m, ok := raw.(map[string]any); ok {
+			for k, v := range m {
+				if s, ok := v.(string); ok {
+					callerHeaders[k] = s
+				}
+			}
+		}
+		delete(bodyMap, "headers")
+	}
+
+	// Inject the agent's configured body fields. Static fields set a fixed
+	// value; dynamic fields must be supplied by the caller (enforced).
+	for _, f := range parseWebhookFields(agent.WebhookBodyFields) {
+		if f.Key == "" {
+			continue
+		}
+		if f.Type == "dynamic" {
+			v, ok := bodyMap[f.Key]
+			if !ok || v == nil || v == "" {
+				msg := fmt.Sprintf("missing required field %q", f.Key)
+				h.publishWebhookMessage(id.String(), conversationID, http.StatusBadRequest, hitTime, msg)
+				lib.ResponseJSONError(w, http.StatusBadRequest, msg)
+				return
+			}
+			// keep the caller-supplied value as-is
+		} else {
+			bodyMap[f.Key] = f.Value
+		}
+	}
+
+	// Resolve the agent's configured auth/header fields. Static uses the fixed
+	// value; dynamic must be supplied by the caller under body.headers
+	// (enforced). Open agent = no fields = no headers added.
+	outHeaders := map[string]string{}
+	for _, f := range parseWebhookFields(agent.WebhookHeaderFields) {
+		if f.Key == "" {
+			continue
+		}
+		if f.Type == "dynamic" {
+			v := callerHeaders[f.Key]
+			if v == "" {
+				msg := fmt.Sprintf("missing required header %q", f.Key)
+				h.publishWebhookMessage(id.String(), conversationID, http.StatusBadRequest, hitTime, msg)
+				lib.ResponseJSONError(w, http.StatusBadRequest, msg)
+				return
+			}
+			outHeaders[f.Key] = v
+		} else {
+			outHeaders[f.Key] = f.Value
+		}
+	}
 
 	modifiedBody, err := json.Marshal(bodyMap)
 	if err != nil {
@@ -215,6 +280,12 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 	}
 	copyForwardHeaders(req.Header, r.Header)
 	req.Header.Set("Content-Type", "application/json")
+	// Agent-configured auth/headers override forwarded ones.
+	for k, v := range outHeaders {
+		req.Header.Set(k, v)
+	}
+
+	log.Printf("chat webhook request: %s", curlPreview(req, modifiedBody))
 
 	res, err := h.HTTPClient.Do(req)
 	if err != nil {
@@ -233,13 +304,17 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 	h.publishWebhookMessage(id.String(), conversationID, res.StatusCode, hitTime, errorMessage)
 
 	// Buffer the response so we can persist the AI reply, then relay it verbatim.
+	// The frontend reads the agent's configured webhook_output_field to know
+	// which key holds the reply text — no remapping needed here.
 	respBytes, _ := io.ReadAll(res.Body)
 	if isSuccess {
 		var respMap map[string]any
 		if json.Unmarshal(respBytes, &respMap) == nil {
-			// Output field name is per-agent (defaults to n8n's "output").
-			// REPORT agents also carry structured data/visuals in "data".
-			h.storeMessage(conversationID, db.MessageRoleAssistant, respMap[agent.WebhookOutputField], respMap["attachments"], respMap["data"])
+			outputField := agent.WebhookOutputField
+			if outputField == "" {
+				outputField = "output"
+			}
+			h.storeMessage(conversationID, db.MessageRoleAssistant, respMap[outputField], respMap["attachments"], respMap["data"])
 		}
 	}
 
@@ -354,6 +429,25 @@ func (h *WebhookHandler) publishWebhookMessage(agentID, conversationID string, s
 		log.Printf("kafka publish %s: %v", TopicChatMessage, err)
 	}
 	log.Printf("kafka publish %s: published", TopicChatMessage)
+}
+
+// curlPreview reconstructs the outgoing request as a copy-pasteable curl line
+// for debugging. Authorization is redacted so tokens don't leak into logs.
+func curlPreview(req *http.Request, body []byte) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "curl --request %s --url %s", req.Method, req.URL.String())
+	for k, vals := range req.Header {
+		for _, v := range vals {
+			if strings.EqualFold(k, "Authorization") {
+				v = "[redacted]"
+			}
+			fmt.Fprintf(&b, " --header '%s: %s'", k, v)
+		}
+	}
+	if len(body) > 0 {
+		fmt.Fprintf(&b, " --data '%s'", body)
+	}
+	return b.String()
 }
 
 func copyForwardHeaders(dst http.Header, src http.Header) {

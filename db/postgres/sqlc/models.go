@@ -381,6 +381,8 @@ type Agent struct {
 	MilvusCollection      string                  `json:"milvus_collection"`
 	WebhookInputField     string                  `json:"webhook_input_field"`
 	WebhookOutputField    string                  `json:"webhook_output_field"`
+	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
+	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 }
 
 type AgentKnowledge struct {
@@ -440,6 +442,8 @@ type AgentsView struct {
 	MilvusCollection      string                  `json:"milvus_collection"`
 	WebhookInputField     string                  `json:"webhook_input_field"`
 	WebhookOutputField    string                  `json:"webhook_output_field"`
+	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
+	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 }
 
 type ApiKey struct {

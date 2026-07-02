@@ -64,6 +64,8 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 			r.Use(middleware.InternalKey(mustEnv("INTERNAL_API_KEY")))
 			r.Get("/agent/{id}", agentHandler.ReadById)
 			r.Get("/mcp/{id}", mcpHandler.ReadByAgentId)
+			// Called by the n8n conversion workflow using the internal key.
+			r.Patch("/callbacks/agent-knowledge-status", callbackHandler.UpdateAgentKnowledgeStatus)
 		})
 		// CORS preflight for the widget-embeddable chat endpoint. No auth: a
 		// preflight never carries credentials.
@@ -73,8 +75,6 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 			// No timeout here — webhook forwards to upstream and may take a long time
 			r.Post("/chat/{id}", webhookHandler.ForwardChatWebhook)
 			r.Post("/chat/{id}/conversation/end", conversationHandler.EndConversation)
-			// Called by the n8n conversion workflow using an API key.
-			r.Patch("/callbacks/agent-knowledge-status", callbackHandler.UpdateAgentKnowledgeStatus)
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(signer))
