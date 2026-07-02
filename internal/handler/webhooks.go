@@ -194,6 +194,7 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 	// configured input field (e.g. "query") before forwarding, so the upstream
 	// agent receives the field name it expects. Persist before the rename so the
 	// stored value is the same either way.
+	h.ensureConversation(id, conversationID)
 	h.storeMessage(conversationID, db.MessageRoleUser, bodyMap["chatInput"], bodyMap["attachments"], nil)
 
 	if agent.WebhookInputField != "" && agent.WebhookInputField != "chatInput" {
@@ -310,9 +311,12 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 	if isSuccess {
 		var respMap map[string]any
 		if json.Unmarshal(respBytes, &respMap) == nil {
+			// Must match the frontend/API default (chatWithAgent: "reply").
+			// If these disagree, the assistant reply is stored as nil and the
+			// turn is silently dropped from history.
 			outputField := agent.WebhookOutputField
 			if outputField == "" {
-				outputField = "output"
+				outputField = "reply"
 			}
 			h.storeMessage(conversationID, db.MessageRoleAssistant, respMap[outputField], respMap["attachments"], respMap["data"])
 		}
@@ -344,6 +348,26 @@ func (h *WebhookHandler) PreflightChatWebhook(w http.ResponseWriter, r *http.Req
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Session-Id")
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ensureConversation upserts the conversations row for this session so chat
+// history can be listed per conversation. Best-effort and off the request
+// path, same contract as storeMessage. Idempotent (ON CONFLICT DO NOTHING).
+func (h *WebhookHandler) ensureConversation(agentID uuid.UUID, conversationID string) {
+	convID, err := uuid.Parse(conversationID)
+	if err != nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := h.Queries.UpsertConversation(ctx, db.UpsertConversationParams{
+			ID:      convID,
+			AgentID: agentID,
+		}); err != nil {
+			log.Printf("upsert conversation conv=%s: %v", conversationID, err)
+		}
+	}()
 }
 
 // storeMessage persists one chat message to Postgres. Best-effort and off the

@@ -18,6 +18,7 @@ type Querier interface {
 	CountAgentsByMcpId(ctx context.Context) (int64, error)
 	CountAllKnowledges(ctx context.Context) (int64, error)
 	CountApiKeys(ctx context.Context) (int64, error)
+	CountConversations(ctx context.Context) (int64, error)
 	CountKnowledges(ctx context.Context, sourceType *string) (int64, error)
 	CountKnowledgesByAgentId(ctx context.Context, agentID uuid.UUID) (int64, error)
 	CountMcpToolsByMcpId(ctx context.Context, mcpID uuid.UUID) (int64, error)
@@ -47,6 +48,8 @@ type Querier interface {
 	SelectAgentsByMcpId(ctx context.Context, arg SelectAgentsByMcpIdParams) ([]SelectAgentsByMcpIdRow, error)
 	SelectApiKeyByToken(ctx context.Context, token string) (ApiKeysView, error)
 	SelectApiKeys(ctx context.Context, arg SelectApiKeysParams) ([]ApiKeysView, error)
+	SelectConversationById(ctx context.Context, id uuid.UUID) (SelectConversationByIdRow, error)
+	SelectConversations(ctx context.Context, arg SelectConversationsParams) ([]SelectConversationsRow, error)
 	SelectDropdownAgents(ctx context.Context, arg SelectDropdownAgentsParams) ([]SelectDropdownAgentsRow, error)
 	SelectKnowledgeById(ctx context.Context, id uuid.UUID) (KnowledgesView, error)
 	SelectKnowledges(ctx context.Context, arg SelectKnowledgesParams) ([]SelectKnowledgesRow, error)
@@ -82,6 +85,7 @@ type Querier interface {
 	UpdateMcp(ctx context.Context, arg UpdateMcpParams) (UpdateMcpRow, error)
 	UpdateMemberStatus(ctx context.Context, arg UpdateMemberStatusParams) (UpdateMemberStatusRow, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateUserRow, error)
+	UpsertConversation(ctx context.Context, arg UpsertConversationParams) error
 }
 
 var _ Querier = (*Queries)(nil)

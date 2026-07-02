@@ -41,6 +41,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 	apiKeyHandler := handler.NewApiKeyHandler(conn)
 	webhookHandler := handler.NewWebhookHandler(conn, kafka)
 	conversationHandler := handler.NewConversationHandler(conn, kafka)
+	conversationsHandler := handler.NewConversationsHandler(conn)
 	memberHandler := handler.NewMemberHandler(conn)
 	logHandler := handler.NewLogHandler(ch)
 	dropdownHandler := handler.NewDropdownHandler(conn)
@@ -142,6 +143,10 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 			})
 			r.Route("/dropdown", func(r chi.Router) {
 				r.Get("/agents", dropdownHandler.ReadAgents)
+			})
+			r.Route("/conversations", func(r chi.Router) {
+				r.Get("/", conversationsHandler.List)
+				r.Get("/{id}", conversationsHandler.Read)
 			})
 			r.Route("/api-keys", func(r chi.Router) {
 				r.Post("/", apiKeyHandler.Create)
