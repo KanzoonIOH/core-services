@@ -156,35 +156,49 @@ func (h *ConnectHandler) ConnectAgentKnowledge(w http.ResponseWriter, r *http.Re
 	}
 	log.Printf("[core-service][connect-agent-knowledge] db insert success agent_knowledge=%s", jsonForLog(agent_knowledge))
 
-	go h.triggerKnowledgeConversion(agent_knowledge.ID, req.AgentId, req.KnowledgeId, knowledge.SourceUri)
-	log.Printf("[core-service][connect-agent-knowledge] rag conversion trigger queued agent_knowledge_id=%s agent_id=%s knowledge_id=%s", agent_knowledge.ID, req.AgentId, req.KnowledgeId)
+	// The RAG collection to ingest into is the agent's own collection. Best
+	// effort: if the agent lookup fails, the rag-service falls back to its
+	// default collection when collection_name is empty.
+	var milvusCollection string
+	if agent, err := h.Queries.SelectAgentById(r.Context(), req.AgentId); err != nil {
+		log.Printf("[core-service][connect-agent-knowledge] agent lookup for milvus collection failed agent_id=%s error=%v", req.AgentId, err)
+	} else {
+		milvusCollection = agent.MilvusCollection
+	}
+
+	go h.triggerKnowledgeConversion(agent_knowledge.ID, req.AgentId, req.KnowledgeId, knowledge.SourceUri, milvusCollection)
+	log.Printf("[core-service][connect-agent-knowledge] rag conversion trigger queued agent_knowledge_id=%s agent_id=%s knowledge_id=%s collection=%s", agent_knowledge.ID, req.AgentId, req.KnowledgeId, milvusCollection)
 
 	log.Printf("[core-service][connect-agent-knowledge] api success status=%d response=%s", http.StatusOK, jsonForLog(agent_knowledge))
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agent_knowledge, nil)
 }
 
-// triggerKnowledgeConversion fires the n8n conversion workflow webhook in the
-// background. It only reports trigger delivery: if the webhook cannot be
-// reached or rejects the request, the row is marked 'failed'. The final
-// 'completed'/'failed' status is reported by the workflow itself via the
-// agent-knowledge-status callback endpoint.
-func (h *ConnectHandler) triggerKnowledgeConversion(agentKnowledgeID, agentID, knowledgeID uuid.UUID, sourceURI *string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+// triggerKnowledgeConversion fires the RAG ingestion webhook in the background.
+// Ingestion is legitimately long-running, so this is fire-and-forget: it does
+// NOT mark the row 'failed' on a slow or dropped connection. The rag-service
+// owns the final 'completed'/'failed' status and reports it via the
+// agent-knowledge-status callback endpoint. Only a payload we cannot even build
+// (which means the row can never complete) is marked failed here.
+func (h *ConnectHandler) triggerKnowledgeConversion(agentKnowledgeID, agentID, knowledgeID uuid.UUID, sourceURI *string, milvusCollection string) {
+	// Generous ceiling so we don't cancel a long-but-progressing ingestion.
+	// The client also has its own 10-minute Timeout as a hard cap.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	payload, err := json.Marshal(map[string]any{
 		"agent_knowledge_id": agentKnowledgeID,
-		// "agent_id":           agentID,
-		"document_id":   knowledgeID,
-		"document_link": sourceURI,
+		"agent_id":           agentID,
+		"document_id":        knowledgeID,
+		"document_link":      sourceURI,
+		"collection_name":    milvusCollection,
 	})
 	if err != nil {
-		log.Printf("[core-service][rag-knowledge-add] payload marshal error agent_knowledge_id=%s agent_id=%s knowledge_id=%s source_uri=%v error=%v", agentKnowledgeID, agentID, knowledgeID, sourceURI, err)
+		log.Printf("[core-service][rag-knowledge-add] payload marshal error agent_knowledge_id=%s agent_id=%s knowledge_id=%s source_uri=%v collection=%s error=%v", agentKnowledgeID, agentID, knowledgeID, sourceURI, milvusCollection, err)
 		h.markKnowledgeConversionFailed(agentKnowledgeID, err)
 		return
 	}
 
-	log.Printf("[core-service][rag-knowledge-add] fetch start method=%s url=%s params={agent_knowledge_id:%s agent_id:%s knowledge_id:%s source_uri:%v} payload=%s", http.MethodPost, h.knowledgeAddURL, agentKnowledgeID, agentID, knowledgeID, sourceURI, string(payload))
+	log.Printf("[core-service][rag-knowledge-add] fetch start method=%s url=%s params={agent_knowledge_id:%s agent_id:%s knowledge_id:%s source_uri:%v collection:%s} payload=%s", http.MethodPost, h.knowledgeAddURL, agentKnowledgeID, agentID, knowledgeID, sourceURI, milvusCollection, string(payload))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.knowledgeAddURL, bytes.NewReader(payload))
 	if err != nil {
@@ -198,8 +212,9 @@ func (h *ConnectHandler) triggerKnowledgeConversion(agentKnowledgeID, agentID, k
 	resp, err := h.HTTPClient.Do(req)
 	duration := time.Since(started)
 	if err != nil {
-		log.Printf("[core-service][rag-knowledge-add] fetch error method=%s url=%s duration=%s payload=%s error=%v", http.MethodPost, h.knowledgeAddURL, duration, string(payload), err)
-		h.markKnowledgeConversionFailed(agentKnowledgeID, err)
+		// Fire-and-forget: a slow/dropped hit does NOT fail the row. The
+		// rag-service reports the real outcome via its status callback.
+		log.Printf("[core-service][rag-knowledge-add] fetch error (ignored, status owned by rag-service) method=%s url=%s duration=%s payload=%s error=%v", http.MethodPost, h.knowledgeAddURL, duration, string(payload), err)
 		return
 	}
 	defer resp.Body.Close()
@@ -212,9 +227,9 @@ func (h *ConnectHandler) triggerKnowledgeConversion(agentKnowledgeID, agentID, k
 
 	log.Printf("[core-service][rag-knowledge-add] fetch returned method=%s url=%s status=%d duration=%s response_body=%q", http.MethodPost, h.knowledgeAddURL, resp.StatusCode, duration, bodyText)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		err := fmt.Errorf("webhook returned status %d body=%q", resp.StatusCode, bodyText)
-		log.Printf("[core-service][rag-knowledge-add] fetch failed agent_knowledge_id=%s status=%d reason=%v", agentKnowledgeID, resp.StatusCode, err)
-		h.markKnowledgeConversionFailed(agentKnowledgeID, err)
+		// Non-2xx is logged but not marked failed here either — the
+		// rag-service already reports 'failed' via callback on its errors.
+		log.Printf("[core-service][rag-knowledge-add] fetch non-2xx (ignored, status owned by rag-service) agent_knowledge_id=%s status=%d body=%q", agentKnowledgeID, resp.StatusCode, bodyText)
 		return
 	}
 

@@ -60,6 +60,41 @@ type createAgentRequest struct {
 	WebhookUri            string   `json:"webhook_uri"`
 	WebhookAllowedIps     []string `json:"webhook_allowed_ips"`
 	WebhookAllowedOrigins []string `json:"webhook_allowed_origins"`
+	MilvusCollection      string   `json:"milvus_collection"`
+	WebhookInputField     string   `json:"webhook_input_field"`
+	WebhookOutputField    string   `json:"webhook_output_field"`
+}
+
+// buildMilvusCollection sanitizes the user-supplied base name and appends a
+// random 8-char hex suffix so two agents named the same still get distinct
+// Milvus collections. Milvus names allow only letters, digits and underscore,
+// and must start with a letter or underscore.
+func buildMilvusCollection(base string) string {
+	base = strings.TrimSpace(base)
+	var b strings.Builder
+	for _, r := range base {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '_' || r == '-' || r == ' ':
+			b.WriteByte('_')
+		}
+	}
+	sanitized := strings.Trim(b.String(), "_")
+	if sanitized == "" || (sanitized[0] >= '0' && sanitized[0] <= '9') {
+		sanitized = "col_" + sanitized
+	}
+	return sanitized + "_" + lib.RandomHex(8)
+}
+
+// webhookFieldOrDefault falls back to the n8n defaults when the caller leaves
+// the override blank.
+func webhookFieldOrDefault(v, def string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return def
+	}
+	return v
 }
 
 func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -74,6 +109,7 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	req.Name = strings.TrimSpace(req.Name)
 	req.WebhookUri = strings.TrimSpace(req.WebhookUri)
+	req.MilvusCollection = strings.TrimSpace(req.MilvusCollection)
 
 	if req.Name == "" {
 		log.Printf("[core-service][agent-create] api error status=%d reason=name is required", http.StatusBadRequest)
@@ -83,6 +119,11 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if req.WebhookUri == "" {
 		log.Printf("[core-service][agent-create] api error status=%d reason=webhook_uri is required", http.StatusBadRequest)
 		lib.ResponseJSONError(w, http.StatusBadRequest, "webhook_uri are required")
+		return
+	}
+	if req.MilvusCollection == "" {
+		log.Printf("[core-service][agent-create] api error status=%d reason=milvus_collection is required", http.StatusBadRequest)
+		lib.ResponseJSONError(w, http.StatusBadRequest, "milvus_collection are required")
 		return
 	}
 
@@ -113,6 +154,9 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		WebhookUri:            req.WebhookUri,
 		WebhookAllowedIps:     allowedIPs,
 		WebhookAllowedOrigins: trimNonEmpty(req.WebhookAllowedOrigins),
+		MilvusCollection:      buildMilvusCollection(req.MilvusCollection),
+		WebhookInputField:     webhookFieldOrDefault(req.WebhookInputField, "chatInput"),
+		WebhookOutputField:    webhookFieldOrDefault(req.WebhookOutputField, "output"),
 	})
 	if err != nil {
 		log.Printf("[core-service][agent-create] db insert error params=%s error=%v", jsonForLog(req), err)
@@ -260,6 +304,9 @@ type updateAgentRequest struct {
 	WebhookUri            string   `json:"webhook_uri"`
 	WebhookAllowedIps     []string `json:"webhook_allowed_ips"`
 	WebhookAllowedOrigins []string `json:"webhook_allowed_origins"`
+	WebhookInputField     string   `json:"webhook_input_field"`
+	WebhookOutputField    string   `json:"webhook_output_field"`
+	// milvus_collection is intentionally omitted: it is immutable after create.
 }
 
 func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -305,6 +352,8 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		WebhookUri:            req.WebhookUri,
 		WebhookAllowedIps:     allowedIPs,
 		WebhookAllowedOrigins: trimNonEmpty(req.WebhookAllowedOrigins),
+		WebhookInputField:     webhookFieldOrDefault(req.WebhookInputField, "chatInput"),
+		WebhookOutputField:    webhookFieldOrDefault(req.WebhookOutputField, "output"),
 		ID:                    id,
 	})
 	if err != nil {

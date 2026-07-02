@@ -1,6 +1,7 @@
 package app
 
 import (
+	db "aic3-service/db/postgres/sqlc"
 	"aic3-service/internal/app/middleware"
 	"aic3-service/internal/handler"
 	"aic3-service/internal/lib"
@@ -34,7 +35,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 	agentKnowledgeHandler := handler.NewAgentKnowledgeHandler(conn)
 	connectHandler := handler.NewConnectHandler(conn)
 	callbackHandler := handler.NewCallbackHandler(conn)
-	authHandler := handler.NewAuthHandler(conn, signer, mailer)
+	authHandler := handler.NewAuthHandler(conn, signer, mailer, inviteTTL())
 	meHandler := handler.NewMeHandler(conn, mailer)
 	confirmHandler := handler.NewConfirmHandler(conn)
 	apiKeyHandler := handler.NewApiKeyHandler(conn)
@@ -54,6 +55,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 			r.Post("/login", authHandler.Login)
 			r.Post("/password/forgot", authHandler.ForgotPassword)
 			r.Post("/password/reset", authHandler.ResetPassword)
+			r.Post("/accept-invite", authHandler.AcceptInvite)
 		})
 		r.Get("/confirm", confirmHandler.UpdateEmailConfirm)
 		// Internal service-to-service routes: no login, guarded by a static
@@ -84,9 +86,17 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 			})
 			r.Route("/members", func(r chi.Router) {
 				r.Get("/", memberHandler.Read)
-				r.Patch("/{id}/accept", memberHandler.Accept)
-				r.Patch("/{id}/status", memberHandler.UpdateStatus)
-				r.Delete("/{id}", memberHandler.Delete)
+				// Role management is admin-only.
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireRole(
+						string(db.UserRoleADMIN),
+						string(db.UserRoleSUPERADMIN),
+					))
+					r.Post("/invite", authHandler.Invite)
+					r.Patch("/{id}/accept", memberHandler.Accept)
+					r.Patch("/{id}/status", memberHandler.UpdateStatus)
+					r.Delete("/{id}", memberHandler.Delete)
+				})
 			})
 			r.Route("/agents", func(r chi.Router) {
 				r.Post("/", agentHandler.Create)
@@ -188,6 +198,18 @@ func newJWTSigner() *lib.JWTSigner {
 	}
 
 	return lib.NewJWTSigner(secret, issuer, time.Duration(ttlDays)*24*time.Hour)
+}
+
+func inviteTTL() time.Duration {
+	daysStr := os.Getenv("INVITE_TTL_DAYS")
+	if daysStr == "" {
+		log.Fatal("INVITE_TTL_DAYS is required")
+	}
+	days, err := strconv.Atoi(daysStr)
+	if err != nil {
+		log.Fatalf("invalid INVITE_TTL_DAYS: %v", err)
+	}
+	return time.Duration(days) * 24 * time.Hour
 }
 
 func newMailer() *lib.Mailer {

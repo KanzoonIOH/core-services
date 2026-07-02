@@ -3,13 +3,15 @@ INSERT INTO upcoming_changes (
     token,
     type,
     user_id,
-    upcoming_value
+    upcoming_value,
+    expired_at
 )
 VALUES (
     sqlc.arg(token),
     sqlc.arg(type),
     sqlc.arg(user_id),
-    sqlc.narg(upcoming_value)
+    sqlc.narg(upcoming_value),
+    sqlc.arg(expired_at)
 )
 RETURNING *;
 

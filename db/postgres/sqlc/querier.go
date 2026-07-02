@@ -33,6 +33,9 @@ type Querier interface {
 	InsertMcpTool(ctx context.Context, arg InsertMcpToolParams) (InsertMcpToolRow, error)
 	InsertMessage(ctx context.Context, arg InsertMessageParams) error
 	InsertUpcomingChange(ctx context.Context, arg InsertUpcomingChangeParams) (UpcomingChange, error)
+	// Creates a passwordless PENDING user for the email-invite flow. Username/name
+	// default to the email until the invitee sets their own on accept.
+	InsertUserInvite(ctx context.Context, email string) (InsertUserInviteRow, error)
 	InsertUserRegister(ctx context.Context, arg InsertUserRegisterParams) (InsertUserRegisterRow, error)
 	ListMessagesByConversation(ctx context.Context, conversationID uuid.UUID) ([]Message, error)
 	RevokeApiKey(ctx context.Context, id uuid.UUID) (int64, error)
@@ -46,7 +49,7 @@ type Querier interface {
 	SelectApiKeys(ctx context.Context, arg SelectApiKeysParams) ([]ApiKeysView, error)
 	SelectDropdownAgents(ctx context.Context, arg SelectDropdownAgentsParams) ([]SelectDropdownAgentsRow, error)
 	SelectKnowledgeById(ctx context.Context, id uuid.UUID) (KnowledgesView, error)
-	SelectKnowledges(ctx context.Context, arg SelectKnowledgesParams) ([]KnowledgesView, error)
+	SelectKnowledges(ctx context.Context, arg SelectKnowledgesParams) ([]SelectKnowledgesRow, error)
 	SelectKnowledgesByAgentId(ctx context.Context, arg SelectKnowledgesByAgentIdParams) ([]SelectKnowledgesByAgentIdRow, error)
 	SelectKnowledgesWithAgentStatus(ctx context.Context, arg SelectKnowledgesWithAgentStatusParams) ([]SelectKnowledgesWithAgentStatusRow, error)
 	SelectMcpById(ctx context.Context, id uuid.UUID) (McpsView, error)
@@ -54,11 +57,15 @@ type Querier interface {
 	SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]SelectMcpsRow, error)
 	SelectMcpsByAgentId(ctx context.Context, arg SelectMcpsByAgentIdParams) ([]SelectMcpsByAgentIdRow, error)
 	SelectMcpsWithAgentStatus(ctx context.Context, arg SelectMcpsWithAgentStatusParams) ([]SelectMcpsWithAgentStatusRow, error)
-	SelectMembers(ctx context.Context, arg SelectMembersParams) ([]UsersView, error)
+	// invited_token: the active (non-revoked, non-expired) INVITE token, if any,
+	// so the UI can surface the accept link for pending invites.
+	SelectMembers(ctx context.Context, arg SelectMembersParams) ([]SelectMembersRow, error)
 	SelectUpcomingChangeByToken(ctx context.Context, token string) (UpcomingChange, error)
 	SelectUserById(ctx context.Context, id uuid.UUID) (UsersView, error)
 	SelectUserByIdWithPassword(ctx context.Context, id uuid.UUID) (SelectUserByIdWithPasswordRow, error)
 	SelectUserByLoginIdWithPassword(ctx context.Context, loginID string) (SelectUserByLoginIdWithPasswordRow, error)
+	// Invite accept: set the password and promote PENDING -> VIEWER in one step.
+	SetPasswordAndActivate(ctx context.Context, arg SetPasswordAndActivateParams) (SetPasswordAndActivateRow, error)
 	SoftDeleteAgent(ctx context.Context, id uuid.UUID) (int64, error)
 	SoftDeleteAgentKnowledge(ctx context.Context, id uuid.UUID) (int64, error)
 	SoftDeleteAgentKnowledgeByPair(ctx context.Context, arg SoftDeleteAgentKnowledgeByPairParams) (int64, error)

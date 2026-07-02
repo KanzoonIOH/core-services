@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -39,38 +40,47 @@ func (q *Queries) CountMcpsByAgentId(ctx context.Context, agentID uuid.UUID) (in
 }
 
 const insertMcp = `-- name: InsertMcp :one
-INSERT INTO mcps (name, description, uri)
+INSERT INTO mcps (name, description, uri, headers)
 VALUES (
     $1,
     $2,
-    $3
+    $3,
+    $4
 )
-RETURNING id, name, description, uri, created_at, updated_at
+RETURNING id, name, description, uri, headers, created_at, updated_at
 `
 
 type InsertMcpParams struct {
-	Name        string  `json:"name"`
-	Description *string `json:"description"`
-	Uri         string  `json:"uri"`
+	Name        string          `json:"name"`
+	Description *string         `json:"description"`
+	Uri         string          `json:"uri"`
+	Headers     json.RawMessage `json:"headers"`
 }
 
 type InsertMcpRow struct {
-	ID          uuid.UUID `json:"id"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description"`
-	Uri         string    `json:"uri"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          uuid.UUID       `json:"id"`
+	Name        string          `json:"name"`
+	Description *string         `json:"description"`
+	Uri         string          `json:"uri"`
+	Headers     json.RawMessage `json:"headers"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
 }
 
 func (q *Queries) InsertMcp(ctx context.Context, arg InsertMcpParams) (InsertMcpRow, error) {
-	row := q.db.QueryRow(ctx, insertMcp, arg.Name, arg.Description, arg.Uri)
+	row := q.db.QueryRow(ctx, insertMcp,
+		arg.Name,
+		arg.Description,
+		arg.Uri,
+		arg.Headers,
+	)
 	var i InsertMcpRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Description,
 		&i.Uri,
+		&i.Headers,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -78,7 +88,7 @@ func (q *Queries) InsertMcp(ctx context.Context, arg InsertMcpParams) (InsertMcp
 }
 
 const selectMcpById = `-- name: SelectMcpById :one
-SELECT id, name, description, uri, created_at, updated_at FROM mcps_view
+SELECT id, name, description, uri, created_at, updated_at, headers FROM mcps_view
 WHERE id = $1
 LIMIT 1
 `
@@ -93,13 +103,14 @@ func (q *Queries) SelectMcpById(ctx context.Context, id uuid.UUID) (McpsView, er
 		&i.Uri,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Headers,
 	)
 	return i, err
 }
 
 const selectMcps = `-- name: SelectMcps :many
 SELECT
-    m.id, m.name, m.description, m.uri, m.created_at, m.updated_at,
+    m.id, m.name, m.description, m.uri, m.created_at, m.updated_at, m.headers,
     (
         SELECT count(*)
         FROM mcp_tools AS t
@@ -124,13 +135,14 @@ type SelectMcpsParams struct {
 }
 
 type SelectMcpsRow struct {
-	ID          uuid.UUID `json:"id"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description"`
-	Uri         string    `json:"uri"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	ToolsCount  int64     `json:"tools_count"`
+	ID          uuid.UUID       `json:"id"`
+	Name        string          `json:"name"`
+	Description *string         `json:"description"`
+	Uri         string          `json:"uri"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+	Headers     json.RawMessage `json:"headers"`
+	ToolsCount  int64           `json:"tools_count"`
 }
 
 func (q *Queries) SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]SelectMcpsRow, error) {
@@ -149,6 +161,7 @@ func (q *Queries) SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]Selec
 			&i.Uri,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Headers,
 			&i.ToolsCount,
 		); err != nil {
 			return nil, err
@@ -163,7 +176,7 @@ func (q *Queries) SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]Selec
 
 const selectMcpsByAgentId = `-- name: SelectMcpsByAgentId :many
 SELECT
-    m.id, m.name, m.description, m.uri, m.created_at, m.updated_at,
+    m.id, m.name, m.description, m.uri, m.created_at, m.updated_at, m.headers,
     (
         SELECT count(*)
         FROM mcp_tools AS t
@@ -192,13 +205,14 @@ type SelectMcpsByAgentIdParams struct {
 }
 
 type SelectMcpsByAgentIdRow struct {
-	ID          uuid.UUID `json:"id"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description"`
-	Uri         string    `json:"uri"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	ToolsCount  int64     `json:"tools_count"`
+	ID          uuid.UUID       `json:"id"`
+	Name        string          `json:"name"`
+	Description *string         `json:"description"`
+	Uri         string          `json:"uri"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+	Headers     json.RawMessage `json:"headers"`
+	ToolsCount  int64           `json:"tools_count"`
 }
 
 func (q *Queries) SelectMcpsByAgentId(ctx context.Context, arg SelectMcpsByAgentIdParams) ([]SelectMcpsByAgentIdRow, error) {
@@ -222,6 +236,7 @@ func (q *Queries) SelectMcpsByAgentId(ctx context.Context, arg SelectMcpsByAgent
 			&i.Uri,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Headers,
 			&i.ToolsCount,
 		); err != nil {
 			return nil, err
@@ -236,7 +251,7 @@ func (q *Queries) SelectMcpsByAgentId(ctx context.Context, arg SelectMcpsByAgent
 
 const selectMcpsWithAgentStatus = `-- name: SelectMcpsWithAgentStatus :many
 SELECT
-    m.id, m.name, m.description, m.uri, m.created_at, m.updated_at,
+    m.id, m.name, m.description, m.uri, m.created_at, m.updated_at, m.headers,
     (
         SELECT count(*)
         FROM mcp_tools AS t
@@ -267,14 +282,15 @@ type SelectMcpsWithAgentStatusParams struct {
 }
 
 type SelectMcpsWithAgentStatusRow struct {
-	ID          uuid.UUID `json:"id"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description"`
-	Uri         string    `json:"uri"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	ToolsCount  int64     `json:"tools_count"`
-	Connected   bool      `json:"connected"`
+	ID          uuid.UUID       `json:"id"`
+	Name        string          `json:"name"`
+	Description *string         `json:"description"`
+	Uri         string          `json:"uri"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+	Headers     json.RawMessage `json:"headers"`
+	ToolsCount  int64           `json:"tools_count"`
+	Connected   bool            `json:"connected"`
 }
 
 func (q *Queries) SelectMcpsWithAgentStatus(ctx context.Context, arg SelectMcpsWithAgentStatusParams) ([]SelectMcpsWithAgentStatusRow, error) {
@@ -298,6 +314,7 @@ func (q *Queries) SelectMcpsWithAgentStatus(ctx context.Context, arg SelectMcpsW
 			&i.Uri,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Headers,
 			&i.ToolsCount,
 			&i.Connected,
 		); err != nil {
@@ -332,36 +349,45 @@ UPDATE mcps
 SET
     name = $1,
     description = $2,
+    headers = $3,
     updated_at = now()
 WHERE
     deleted_at IS NULL
-    AND id = $3
-RETURNING id, name, description, uri, created_at, updated_at
+    AND id = $4
+RETURNING id, name, description, uri, headers, created_at, updated_at
 `
 
 type UpdateMcpParams struct {
-	Name        string    `json:"name"`
-	Description *string   `json:"description"`
-	ID          uuid.UUID `json:"id"`
+	Name        string          `json:"name"`
+	Description *string         `json:"description"`
+	Headers     json.RawMessage `json:"headers"`
+	ID          uuid.UUID       `json:"id"`
 }
 
 type UpdateMcpRow struct {
-	ID          uuid.UUID `json:"id"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description"`
-	Uri         string    `json:"uri"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          uuid.UUID       `json:"id"`
+	Name        string          `json:"name"`
+	Description *string         `json:"description"`
+	Uri         string          `json:"uri"`
+	Headers     json.RawMessage `json:"headers"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
 }
 
 func (q *Queries) UpdateMcp(ctx context.Context, arg UpdateMcpParams) (UpdateMcpRow, error) {
-	row := q.db.QueryRow(ctx, updateMcp, arg.Name, arg.Description, arg.ID)
+	row := q.db.QueryRow(ctx, updateMcp,
+		arg.Name,
+		arg.Description,
+		arg.Headers,
+		arg.ID,
+	)
 	var i UpdateMcpRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Description,
 		&i.Uri,
+		&i.Headers,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

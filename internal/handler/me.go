@@ -79,7 +79,7 @@ func (h *MeHandler) UpdatePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !lib.ComparePassword(user.HashedPassword, req.OldPassword) {
+	if user.HashedPassword == nil || !lib.ComparePassword(*user.HashedPassword, req.OldPassword) {
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "Password is incorrect")
 		return
 	}

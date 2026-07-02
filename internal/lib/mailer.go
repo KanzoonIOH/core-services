@@ -40,3 +40,9 @@ func (m *Mailer) IssueURL(token string) string {
 	url := fmt.Sprintf("%s?token=%s", m.appUrl, token)
 	return url
 }
+
+// IssuePathURL builds a link to a specific frontend path (e.g. "/invite")
+// carrying the token as the "key" query param.
+func (m *Mailer) IssuePathURL(path, token string) string {
+	return fmt.Sprintf("%s%s?key=%s", m.appUrl, path, token)
+}

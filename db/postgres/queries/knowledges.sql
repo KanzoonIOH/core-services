@@ -42,11 +42,18 @@ WHERE (
 );
 
 -- name: SelectKnowledges :many
-SELECT * FROM knowledges_view
+SELECT
+    kv.*,
+    (
+        SELECT count(*)
+        FROM agent_knowledges_view akv
+        WHERE akv.knowledge_id = kv.id
+    ) AS agents_count
+FROM knowledges_view kv
 WHERE (
     sqlc.narg('source_type')::text IS NULL
     OR sqlc.narg('source_type')::text = ''
-    OR source_type = sqlc.narg('source_type')::text
+    OR kv.source_type = sqlc.narg('source_type')::text
 )
 ORDER BY
     CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN name END ASC,

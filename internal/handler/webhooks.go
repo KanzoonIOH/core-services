@@ -190,11 +190,12 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 	} else {
 		bodyMap = map[string]any{}
 	}
-	// Persist the user's message: text (chatInput) + any uploaded docs/images.
-	// ponytail: hardcoded field names; make per-agent when other vendors differ.
-	h.storeMessage(conversationID, db.MessageRoleUser, bodyMap["chatInput"], bodyMap["attachments"], nil)
+	// Persist the user's message: text + any uploaded docs/images. The input
+	// field name is per-agent (defaults to n8n's "chatInput").
+	h.storeMessage(conversationID, db.MessageRoleUser, bodyMap[agent.WebhookInputField], bodyMap["attachments"], nil)
 
 	bodyMap["sessionId"] = conversationID
+	bodyMap["agent_id"] = id.String()
 	bodyMap["tone"] = string(agent.Tone)
 	bodyMap["length"] = string(agent.ResponseLength)
 	bodyMap["style"] = string(agent.CommunicationStyle)
@@ -236,9 +237,9 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 	if isSuccess {
 		var respMap map[string]any
 		if json.Unmarshal(respBytes, &respMap) == nil {
-			// CHAT agents reply with text (output); REPORT agents reply with
-			// structured data/visuals (data). Store whichever is present.
-			h.storeMessage(conversationID, db.MessageRoleAssistant, respMap["output"], respMap["attachments"], respMap["data"])
+			// Output field name is per-agent (defaults to n8n's "output").
+			// REPORT agents also carry structured data/visuals in "data".
+			h.storeMessage(conversationID, db.MessageRoleAssistant, respMap[agent.WebhookOutputField], respMap["attachments"], respMap["data"])
 		}
 	}
 
