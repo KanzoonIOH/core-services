@@ -73,7 +73,7 @@ type Querier interface {
 	SetPasswordAndActivate(ctx context.Context, arg SetPasswordAndActivateParams) (SetPasswordAndActivateRow, error)
 	SoftDeleteAgent(ctx context.Context, id uuid.UUID) (int64, error)
 	SoftDeleteAgentKnowledge(ctx context.Context, id uuid.UUID) (int64, error)
-	SoftDeleteAgentKnowledgeByPair(ctx context.Context, arg SoftDeleteAgentKnowledgeByPairParams) (int64, error)
+	SoftDeleteAgentKnowledgeByPair(ctx context.Context, arg SoftDeleteAgentKnowledgeByPairParams) (uuid.UUID, error)
 	SoftDeleteAgentMcp(ctx context.Context, arg SoftDeleteAgentMcpParams) (int64, error)
 	SoftDeleteKnowledge(ctx context.Context, id uuid.UUID) (int64, error)
 	SoftDeleteMcp(ctx context.Context, id uuid.UUID) (int64, error)

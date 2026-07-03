@@ -60,10 +60,11 @@ WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id);
 
--- name: SoftDeleteAgentKnowledgeByPair :execrows
+-- name: SoftDeleteAgentKnowledgeByPair :one
 UPDATE agent_knowledges
 SET deleted_at = NOW()
 WHERE
     deleted_at IS NULL
     AND agent_id = sqlc.arg(agent_id)
-    AND knowledge_id = sqlc.arg(knowledge_id);
+    AND knowledge_id = sqlc.arg(knowledge_id)
+RETURNING id;

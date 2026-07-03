@@ -260,20 +260,28 @@ func (h *ConnectHandler) DisconnectAgentKnowledge(w http.ResponseWriter, r *http
 	}
 	log.Printf("[core-service][disconnect-agent-knowledge] request params=%s", jsonForLog(req))
 
-	rowsAffected, err := h.Queries.SoftDeleteAgentKnowledgeByPair(r.Context(), db.SoftDeleteAgentKnowledgeByPairParams{
+	agentKnowledgeID, err := h.Queries.SoftDeleteAgentKnowledgeByPair(r.Context(), db.SoftDeleteAgentKnowledgeByPairParams{
 		AgentID:     req.AgentId,
 		KnowledgeID: req.KnowledgeId,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			log.Printf("[core-service][disconnect-agent-knowledge] api error status=%d reason=agent knowledge not found params=%s", http.StatusNotFound, jsonForLog(req))
+			lib.ResponseJSONError(w, http.StatusNotFound, "agent knowledge not found")
+			return
+		}
 		log.Printf("[core-service][disconnect-agent-knowledge] db soft-delete error agent_id=%s knowledge_id=%s error=%v", req.AgentId, req.KnowledgeId, err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to disconnect knowledge from agent")
 		return
 	}
 
-	if rowsAffected == 0 {
-		log.Printf("[core-service][disconnect-agent-knowledge] api error status=%d reason=agent knowledge not found params=%s", http.StatusNotFound, jsonForLog(req))
-		lib.ResponseJSONError(w, http.StatusNotFound, "agent knowledge not found")
-		return
+	// Look up source_uri (document_link) so the delete body matches connect's
+	// exactly. Best effort: empty on lookup failure.
+	var sourceURI *string
+	if knowledge, err := h.Queries.SelectKnowledgeById(r.Context(), req.KnowledgeId); err != nil {
+		log.Printf("[core-service][disconnect-agent-knowledge] knowledge lookup for source_uri failed knowledge_id=%s error=%v", req.KnowledgeId, err)
+	} else {
+		sourceURI = knowledge.SourceUri
 	}
 
 	// Same collection resolution as connect: delete from the agent's own
@@ -285,25 +293,28 @@ func (h *ConnectHandler) DisconnectAgentKnowledge(w http.ResponseWriter, r *http
 		milvusCollection = agent.MilvusCollection
 	}
 
-	go h.triggerKnowledgeDeletion(req.KnowledgeId, req.AgentId, milvusCollection)
-	log.Printf("[core-service][disconnect-agent-knowledge] rag deletion trigger queued knowledge_id=%s collection=%s rows_affected=%d", req.KnowledgeId, milvusCollection, rowsAffected)
+	go h.triggerKnowledgeDeletion(agentKnowledgeID, req.AgentId, req.KnowledgeId, sourceURI, milvusCollection)
+	log.Printf("[core-service][disconnect-agent-knowledge] rag deletion trigger queued agent_knowledge_id=%s agent_id=%s knowledge_id=%s collection=%s", agentKnowledgeID, req.AgentId, req.KnowledgeId, milvusCollection)
 
-	log.Printf("[core-service][disconnect-agent-knowledge] api success status=%d rows_affected=%d", http.StatusNoContent, rowsAffected)
+	log.Printf("[core-service][disconnect-agent-knowledge] api success status=%d", http.StatusNoContent)
 	lib.ResponseJSONTemplate(w, http.StatusNoContent, nil, nil, nil)
 }
 
 // triggerKnowledgeDeletion fires the knowledge REST API delete endpoint in the
 // background. Failures are logged only; the local disconnect has already
 // succeeded by the time this runs.
-func (h *ConnectHandler) triggerKnowledgeDeletion(knowledgeID, agentID uuid.UUID, milvusCollection string) {
+func (h *ConnectHandler) triggerKnowledgeDeletion(agentKnowledgeID, agentID, knowledgeID uuid.UUID, sourceURI *string, milvusCollection string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	url := fmt.Sprintf(h.knowledgeDeleteURL, knowledgeID)
-	// Same shape as connect: send collection_name in a JSON body.
+	// Identical body shape to connect (triggerKnowledgeConversion).
 	payload, err := json.Marshal(map[string]any{
-		"collection_name": milvusCollection,
-		"agent_id":        agentID,
+		"agent_knowledge_id": agentKnowledgeID,
+		"agent_id":           agentID,
+		"document_id":        knowledgeID,
+		"document_link":      sourceURI,
+		"collection_name":    milvusCollection,
 	})
 	if err != nil {
 		log.Printf("[core-service][rag-knowledge-delete] payload marshal error knowledge_id=%s collection=%s error=%v", knowledgeID, milvusCollection, err)
