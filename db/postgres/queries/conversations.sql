@@ -34,6 +34,12 @@ LEFT JOIN LATERAL (
 ORDER BY coalesce(lm.created_at, c.started_at) DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
+-- name: DeleteConversation :exec
+DELETE FROM conversations WHERE id = sqlc.arg(id);
+
+-- name: DeleteMessagesByConversation :exec
+DELETE FROM messages WHERE conversation_id = sqlc.arg(conversation_id);
+
 -- name: SelectConversationById :one
 SELECT
     c.id,

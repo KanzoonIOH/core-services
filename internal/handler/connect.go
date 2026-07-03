@@ -276,8 +276,17 @@ func (h *ConnectHandler) DisconnectAgentKnowledge(w http.ResponseWriter, r *http
 		return
 	}
 
-	go h.triggerKnowledgeDeletion(req.KnowledgeId)
-	log.Printf("[core-service][disconnect-agent-knowledge] rag deletion trigger queued knowledge_id=%s rows_affected=%d", req.KnowledgeId, rowsAffected)
+	// Same collection resolution as connect: delete from the agent's own
+	// collection. Empty = rag-service falls back to its default collection.
+	var milvusCollection string
+	if agent, err := h.Queries.SelectAgentById(r.Context(), req.AgentId); err != nil {
+		log.Printf("[core-service][disconnect-agent-knowledge] agent lookup for milvus collection failed agent_id=%s error=%v", req.AgentId, err)
+	} else {
+		milvusCollection = agent.MilvusCollection
+	}
+
+	go h.triggerKnowledgeDeletion(req.KnowledgeId, req.AgentId, milvusCollection)
+	log.Printf("[core-service][disconnect-agent-knowledge] rag deletion trigger queued knowledge_id=%s collection=%s rows_affected=%d", req.KnowledgeId, milvusCollection, rowsAffected)
 
 	log.Printf("[core-service][disconnect-agent-knowledge] api success status=%d rows_affected=%d", http.StatusNoContent, rowsAffected)
 	lib.ResponseJSONTemplate(w, http.StatusNoContent, nil, nil, nil)
@@ -286,18 +295,28 @@ func (h *ConnectHandler) DisconnectAgentKnowledge(w http.ResponseWriter, r *http
 // triggerKnowledgeDeletion fires the knowledge REST API delete endpoint in the
 // background. Failures are logged only; the local disconnect has already
 // succeeded by the time this runs.
-func (h *ConnectHandler) triggerKnowledgeDeletion(knowledgeID uuid.UUID) {
+func (h *ConnectHandler) triggerKnowledgeDeletion(knowledgeID, agentID uuid.UUID, milvusCollection string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	url := fmt.Sprintf(h.knowledgeDeleteURL, knowledgeID)
-	log.Printf("[core-service][rag-knowledge-delete] fetch start method=%s url=%s params={knowledge_id:%s}", http.MethodDelete, url, knowledgeID)
+	// Same shape as connect: send collection_name in a JSON body.
+	payload, err := json.Marshal(map[string]any{
+		"collection_name": milvusCollection,
+		"agent_id":        agentID,
+	})
+	if err != nil {
+		log.Printf("[core-service][rag-knowledge-delete] payload marshal error knowledge_id=%s collection=%s error=%v", knowledgeID, milvusCollection, err)
+		return
+	}
+	log.Printf("[core-service][rag-knowledge-delete] fetch start method=%s url=%s params={knowledge_id:%s collection:%s} payload=%s", http.MethodDelete, url, knowledgeID, milvusCollection, string(payload))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, bytes.NewReader(payload))
 	if err != nil {
 		log.Printf("[core-service][rag-knowledge-delete] request build error knowledge_id=%s url=%s error=%v", knowledgeID, url, err)
 		return
 	}
+	req.Header.Set("Content-Type", "application/json")
 
 	started := time.Now()
 	resp, err := h.HTTPClient.Do(req)

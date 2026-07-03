@@ -25,6 +25,8 @@ type Querier interface {
 	CountMcps(ctx context.Context) (int64, error)
 	CountMcpsByAgentId(ctx context.Context, agentID uuid.UUID) (int64, error)
 	CountMembers(ctx context.Context, role *string) (int64, error)
+	DeleteConversation(ctx context.Context, id uuid.UUID) error
+	DeleteMessagesByConversation(ctx context.Context, conversationID uuid.UUID) error
 	InsertAgent(ctx context.Context, arg InsertAgentParams) (InsertAgentRow, error)
 	InsertAgentKnowledge(ctx context.Context, arg InsertAgentKnowledgeParams) (InsertAgentKnowledgeRow, error)
 	InsertAgentMcp(ctx context.Context, arg InsertAgentMcpParams) (InsertAgentMcpRow, error)

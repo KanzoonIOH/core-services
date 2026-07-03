@@ -23,6 +23,24 @@ func (q *Queries) CountConversations(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const deleteConversation = `-- name: DeleteConversation :exec
+DELETE FROM conversations WHERE id = $1
+`
+
+func (q *Queries) DeleteConversation(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteConversation, id)
+	return err
+}
+
+const deleteMessagesByConversation = `-- name: DeleteMessagesByConversation :exec
+DELETE FROM messages WHERE conversation_id = $1
+`
+
+func (q *Queries) DeleteMessagesByConversation(ctx context.Context, conversationID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteMessagesByConversation, conversationID)
+	return err
+}
+
 const selectConversationById = `-- name: SelectConversationById :one
 SELECT
     c.id,

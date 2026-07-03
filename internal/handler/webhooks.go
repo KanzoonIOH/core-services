@@ -205,7 +205,7 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 	}
 
 	bodyMap["sessionId"] = conversationID
-	bodyMap["agent_id"] = id.String()
+	bodyMap["agentId"] = id.String()
 	bodyMap["tone"] = string(agent.Tone)
 	bodyMap["length"] = string(agent.ResponseLength)
 	bodyMap["style"] = string(agent.CommunicationStyle)

@@ -147,6 +147,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 			r.Route("/conversations", func(r chi.Router) {
 				r.Get("/", conversationsHandler.List)
 				r.Get("/{id}", conversationsHandler.Read)
+				r.Delete("/{id}", conversationsHandler.Delete)
 			})
 			r.Route("/api-keys", func(r chi.Router) {
 				r.Post("/", apiKeyHandler.Create)

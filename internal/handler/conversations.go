@@ -72,3 +72,24 @@ func (h *ConversationsHandler) Read(w http.ResponseWriter, r *http.Request) {
 		"messages":     messages,
 	}, nil)
 }
+
+// Delete handles DELETE /api/conversations/{id} — removes the conversation and
+// its messages. Idempotent: deleting a non-existent id is a no-op success.
+func (h *ConversationsHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id, ok := lib.ParseID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	// messages has no FK cascade (see migration), so delete them explicitly.
+	if err := h.Queries.DeleteMessagesByConversation(r.Context(), id); err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to delete conversation")
+		return
+	}
+	if err := h.Queries.DeleteConversation(r.Context(), id); err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to delete conversation")
+		return
+	}
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, nil, nil)
+}
