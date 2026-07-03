@@ -18,7 +18,7 @@ func NewCallbackHandler(conn *pgxpool.Pool) *CallbackHandler {
 }
 
 type agentKnowledgeStatusRequest struct {
-	Id     uuid.UUID `json:"id"`
+	Id     uuid.UUID `json:"agent_knowledge_id"`
 	Status string    `json:"status"`
 }
 
