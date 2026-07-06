@@ -4,6 +4,7 @@ import (
 	db "aic3-service/db/postgres/sqlc"
 	"aic3-service/internal/lib"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -14,6 +15,31 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// marshalHeaders serializes the header map into the JSONB column. A nil/empty
+// map becomes "{}" so the column is never SQL NULL.
+func marshalHeaders(h map[string]string) json.RawMessage {
+	if len(h) == 0 {
+		return json.RawMessage("{}")
+	}
+	b, err := json.Marshal(h)
+	if err != nil {
+		return json.RawMessage("{}")
+	}
+	return b
+}
+
+// unmarshalHeaders converts a JSONB headers column back into a string map.
+func unmarshalHeaders(raw json.RawMessage) map[string]string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var m map[string]string
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil
+	}
+	return m
+}
+
 type McpHandler struct {
 	Queries db.Querier
 }
@@ -23,9 +49,10 @@ func NewMcpHandler(conn *pgxpool.Pool) *McpHandler {
 }
 
 type mcpCreateRequest struct {
-	Name        string  `json:"name"`
-	Description *string `json:"description"`
-	Uri         string  `json:"uri"`
+	Name        string            `json:"name"`
+	Description *string           `json:"description"`
+	Uri         string            `json:"uri"`
+	Headers     map[string]string `json:"headers"`
 }
 
 func (h *McpHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -50,6 +77,7 @@ func (h *McpHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Name:        req.Name,
 		Description: req.Description,
 		Uri:         req.Uri,
+		Headers:     marshalHeaders(req.Headers),
 	})
 	if err != nil {
 		fmt.Printf("%v\n", err)
@@ -57,7 +85,7 @@ func (h *McpHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tools, discoverErr := h.syncTools(r.Context(), mcp.ID, mcp.Uri)
+	tools, discoverErr := h.syncTools(r.Context(), mcp.ID, mcp.Uri, req.Headers)
 	if discoverErr != nil {
 		fmt.Printf("mcp tool discovery failed for %s: %v\n", mcp.ID, discoverErr)
 	}
@@ -68,8 +96,8 @@ func (h *McpHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}, nil)
 }
 
-func (h *McpHandler) syncTools(ctx context.Context, mcpID uuid.UUID, uri string) ([]db.InsertMcpToolRow, error) {
-	discovered, err := lib.DiscoverMcpTools(ctx, uri)
+func (h *McpHandler) syncTools(ctx context.Context, mcpID uuid.UUID, uri string, headers map[string]string) ([]db.InsertMcpToolRow, error) {
+	discovered, err := lib.DiscoverMcpTools(ctx, uri, headers)
 	if err != nil {
 		return nil, err
 	}
@@ -207,8 +235,9 @@ func (h *McpHandler) ReadById(w http.ResponseWriter, r *http.Request) {
 }
 
 type mcpUpdateRequest struct {
-	Name        string  `json:"name"`
-	Description *string `json:"description"`
+	Name        string            `json:"name"`
+	Description *string           `json:"description"`
+	Headers     map[string]string `json:"headers"`
 }
 
 func (h *McpHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -231,6 +260,7 @@ func (h *McpHandler) Update(w http.ResponseWriter, r *http.Request) {
 	mcp, err := h.Queries.UpdateMcp(r.Context(), db.UpdateMcpParams{
 		Name:        req.Name,
 		Description: req.Description,
+		Headers:     marshalHeaders(req.Headers),
 		ID:          id,
 	})
 	if err != nil {
@@ -306,7 +336,7 @@ func (h *McpHandler) RefreshTools(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tools, err := h.syncTools(r.Context(), mcp.ID, mcp.Uri)
+	tools, err := h.syncTools(r.Context(), mcp.ID, mcp.Uri, unmarshalHeaders(mcp.Headers))
 	if err != nil {
 		fmt.Printf("mcp tool refresh failed for %s: %v\n", mcp.ID, err)
 		lib.ResponseJSONError(w, http.StatusBadGateway, "failed to discover mcp tools")

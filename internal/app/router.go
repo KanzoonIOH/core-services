@@ -1,6 +1,7 @@
 package app
 
 import (
+	db "aic3-service/db/postgres/sqlc"
 	"aic3-service/internal/app/middleware"
 	"aic3-service/internal/handler"
 	"aic3-service/internal/lib"
@@ -34,12 +35,13 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 	agentKnowledgeHandler := handler.NewAgentKnowledgeHandler(conn)
 	connectHandler := handler.NewConnectHandler(conn)
 	callbackHandler := handler.NewCallbackHandler(conn)
-	authHandler := handler.NewAuthHandler(conn, signer, mailer)
+	authHandler := handler.NewAuthHandler(conn, signer, mailer, inviteTTL())
 	meHandler := handler.NewMeHandler(conn, mailer)
 	confirmHandler := handler.NewConfirmHandler(conn)
 	apiKeyHandler := handler.NewApiKeyHandler(conn)
 	webhookHandler := handler.NewWebhookHandler(conn, kafka)
 	conversationHandler := handler.NewConversationHandler(conn, kafka)
+	conversationsHandler := handler.NewConversationsHandler(conn)
 	memberHandler := handler.NewMemberHandler(conn)
 	logHandler := handler.NewLogHandler(ch)
 	dropdownHandler := handler.NewDropdownHandler(conn)
@@ -54,6 +56,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 			r.Post("/login", authHandler.Login)
 			r.Post("/password/forgot", authHandler.ForgotPassword)
 			r.Post("/password/reset", authHandler.ResetPassword)
+			r.Post("/accept-invite", authHandler.AcceptInvite)
 		})
 		r.Get("/confirm", confirmHandler.UpdateEmailConfirm)
 		// Internal service-to-service routes: no login, guarded by a static
@@ -62,6 +65,8 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 			r.Use(middleware.InternalKey(mustEnv("INTERNAL_API_KEY")))
 			r.Get("/agent/{id}", agentHandler.ReadById)
 			r.Get("/mcp/{id}", mcpHandler.ReadByAgentId)
+			// Called by the n8n conversion workflow using the internal key.
+			r.Patch("/callbacks/agent-knowledge-status", callbackHandler.UpdateAgentKnowledgeStatus)
 		})
 		// CORS preflight for the widget-embeddable chat endpoint. No auth: a
 		// preflight never carries credentials.
@@ -71,8 +76,6 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 			// No timeout here — webhook forwards to upstream and may take a long time
 			r.Post("/chat/{id}", webhookHandler.ForwardChatWebhook)
 			r.Post("/chat/{id}/conversation/end", conversationHandler.EndConversation)
-			// Called by the n8n conversion workflow using an API key.
-			r.Patch("/callbacks/agent-knowledge-status", callbackHandler.UpdateAgentKnowledgeStatus)
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(signer))
@@ -84,9 +87,17 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 			})
 			r.Route("/members", func(r chi.Router) {
 				r.Get("/", memberHandler.Read)
-				r.Patch("/{id}/accept", memberHandler.Accept)
-				r.Patch("/{id}/status", memberHandler.UpdateStatus)
-				r.Delete("/{id}", memberHandler.Delete)
+				// Role management is admin-only.
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireRole(
+						string(db.UserRoleADMIN),
+						string(db.UserRoleSUPERADMIN),
+					))
+					r.Post("/invite", authHandler.Invite)
+					r.Patch("/{id}/accept", memberHandler.Accept)
+					r.Patch("/{id}/status", memberHandler.UpdateStatus)
+					r.Delete("/{id}", memberHandler.Delete)
+				})
 			})
 			r.Route("/agents", func(r chi.Router) {
 				r.Post("/", agentHandler.Create)
@@ -132,6 +143,11 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 			})
 			r.Route("/dropdown", func(r chi.Router) {
 				r.Get("/agents", dropdownHandler.ReadAgents)
+			})
+			r.Route("/conversations", func(r chi.Router) {
+				r.Get("/", conversationsHandler.List)
+				r.Get("/{id}", conversationsHandler.Read)
+				r.Delete("/{id}", conversationsHandler.Delete)
 			})
 			r.Route("/api-keys", func(r chi.Router) {
 				r.Post("/", apiKeyHandler.Create)
@@ -188,6 +204,18 @@ func newJWTSigner() *lib.JWTSigner {
 	}
 
 	return lib.NewJWTSigner(secret, issuer, time.Duration(ttlDays)*24*time.Hour)
+}
+
+func inviteTTL() time.Duration {
+	daysStr := os.Getenv("INVITE_TTL_DAYS")
+	if daysStr == "" {
+		log.Fatal("INVITE_TTL_DAYS is required")
+	}
+	days, err := strconv.Atoi(daysStr)
+	if err != nil {
+		log.Fatalf("invalid INVITE_TTL_DAYS: %v", err)
+	}
+	return time.Duration(days) * 24 * time.Hour
 }
 
 func newMailer() *lib.Mailer {

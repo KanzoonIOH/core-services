@@ -3,6 +3,7 @@ package handler
 import (
 	db "aic3-service/db/postgres/sqlc"
 	"aic3-service/internal/lib"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -13,6 +14,49 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// BodyField is one extra field injected into the outbound webhook JSON body.
+// type "static": value is sent as-is. type "dynamic": the caller must supply
+// the value per request under Key (enforced in webhooks.go).
+type BodyField struct {
+	Key   string `json:"key"`
+	Type  string `json:"type"` // "static" | "dynamic"
+	Value string `json:"value"`
+}
+
+// parseWebhookFields decodes a stored webhook field array (body or header)
+// back into typed structs. Returns nil on empty/invalid.
+func parseWebhookFields(raw json.RawMessage) []BodyField {
+	if len(raw) == 0 {
+		return nil
+	}
+	var fields []BodyField
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil
+	}
+	return fields
+}
+
+// marshalBodyFields cleans the incoming field list (drops blank keys, defaults
+// type to static) and returns JSONB. Always a valid JSON array.
+func marshalBodyFields(fields []BodyField) json.RawMessage {
+	out := make([]BodyField, 0, len(fields))
+	for _, f := range fields {
+		f.Key = strings.TrimSpace(f.Key)
+		if f.Key == "" {
+			continue
+		}
+		if f.Type != "dynamic" {
+			f.Type = "static"
+		}
+		out = append(out, f)
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return json.RawMessage("[]")
+	}
+	return b
+}
 
 // trimNonEmpty trims each entry and drops blanks. Returns a non-nil empty
 // slice for "allow all".
@@ -60,6 +104,43 @@ type createAgentRequest struct {
 	WebhookUri            string   `json:"webhook_uri"`
 	WebhookAllowedIps     []string `json:"webhook_allowed_ips"`
 	WebhookAllowedOrigins []string `json:"webhook_allowed_origins"`
+	MilvusCollection      string      `json:"milvus_collection"`
+	WebhookInputField     string      `json:"webhook_input_field"`
+	WebhookOutputField    string      `json:"webhook_output_field"`
+	WebhookBodyFields     []BodyField `json:"webhook_body_fields"`
+	WebhookHeaderFields   []BodyField `json:"webhook_header_fields"`
+}
+
+// buildMilvusCollection sanitizes the user-supplied base name and appends a
+// random 8-char hex suffix so two agents named the same still get distinct
+// Milvus collections. Milvus names allow only letters, digits and underscore,
+// and must start with a letter or underscore.
+func buildMilvusCollection(base string) string {
+	base = strings.TrimSpace(base)
+	var b strings.Builder
+	for _, r := range base {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '_' || r == '-' || r == ' ':
+			b.WriteByte('_')
+		}
+	}
+	sanitized := strings.Trim(b.String(), "_")
+	if sanitized == "" || (sanitized[0] >= '0' && sanitized[0] <= '9') {
+		sanitized = "col_" + sanitized
+	}
+	return sanitized + "_" + lib.RandomHex(8)
+}
+
+// webhookFieldOrDefault falls back to the n8n defaults when the caller leaves
+// the override blank.
+func webhookFieldOrDefault(v, def string) string {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return def
+	}
+	return v
 }
 
 func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -74,6 +155,7 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	req.Name = strings.TrimSpace(req.Name)
 	req.WebhookUri = strings.TrimSpace(req.WebhookUri)
+	req.MilvusCollection = strings.TrimSpace(req.MilvusCollection)
 
 	if req.Name == "" {
 		log.Printf("[core-service][agent-create] api error status=%d reason=name is required", http.StatusBadRequest)
@@ -83,6 +165,11 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if req.WebhookUri == "" {
 		log.Printf("[core-service][agent-create] api error status=%d reason=webhook_uri is required", http.StatusBadRequest)
 		lib.ResponseJSONError(w, http.StatusBadRequest, "webhook_uri are required")
+		return
+	}
+	if req.MilvusCollection == "" {
+		log.Printf("[core-service][agent-create] api error status=%d reason=milvus_collection is required", http.StatusBadRequest)
+		lib.ResponseJSONError(w, http.StatusBadRequest, "milvus_collection are required")
 		return
 	}
 
@@ -113,6 +200,11 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		WebhookUri:            req.WebhookUri,
 		WebhookAllowedIps:     allowedIPs,
 		WebhookAllowedOrigins: trimNonEmpty(req.WebhookAllowedOrigins),
+		MilvusCollection:      buildMilvusCollection(req.MilvusCollection),
+		WebhookInputField:     webhookFieldOrDefault(req.WebhookInputField, "chatInput"),
+		WebhookOutputField:    webhookFieldOrDefault(req.WebhookOutputField, "output"),
+		WebhookBodyFields:     marshalBodyFields(req.WebhookBodyFields),
+		WebhookHeaderFields:   marshalBodyFields(req.WebhookHeaderFields),
 	})
 	if err != nil {
 		log.Printf("[core-service][agent-create] db insert error params=%s error=%v", jsonForLog(req), err)
@@ -260,6 +352,11 @@ type updateAgentRequest struct {
 	WebhookUri            string   `json:"webhook_uri"`
 	WebhookAllowedIps     []string `json:"webhook_allowed_ips"`
 	WebhookAllowedOrigins []string `json:"webhook_allowed_origins"`
+	WebhookInputField     string      `json:"webhook_input_field"`
+	WebhookOutputField    string      `json:"webhook_output_field"`
+	WebhookBodyFields     []BodyField `json:"webhook_body_fields"`
+	WebhookHeaderFields   []BodyField `json:"webhook_header_fields"`
+	// milvus_collection is intentionally omitted: it is immutable after create.
 }
 
 func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -305,6 +402,10 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		WebhookUri:            req.WebhookUri,
 		WebhookAllowedIps:     allowedIPs,
 		WebhookAllowedOrigins: trimNonEmpty(req.WebhookAllowedOrigins),
+		WebhookInputField:     webhookFieldOrDefault(req.WebhookInputField, "chatInput"),
+		WebhookOutputField:    webhookFieldOrDefault(req.WebhookOutputField, "output"),
+		WebhookBodyFields:     marshalBodyFields(req.WebhookBodyFields),
+		WebhookHeaderFields:   marshalBodyFields(req.WebhookHeaderFields),
 		ID:                    id,
 	})
 	if err != nil {

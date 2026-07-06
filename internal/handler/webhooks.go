@@ -190,14 +190,81 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 	} else {
 		bodyMap = map[string]any{}
 	}
-	// Persist the user's message: text (chatInput) + any uploaded docs/images.
-	// ponytail: hardcoded field names; make per-agent when other vendors differ.
+	// Callers always send the message under "chatInput". Map it to the agent's
+	// configured input field (e.g. "query") before forwarding, so the upstream
+	// agent receives the field name it expects. Persist before the rename so the
+	// stored value is the same either way.
+	h.ensureConversation(id, conversationID)
 	h.storeMessage(conversationID, db.MessageRoleUser, bodyMap["chatInput"], bodyMap["attachments"], nil)
 
+	if agent.WebhookInputField != "" && agent.WebhookInputField != "chatInput" {
+		if v, ok := bodyMap["chatInput"]; ok {
+			bodyMap[agent.WebhookInputField] = v
+			delete(bodyMap, "chatInput")
+		}
+	}
+
 	bodyMap["sessionId"] = conversationID
+	bodyMap["agentId"] = id.String()
 	bodyMap["tone"] = string(agent.Tone)
 	bodyMap["length"] = string(agent.ResponseLength)
 	bodyMap["style"] = string(agent.CommunicationStyle)
+
+	// Reserved "headers" object in the incoming body carries per-request
+	// dynamic header values. Pull it out so it isn't forwarded in the body.
+	callerHeaders := map[string]string{}
+	if raw, ok := bodyMap["headers"]; ok {
+		if m, ok := raw.(map[string]any); ok {
+			for k, v := range m {
+				if s, ok := v.(string); ok {
+					callerHeaders[k] = s
+				}
+			}
+		}
+		delete(bodyMap, "headers")
+	}
+
+	// Inject the agent's configured body fields. Static fields set a fixed
+	// value; dynamic fields must be supplied by the caller (enforced).
+	for _, f := range parseWebhookFields(agent.WebhookBodyFields) {
+		if f.Key == "" {
+			continue
+		}
+		if f.Type == "dynamic" {
+			v, ok := bodyMap[f.Key]
+			if !ok || v == nil || v == "" {
+				msg := fmt.Sprintf("missing required field %q", f.Key)
+				h.publishWebhookMessage(id.String(), conversationID, http.StatusBadRequest, hitTime, msg)
+				lib.ResponseJSONError(w, http.StatusBadRequest, msg)
+				return
+			}
+			// keep the caller-supplied value as-is
+		} else {
+			bodyMap[f.Key] = f.Value
+		}
+	}
+
+	// Resolve the agent's configured auth/header fields. Static uses the fixed
+	// value; dynamic must be supplied by the caller under body.headers
+	// (enforced). Open agent = no fields = no headers added.
+	outHeaders := map[string]string{}
+	for _, f := range parseWebhookFields(agent.WebhookHeaderFields) {
+		if f.Key == "" {
+			continue
+		}
+		if f.Type == "dynamic" {
+			v := callerHeaders[f.Key]
+			if v == "" {
+				msg := fmt.Sprintf("missing required header %q", f.Key)
+				h.publishWebhookMessage(id.String(), conversationID, http.StatusBadRequest, hitTime, msg)
+				lib.ResponseJSONError(w, http.StatusBadRequest, msg)
+				return
+			}
+			outHeaders[f.Key] = v
+		} else {
+			outHeaders[f.Key] = f.Value
+		}
+	}
 
 	modifiedBody, err := json.Marshal(bodyMap)
 	if err != nil {
@@ -214,6 +281,12 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 	}
 	copyForwardHeaders(req.Header, r.Header)
 	req.Header.Set("Content-Type", "application/json")
+	// Agent-configured auth/headers override forwarded ones.
+	for k, v := range outHeaders {
+		req.Header.Set(k, v)
+	}
+
+	log.Printf("chat webhook request: %s", curlPreview(req, modifiedBody))
 
 	res, err := h.HTTPClient.Do(req)
 	if err != nil {
@@ -232,13 +305,20 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 	h.publishWebhookMessage(id.String(), conversationID, res.StatusCode, hitTime, errorMessage)
 
 	// Buffer the response so we can persist the AI reply, then relay it verbatim.
+	// The frontend reads the agent's configured webhook_output_field to know
+	// which key holds the reply text — no remapping needed here.
 	respBytes, _ := io.ReadAll(res.Body)
 	if isSuccess {
 		var respMap map[string]any
 		if json.Unmarshal(respBytes, &respMap) == nil {
-			// CHAT agents reply with text (output); REPORT agents reply with
-			// structured data/visuals (data). Store whichever is present.
-			h.storeMessage(conversationID, db.MessageRoleAssistant, respMap["output"], respMap["attachments"], respMap["data"])
+			// Must match the frontend/API default (chatWithAgent: "reply").
+			// If these disagree, the assistant reply is stored as nil and the
+			// turn is silently dropped from history.
+			outputField := agent.WebhookOutputField
+			if outputField == "" {
+				outputField = "reply"
+			}
+			h.storeMessage(conversationID, db.MessageRoleAssistant, respMap[outputField], respMap["attachments"], respMap["data"])
 		}
 	}
 
@@ -268,6 +348,26 @@ func (h *WebhookHandler) PreflightChatWebhook(w http.ResponseWriter, r *http.Req
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Session-Id")
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ensureConversation upserts the conversations row for this session so chat
+// history can be listed per conversation. Best-effort and off the request
+// path, same contract as storeMessage. Idempotent (ON CONFLICT DO NOTHING).
+func (h *WebhookHandler) ensureConversation(agentID uuid.UUID, conversationID string) {
+	convID, err := uuid.Parse(conversationID)
+	if err != nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := h.Queries.UpsertConversation(ctx, db.UpsertConversationParams{
+			ID:      convID,
+			AgentID: agentID,
+		}); err != nil {
+			log.Printf("upsert conversation conv=%s: %v", conversationID, err)
+		}
+	}()
 }
 
 // storeMessage persists one chat message to Postgres. Best-effort and off the
@@ -353,6 +453,25 @@ func (h *WebhookHandler) publishWebhookMessage(agentID, conversationID string, s
 		log.Printf("kafka publish %s: %v", TopicChatMessage, err)
 	}
 	log.Printf("kafka publish %s: published", TopicChatMessage)
+}
+
+// curlPreview reconstructs the outgoing request as a copy-pasteable curl line
+// for debugging. Authorization is redacted so tokens don't leak into logs.
+func curlPreview(req *http.Request, body []byte) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "curl --request %s --url %s", req.Method, req.URL.String())
+	for k, vals := range req.Header {
+		for _, v := range vals {
+			if strings.EqualFold(k, "Authorization") {
+				v = "[redacted]"
+			}
+			fmt.Fprintf(&b, " --header '%s: %s'", k, v)
+		}
+	}
+	if len(body) > 0 {
+		fmt.Fprintf(&b, " --data '%s'", body)
+	}
+	return b.String()
 }
 
 func copyForwardHeaders(dst http.Header, src http.Header) {

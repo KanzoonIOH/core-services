@@ -125,11 +125,18 @@ func (q *Queries) SelectKnowledgeById(ctx context.Context, id uuid.UUID) (Knowle
 }
 
 const selectKnowledges = `-- name: SelectKnowledges :many
-SELECT id, name, description, source_type, source_uri, created_at, updated_at FROM knowledges_view
+SELECT
+    kv.id, kv.name, kv.description, kv.source_type, kv.source_uri, kv.created_at, kv.updated_at,
+    (
+        SELECT count(*)
+        FROM agent_knowledges_view akv
+        WHERE akv.knowledge_id = kv.id
+    ) AS agents_count
+FROM knowledges_view kv
 WHERE (
     $1::text IS NULL
     OR $1::text = ''
-    OR source_type = $1::text
+    OR kv.source_type = $1::text
 )
 ORDER BY
     CASE WHEN $2::text = 'name_asc' THEN name END ASC,
@@ -147,7 +154,18 @@ type SelectKnowledgesParams struct {
 	Limit      int32   `json:"limit"`
 }
 
-func (q *Queries) SelectKnowledges(ctx context.Context, arg SelectKnowledgesParams) ([]KnowledgesView, error) {
+type SelectKnowledgesRow struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description"`
+	SourceType  string    `json:"source_type"`
+	SourceUri   *string   `json:"source_uri"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	AgentsCount int64     `json:"agents_count"`
+}
+
+func (q *Queries) SelectKnowledges(ctx context.Context, arg SelectKnowledgesParams) ([]SelectKnowledgesRow, error) {
 	rows, err := q.db.Query(ctx, selectKnowledges,
 		arg.SourceType,
 		arg.Sort,
@@ -158,9 +176,9 @@ func (q *Queries) SelectKnowledges(ctx context.Context, arg SelectKnowledgesPara
 		return nil, err
 	}
 	defer rows.Close()
-	items := []KnowledgesView{}
+	items := []SelectKnowledgesRow{}
 	for rows.Next() {
-		var i KnowledgesView
+		var i SelectKnowledgesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
@@ -169,6 +187,7 @@ func (q *Queries) SelectKnowledges(ctx context.Context, arg SelectKnowledgesPara
 			&i.SourceUri,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.AgentsCount,
 		); err != nil {
 			return nil, err
 		}

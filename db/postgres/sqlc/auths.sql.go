@@ -24,9 +24,9 @@ RETURNING id, name, username, email, role, created_at, updated_at
 `
 
 type InsertUserRegisterParams struct {
-	Username       string `json:"username"`
-	Email          string `json:"email"`
-	HashedPassword string `json:"hashed_password"`
+	Username       string  `json:"username"`
+	Email          string  `json:"email"`
+	HashedPassword *string `json:"hashed_password"`
 }
 
 type InsertUserRegisterRow struct {
@@ -80,7 +80,7 @@ type SelectUserByLoginIdWithPasswordRow struct {
 	Username       string    `json:"username"`
 	Email          string    `json:"email"`
 	Role           UserRole  `json:"role"`
-	HashedPassword string    `json:"hashed_password"`
+	HashedPassword *string   `json:"hashed_password"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }

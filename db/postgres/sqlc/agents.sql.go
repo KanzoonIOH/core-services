@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"net/netip"
 	"time"
 
@@ -47,7 +48,7 @@ func (q *Queries) CountAgentsByMcpId(ctx context.Context) (int64, error) {
 }
 
 const insertAgent = `-- name: InsertAgent :one
-INSERT INTO agents (name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins)
+INSERT INTO agents (name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields)
 VALUES (
     $1,
     $2,
@@ -55,20 +56,30 @@ VALUES (
     $4,
     $5,
     $6,
-    $7
+    $7,
+    $8,
+    $9,
+    $10,
+    $11,
+    $12
 )
 RETURNING
-    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields
 `
 
 type InsertAgentParams struct {
-	Name                  string       `json:"name"`
-	Description           *string      `json:"description"`
-	Type                  AgentType    `json:"type"`
-	IsActive              bool         `json:"is_active"`
-	WebhookUri            string       `json:"webhook_uri"`
-	WebhookAllowedIps     []netip.Addr `json:"webhook_allowed_ips"`
-	WebhookAllowedOrigins []string     `json:"webhook_allowed_origins"`
+	Name                  string          `json:"name"`
+	Description           *string         `json:"description"`
+	Type                  AgentType       `json:"type"`
+	IsActive              bool            `json:"is_active"`
+	WebhookUri            string          `json:"webhook_uri"`
+	WebhookAllowedIps     []netip.Addr    `json:"webhook_allowed_ips"`
+	WebhookAllowedOrigins []string        `json:"webhook_allowed_origins"`
+	MilvusCollection      string          `json:"milvus_collection"`
+	WebhookInputField     string          `json:"webhook_input_field"`
+	WebhookOutputField    string          `json:"webhook_output_field"`
+	WebhookBodyFields     json.RawMessage `json:"webhook_body_fields"`
+	WebhookHeaderFields   json.RawMessage `json:"webhook_header_fields"`
 }
 
 type InsertAgentRow struct {
@@ -85,6 +96,11 @@ type InsertAgentRow struct {
 	CommunicationStyle    AgentCommunicationStyle `json:"communication_style"`
 	CreatedAt             time.Time               `json:"created_at"`
 	UpdatedAt             time.Time               `json:"updated_at"`
+	MilvusCollection      string                  `json:"milvus_collection"`
+	WebhookInputField     string                  `json:"webhook_input_field"`
+	WebhookOutputField    string                  `json:"webhook_output_field"`
+	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
+	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 }
 
 func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (InsertAgentRow, error) {
@@ -96,6 +112,11 @@ func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (Inser
 		arg.WebhookUri,
 		arg.WebhookAllowedIps,
 		arg.WebhookAllowedOrigins,
+		arg.MilvusCollection,
+		arg.WebhookInputField,
+		arg.WebhookOutputField,
+		arg.WebhookBodyFields,
+		arg.WebhookHeaderFields,
 	)
 	var i InsertAgentRow
 	err := row.Scan(
@@ -112,13 +133,18 @@ func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (Inser
 		&i.CommunicationStyle,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MilvusCollection,
+		&i.WebhookInputField,
+		&i.WebhookOutputField,
+		&i.WebhookBodyFields,
+		&i.WebhookHeaderFields,
 	)
 	return i, err
 }
 
 const selectAgentById = `-- name: SelectAgentById :one
 SELECT
-    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at,
+    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at, av.milvus_collection, av.webhook_input_field, av.webhook_output_field, av.webhook_body_fields, av.webhook_header_fields,
     (
         SELECT COUNT(*) FROM agent_knowledges_view akv
         WHERE akv.agent_id = av.id
@@ -146,6 +172,11 @@ type SelectAgentByIdRow struct {
 	CommunicationStyle    AgentCommunicationStyle `json:"communication_style"`
 	CreatedAt             time.Time               `json:"created_at"`
 	UpdatedAt             time.Time               `json:"updated_at"`
+	MilvusCollection      string                  `json:"milvus_collection"`
+	WebhookInputField     string                  `json:"webhook_input_field"`
+	WebhookOutputField    string                  `json:"webhook_output_field"`
+	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
+	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 	KnowledgesCount       int64                   `json:"knowledges_count"`
 	McpsCount             int64                   `json:"mcps_count"`
 }
@@ -167,6 +198,11 @@ func (q *Queries) SelectAgentById(ctx context.Context, id uuid.UUID) (SelectAgen
 		&i.CommunicationStyle,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MilvusCollection,
+		&i.WebhookInputField,
+		&i.WebhookOutputField,
+		&i.WebhookBodyFields,
+		&i.WebhookHeaderFields,
 		&i.KnowledgesCount,
 		&i.McpsCount,
 	)
@@ -175,7 +211,7 @@ func (q *Queries) SelectAgentById(ctx context.Context, id uuid.UUID) (SelectAgen
 
 const selectAgents = `-- name: SelectAgents :many
 SELECT
-    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at,
+    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at, av.milvus_collection, av.webhook_input_field, av.webhook_output_field, av.webhook_body_fields, av.webhook_header_fields,
     COALESCE(ak.knowledges_count, 0) AS knowledges_count,
     COALESCE(m.mcps_count, 0) AS mcps_count
 FROM agents_view av
@@ -237,6 +273,11 @@ type SelectAgentsRow struct {
 	CommunicationStyle    AgentCommunicationStyle `json:"communication_style"`
 	CreatedAt             time.Time               `json:"created_at"`
 	UpdatedAt             time.Time               `json:"updated_at"`
+	MilvusCollection      string                  `json:"milvus_collection"`
+	WebhookInputField     string                  `json:"webhook_input_field"`
+	WebhookOutputField    string                  `json:"webhook_output_field"`
+	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
+	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 	KnowledgesCount       int64                   `json:"knowledges_count"`
 	McpsCount             int64                   `json:"mcps_count"`
 }
@@ -269,6 +310,11 @@ func (q *Queries) SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]S
 			&i.CommunicationStyle,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.MilvusCollection,
+			&i.WebhookInputField,
+			&i.WebhookOutputField,
+			&i.WebhookBodyFields,
+			&i.WebhookHeaderFields,
 			&i.KnowledgesCount,
 			&i.McpsCount,
 		); err != nil {
@@ -284,7 +330,7 @@ func (q *Queries) SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]S
 
 const selectAgentsByKnowledgeId = `-- name: SelectAgentsByKnowledgeId :many
 SELECT
-    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at,
+    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at, av.milvus_collection, av.webhook_input_field, av.webhook_output_field, av.webhook_body_fields, av.webhook_header_fields,
     (akv.id IS NOT NULL)::bool AS connected
 FROM agents_view av
 LEFT JOIN agent_knowledges_view akv
@@ -325,6 +371,11 @@ type SelectAgentsByKnowledgeIdRow struct {
 	CommunicationStyle    AgentCommunicationStyle `json:"communication_style"`
 	CreatedAt             time.Time               `json:"created_at"`
 	UpdatedAt             time.Time               `json:"updated_at"`
+	MilvusCollection      string                  `json:"milvus_collection"`
+	WebhookInputField     string                  `json:"webhook_input_field"`
+	WebhookOutputField    string                  `json:"webhook_output_field"`
+	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
+	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 	Connected             bool                    `json:"connected"`
 }
 
@@ -356,6 +407,11 @@ func (q *Queries) SelectAgentsByKnowledgeId(ctx context.Context, arg SelectAgent
 			&i.CommunicationStyle,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.MilvusCollection,
+			&i.WebhookInputField,
+			&i.WebhookOutputField,
+			&i.WebhookBodyFields,
+			&i.WebhookHeaderFields,
 			&i.Connected,
 		); err != nil {
 			return nil, err
@@ -370,7 +426,7 @@ func (q *Queries) SelectAgentsByKnowledgeId(ctx context.Context, arg SelectAgent
 
 const selectAgentsByMcpId = `-- name: SelectAgentsByMcpId :many
 SELECT
-    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at,
+    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at, av.milvus_collection, av.webhook_input_field, av.webhook_output_field, av.webhook_body_fields, av.webhook_header_fields,
     (amv.id IS NOT NULL)::bool AS connected
 FROM agents_view av
 LEFT JOIN agent_mcps_view amv
@@ -411,6 +467,11 @@ type SelectAgentsByMcpIdRow struct {
 	CommunicationStyle    AgentCommunicationStyle `json:"communication_style"`
 	CreatedAt             time.Time               `json:"created_at"`
 	UpdatedAt             time.Time               `json:"updated_at"`
+	MilvusCollection      string                  `json:"milvus_collection"`
+	WebhookInputField     string                  `json:"webhook_input_field"`
+	WebhookOutputField    string                  `json:"webhook_output_field"`
+	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
+	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 	Connected             bool                    `json:"connected"`
 }
 
@@ -442,6 +503,11 @@ func (q *Queries) SelectAgentsByMcpId(ctx context.Context, arg SelectAgentsByMcp
 			&i.CommunicationStyle,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.MilvusCollection,
+			&i.WebhookInputField,
+			&i.WebhookOutputField,
+			&i.WebhookBodyFields,
+			&i.WebhookHeaderFields,
 			&i.Connected,
 		); err != nil {
 			return nil, err
@@ -479,22 +545,30 @@ SET
     webhook_uri = $4,
     webhook_allowed_ips = $5,
     webhook_allowed_origins = $6,
+    webhook_input_field = $7,
+    webhook_output_field = $8,
+    webhook_body_fields = $9,
+    webhook_header_fields = $10,
     updated_at = NOW()
 WHERE
     deleted_at IS NULL
-    AND id = $7
+    AND id = $11
 RETURNING
-    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields
 `
 
 type UpdateAgentParams struct {
-	Name                  string       `json:"name"`
-	Description           *string      `json:"description"`
-	IsActive              bool         `json:"is_active"`
-	WebhookUri            string       `json:"webhook_uri"`
-	WebhookAllowedIps     []netip.Addr `json:"webhook_allowed_ips"`
-	WebhookAllowedOrigins []string     `json:"webhook_allowed_origins"`
-	ID                    uuid.UUID    `json:"id"`
+	Name                  string          `json:"name"`
+	Description           *string         `json:"description"`
+	IsActive              bool            `json:"is_active"`
+	WebhookUri            string          `json:"webhook_uri"`
+	WebhookAllowedIps     []netip.Addr    `json:"webhook_allowed_ips"`
+	WebhookAllowedOrigins []string        `json:"webhook_allowed_origins"`
+	WebhookInputField     string          `json:"webhook_input_field"`
+	WebhookOutputField    string          `json:"webhook_output_field"`
+	WebhookBodyFields     json.RawMessage `json:"webhook_body_fields"`
+	WebhookHeaderFields   json.RawMessage `json:"webhook_header_fields"`
+	ID                    uuid.UUID       `json:"id"`
 }
 
 type UpdateAgentRow struct {
@@ -511,6 +585,11 @@ type UpdateAgentRow struct {
 	CommunicationStyle    AgentCommunicationStyle `json:"communication_style"`
 	CreatedAt             time.Time               `json:"created_at"`
 	UpdatedAt             time.Time               `json:"updated_at"`
+	MilvusCollection      string                  `json:"milvus_collection"`
+	WebhookInputField     string                  `json:"webhook_input_field"`
+	WebhookOutputField    string                  `json:"webhook_output_field"`
+	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
+	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 }
 
 func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (UpdateAgentRow, error) {
@@ -521,6 +600,10 @@ func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Updat
 		arg.WebhookUri,
 		arg.WebhookAllowedIps,
 		arg.WebhookAllowedOrigins,
+		arg.WebhookInputField,
+		arg.WebhookOutputField,
+		arg.WebhookBodyFields,
+		arg.WebhookHeaderFields,
 		arg.ID,
 	)
 	var i UpdateAgentRow
@@ -538,6 +621,11 @@ func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Updat
 		&i.CommunicationStyle,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MilvusCollection,
+		&i.WebhookInputField,
+		&i.WebhookOutputField,
+		&i.WebhookBodyFields,
+		&i.WebhookHeaderFields,
 	)
 	return i, err
 }
@@ -553,7 +641,7 @@ WHERE
     deleted_at IS NULL
     AND id = $4
 RETURNING
-    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields
 `
 
 type UpdateAgentPersonaParams struct {
@@ -577,6 +665,11 @@ type UpdateAgentPersonaRow struct {
 	CommunicationStyle    AgentCommunicationStyle `json:"communication_style"`
 	CreatedAt             time.Time               `json:"created_at"`
 	UpdatedAt             time.Time               `json:"updated_at"`
+	MilvusCollection      string                  `json:"milvus_collection"`
+	WebhookInputField     string                  `json:"webhook_input_field"`
+	WebhookOutputField    string                  `json:"webhook_output_field"`
+	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
+	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 }
 
 func (q *Queries) UpdateAgentPersona(ctx context.Context, arg UpdateAgentPersonaParams) (UpdateAgentPersonaRow, error) {
@@ -601,6 +694,11 @@ func (q *Queries) UpdateAgentPersona(ctx context.Context, arg UpdateAgentPersona
 		&i.CommunicationStyle,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.MilvusCollection,
+		&i.WebhookInputField,
+		&i.WebhookOutputField,
+		&i.WebhookBodyFields,
+		&i.WebhookHeaderFields,
 	)
 	return i, err
 }

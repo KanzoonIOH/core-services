@@ -1,11 +1,12 @@
 -- name: InsertMcp :one
-INSERT INTO mcps (name, description, uri)
+INSERT INTO mcps (name, description, uri, headers)
 VALUES (
     sqlc.arg(name),
     sqlc.narg(description),
-    sqlc.arg(uri)
+    sqlc.arg(uri),
+    sqlc.arg(headers)
 )
-RETURNING id, name, description, uri, created_at, updated_at;
+RETURNING id, name, description, uri, headers, created_at, updated_at;
 
 -- name: SelectMcpById :one
 SELECT * FROM mcps_view
@@ -17,11 +18,12 @@ UPDATE mcps
 SET
     name = sqlc.arg(name),
     description = sqlc.narg(description),
+    headers = sqlc.arg(headers),
     updated_at = now()
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id)
-RETURNING id, name, description, uri, created_at, updated_at;
+RETURNING id, name, description, uri, headers, created_at, updated_at;
 
 -- name: SoftDeleteMcp :execrows
 UPDATE mcps

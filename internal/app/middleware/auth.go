@@ -90,6 +90,30 @@ func InternalKey(key string) func(http.Handler) http.Handler {
 	}
 }
 
+// RequireRole gates a route to callers whose JWT role is in the allowed set.
+// Must run after Auth (needs claims in context). API-key auth has no role and
+// is always rejected.
+func RequireRole(roles ...string) func(http.Handler) http.Handler {
+	allowed := make(map[string]struct{}, len(roles))
+	for _, role := range roles {
+		allowed[role] = struct{}{}
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims, ok := ClaimsFromContext(r.Context())
+			if !ok {
+				lib.ResponseJSONError(w, http.StatusForbidden, "insufficient permissions")
+				return
+			}
+			if _, ok := allowed[claims.Role]; !ok {
+				lib.ResponseJSONError(w, http.StatusForbidden, "insufficient permissions")
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func bearerToken(w http.ResponseWriter, r *http.Request) (string, bool) {
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {

@@ -280,6 +280,7 @@ const (
 	UpcomingChangesTypeEMAIL          UpcomingChangesType = "EMAIL"
 	UpcomingChangesTypePASSWORD       UpcomingChangesType = "PASSWORD"
 	UpcomingChangesTypeFORGOTPASSWORD UpcomingChangesType = "FORGOT_PASSWORD"
+	UpcomingChangesTypeINVITE         UpcomingChangesType = "INVITE"
 )
 
 func (e *UpcomingChangesType) Scan(src interface{}) error {
@@ -377,6 +378,11 @@ type Agent struct {
 	CreatedAt             time.Time               `json:"created_at"`
 	UpdatedAt             time.Time               `json:"updated_at"`
 	DeletedAt             *time.Time              `json:"deleted_at"`
+	MilvusCollection      string                  `json:"milvus_collection"`
+	WebhookInputField     string                  `json:"webhook_input_field"`
+	WebhookOutputField    string                  `json:"webhook_output_field"`
+	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
+	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 }
 
 type AgentKnowledge struct {
@@ -433,6 +439,11 @@ type AgentsView struct {
 	CommunicationStyle    AgentCommunicationStyle `json:"communication_style"`
 	CreatedAt             time.Time               `json:"created_at"`
 	UpdatedAt             time.Time               `json:"updated_at"`
+	MilvusCollection      string                  `json:"milvus_collection"`
+	WebhookInputField     string                  `json:"webhook_input_field"`
+	WebhookOutputField    string                  `json:"webhook_output_field"`
+	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
+	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 }
 
 type ApiKey struct {
@@ -497,13 +508,14 @@ type KnowledgesView struct {
 }
 
 type Mcp struct {
-	ID          uuid.UUID  `json:"id"`
-	Name        string     `json:"name"`
-	Description *string    `json:"description"`
-	Uri         string     `json:"uri"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
-	DeletedAt   *time.Time `json:"deleted_at"`
+	ID          uuid.UUID       `json:"id"`
+	Name        string          `json:"name"`
+	Description *string         `json:"description"`
+	Uri         string          `json:"uri"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+	DeletedAt   *time.Time      `json:"deleted_at"`
+	Headers     json.RawMessage `json:"headers"`
 }
 
 type McpTool struct {
@@ -530,12 +542,13 @@ type McpToolsView struct {
 }
 
 type McpsView struct {
-	ID          uuid.UUID `json:"id"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description"`
-	Uri         string    `json:"uri"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          uuid.UUID       `json:"id"`
+	Name        string          `json:"name"`
+	Description *string         `json:"description"`
+	Uri         string          `json:"uri"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+	Headers     json.RawMessage `json:"headers"`
 }
 
 type Message struct {
@@ -565,7 +578,7 @@ type User struct {
 	Username       string     `json:"username"`
 	Email          string     `json:"email"`
 	Role           UserRole   `json:"role"`
-	HashedPassword string     `json:"hashed_password"`
+	HashedPassword *string    `json:"hashed_password"`
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 	DeletedAt      *time.Time `json:"deleted_at"`

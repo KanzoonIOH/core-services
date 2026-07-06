@@ -65,19 +65,71 @@ func (q *Queries) CountMembers(ctx context.Context, role *string) (int64, error)
 	return count, err
 }
 
+const insertUserInvite = `-- name: InsertUserInvite :one
+INSERT INTO users (name, username, email, hashed_password)
+VALUES (
+    $1,
+    $1,
+    $1,
+    NULL
+)
+RETURNING id, name, username, email, role, created_at, updated_at
+`
+
+type InsertUserInviteRow struct {
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	Username  string    `json:"username"`
+	Email     string    `json:"email"`
+	Role      UserRole  `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Creates a passwordless PENDING user for the email-invite flow. Username/name
+// default to the email until the invitee sets their own on accept.
+func (q *Queries) InsertUserInvite(ctx context.Context, email string) (InsertUserInviteRow, error) {
+	row := q.db.QueryRow(ctx, insertUserInvite, email)
+	var i InsertUserInviteRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Username,
+		&i.Email,
+		&i.Role,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const selectMembers = `-- name: SelectMembers :many
-SELECT id, name, username, email, role, created_at, updated_at FROM users_view
+SELECT
+    uv.id, uv.name, uv.username, uv.email, uv.role, uv.created_at, uv.updated_at,
+    (u.hashed_password IS NOT NULL)::bool AS has_password,
+    COALESCE((
+        SELECT uc.token
+        FROM upcoming_changes uc
+        WHERE uc.user_id = uv.id
+            AND uc.type = 'INVITE'
+            AND uc.revoked_at IS NULL
+            AND uc.expired_at > now()
+        ORDER BY uc.created_at DESC
+        LIMIT 1
+    ), '')::text AS invite_token
+FROM users_view uv
+JOIN users u ON u.id = uv.id
 WHERE (
     $1::text IS NULL
     OR $1::text = ''
-    OR role::text = $1::text
+    OR uv.role::text = $1::text
 )
 ORDER BY
-    CASE WHEN $2::text = 'name_asc' THEN name END ASC,
-    CASE WHEN $2::text = 'name_desc' THEN name END DESC,
-    CASE WHEN $2::text = 'created_asc' THEN created_at END ASC,
-    CASE WHEN $2::text = 'created_desc' THEN created_at END DESC,
-    created_at DESC
+    CASE WHEN $2::text = 'name_asc' THEN uv.name END ASC,
+    CASE WHEN $2::text = 'name_desc' THEN uv.name END DESC,
+    CASE WHEN $2::text = 'created_asc' THEN uv.created_at END ASC,
+    CASE WHEN $2::text = 'created_desc' THEN uv.created_at END DESC,
+    uv.created_at DESC
 LIMIT $4 OFFSET $3
 `
 
@@ -88,7 +140,21 @@ type SelectMembersParams struct {
 	Limit  int32   `json:"limit"`
 }
 
-func (q *Queries) SelectMembers(ctx context.Context, arg SelectMembersParams) ([]UsersView, error) {
+type SelectMembersRow struct {
+	ID          uuid.UUID `json:"id"`
+	Name        string    `json:"name"`
+	Username    string    `json:"username"`
+	Email       string    `json:"email"`
+	Role        UserRole  `json:"role"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	HasPassword bool      `json:"has_password"`
+	InviteToken string    `json:"invite_token"`
+}
+
+// invited_token: the active (non-revoked, non-expired) INVITE token, if any,
+// so the UI can surface the accept link for pending invites.
+func (q *Queries) SelectMembers(ctx context.Context, arg SelectMembersParams) ([]SelectMembersRow, error) {
 	rows, err := q.db.Query(ctx, selectMembers,
 		arg.Role,
 		arg.Sort,
@@ -99,9 +165,9 @@ func (q *Queries) SelectMembers(ctx context.Context, arg SelectMembersParams) ([
 		return nil, err
 	}
 	defer rows.Close()
-	items := []UsersView{}
+	items := []SelectMembersRow{}
 	for rows.Next() {
-		var i UsersView
+		var i SelectMembersRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
@@ -110,6 +176,8 @@ func (q *Queries) SelectMembers(ctx context.Context, arg SelectMembersParams) ([
 			&i.Role,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.HasPassword,
+			&i.InviteToken,
 		); err != nil {
 			return nil, err
 		}
@@ -165,7 +233,7 @@ type SelectUserByIdWithPasswordRow struct {
 	Username       string    `json:"username"`
 	Email          string    `json:"email"`
 	Role           UserRole  `json:"role"`
-	HashedPassword string    `json:"hashed_password"`
+	HashedPassword *string   `json:"hashed_password"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }
@@ -180,6 +248,49 @@ func (q *Queries) SelectUserByIdWithPassword(ctx context.Context, id uuid.UUID) 
 		&i.Email,
 		&i.Role,
 		&i.HashedPassword,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const setPasswordAndActivate = `-- name: SetPasswordAndActivate :one
+UPDATE users
+SET
+    hashed_password = $1,
+    role = 'VIEWER',
+    updated_at = now()
+WHERE
+    deleted_at IS NULL
+    AND id = $2
+RETURNING id, name, username, email, role, created_at, updated_at
+`
+
+type SetPasswordAndActivateParams struct {
+	HashedPassword *string   `json:"hashed_password"`
+	ID             uuid.UUID `json:"id"`
+}
+
+type SetPasswordAndActivateRow struct {
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	Username  string    `json:"username"`
+	Email     string    `json:"email"`
+	Role      UserRole  `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Invite accept: set the password and promote PENDING -> VIEWER in one step.
+func (q *Queries) SetPasswordAndActivate(ctx context.Context, arg SetPasswordAndActivateParams) (SetPasswordAndActivateRow, error) {
+	row := q.db.QueryRow(ctx, setPasswordAndActivate, arg.HashedPassword, arg.ID)
+	var i SetPasswordAndActivateRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Username,
+		&i.Email,
+		&i.Role,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

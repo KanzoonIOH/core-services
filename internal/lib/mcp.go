@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mark3labs/mcp-go/client"
+	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -18,11 +19,16 @@ type McpToolInfo struct {
 	InputSchema json.RawMessage
 }
 
-func DiscoverMcpTools(ctx context.Context, uri string) ([]McpToolInfo, error) {
+func DiscoverMcpTools(ctx context.Context, uri string, headers map[string]string) ([]McpToolInfo, error) {
 	ctx, cancel := context.WithTimeout(ctx, mcpDiscoverTimeout)
 	defer cancel()
 
-	c, err := client.NewStreamableHttpClient(uri)
+	var opts []transport.StreamableHTTPCOption
+	if len(headers) > 0 {
+		opts = append(opts, transport.WithHTTPHeaders(headers))
+	}
+
+	c, err := client.NewStreamableHttpClient(uri, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("create mcp client: %w", err)
 	}
