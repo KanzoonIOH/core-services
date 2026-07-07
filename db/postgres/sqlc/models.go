@@ -383,6 +383,7 @@ type Agent struct {
 	WebhookOutputField    string                  `json:"webhook_output_field"`
 	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
 	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
+	Guardrail             string                  `json:"guardrail"`
 }
 
 type AgentKnowledge struct {
@@ -425,6 +426,13 @@ type AgentMcpsView struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+type AgentTag struct {
+	ID        uuid.UUID `json:"id"`
+	AgentID   uuid.UUID `json:"agent_id"`
+	TagID     uuid.UUID `json:"tag_id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type AgentsView struct {
 	ID                    uuid.UUID               `json:"id"`
 	Name                  string                  `json:"name"`
@@ -444,6 +452,7 @@ type AgentsView struct {
 	WebhookOutputField    string                  `json:"webhook_output_field"`
 	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
 	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
+	Guardrail             string                  `json:"guardrail"`
 }
 
 type ApiKey struct {
@@ -559,6 +568,23 @@ type Message struct {
 	Attachments    json.RawMessage `json:"attachments"`
 	Data           json.RawMessage `json:"data"`
 	CreatedAt      time.Time       `json:"created_at"`
+}
+
+type Tag struct {
+	ID        uuid.UUID  `json:"id"`
+	Name      string     `json:"name"`
+	Color     string     `json:"color"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+	DeletedAt *time.Time `json:"deleted_at"`
+}
+
+type TagsView struct {
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	Color     string    `json:"color"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type UpcomingChange struct {

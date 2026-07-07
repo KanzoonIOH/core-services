@@ -1,5 +1,5 @@
 -- name: InsertAgent :one
-INSERT INTO agents (name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields)
+INSERT INTO agents (name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail)
 VALUES (
     sqlc.arg(name),
     sqlc.narg(description),
@@ -12,10 +12,11 @@ VALUES (
     sqlc.arg(webhook_input_field),
     sqlc.arg(webhook_output_field),
     sqlc.arg(webhook_body_fields),
-    sqlc.arg(webhook_header_fields)
+    sqlc.arg(webhook_header_fields),
+    sqlc.arg(guardrail)
 )
 RETURNING
-    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields;
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail;
 
 -- name: SelectAgentById :one
 SELECT
@@ -27,7 +28,13 @@ SELECT
     (
         SELECT COUNT(*) FROM agent_mcps_view amv
         WHERE amv.agent_id = av.id
-    ) AS mcps_count
+    ) AS mcps_count,
+    (
+        SELECT COALESCE(jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'color', t.color) ORDER BY t.name), '[]'::jsonb)
+        FROM agent_tags at
+        JOIN tags_view t ON t.id = at.tag_id
+        WHERE at.agent_id = av.id
+    )::jsonb AS tags
 FROM agents_view av
 WHERE av.id = sqlc.arg(id)
 LIMIT 1;
@@ -45,12 +52,13 @@ SET
     webhook_output_field = sqlc.arg(webhook_output_field),
     webhook_body_fields = sqlc.arg(webhook_body_fields),
     webhook_header_fields = sqlc.arg(webhook_header_fields),
+    guardrail = sqlc.arg(guardrail),
     updated_at = NOW()
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id)
 RETURNING
-    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields;
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail;
 
 -- name: UpdateAgentPersona :one
 UPDATE agents
@@ -63,7 +71,7 @@ WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id)
 RETURNING
-    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields;
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail;
 
 -- name: SoftDeleteAgent :execrows
 UPDATE agents
@@ -79,7 +87,13 @@ SELECT COUNT(*) FROM agents_view;
 SELECT
     av.*,
     COALESCE(ak.knowledges_count, 0) AS knowledges_count,
-    COALESCE(m.mcps_count, 0) AS mcps_count
+    COALESCE(m.mcps_count, 0) AS mcps_count,
+    (
+        SELECT COALESCE(jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'color', t.color) ORDER BY t.name), '[]'::jsonb)
+        FROM agent_tags at
+        JOIN tags_view t ON t.id = at.tag_id
+        WHERE at.agent_id = av.id
+    )::jsonb AS tags
 FROM agents_view av
 LEFT JOIN (
     SELECT

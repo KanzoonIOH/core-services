@@ -25,11 +25,13 @@ type Querier interface {
 	CountMcps(ctx context.Context) (int64, error)
 	CountMcpsByAgentId(ctx context.Context, agentID uuid.UUID) (int64, error)
 	CountMembers(ctx context.Context, role *string) (int64, error)
+	DeleteAgentTags(ctx context.Context, agentID uuid.UUID) error
 	DeleteConversation(ctx context.Context, id uuid.UUID) error
 	DeleteMessagesByConversation(ctx context.Context, conversationID uuid.UUID) error
 	InsertAgent(ctx context.Context, arg InsertAgentParams) (InsertAgentRow, error)
 	InsertAgentKnowledge(ctx context.Context, arg InsertAgentKnowledgeParams) (InsertAgentKnowledgeRow, error)
 	InsertAgentMcp(ctx context.Context, arg InsertAgentMcpParams) (InsertAgentMcpRow, error)
+	InsertAgentTag(ctx context.Context, arg InsertAgentTagParams) error
 	InsertApiKey(ctx context.Context, arg InsertApiKeyParams) (InsertApiKeyRow, error)
 	InsertKnowledge(ctx context.Context, arg InsertKnowledgeParams) (InsertKnowledgeRow, error)
 	InsertMcp(ctx context.Context, arg InsertMcpParams) (InsertMcpRow, error)
@@ -65,6 +67,7 @@ type Querier interface {
 	// invited_token: the active (non-revoked, non-expired) INVITE token, if any,
 	// so the UI can surface the accept link for pending invites.
 	SelectMembers(ctx context.Context, arg SelectMembersParams) ([]SelectMembersRow, error)
+	SelectTags(ctx context.Context) ([]SelectTagsRow, error)
 	SelectUpcomingChangeByToken(ctx context.Context, token string) (UpcomingChange, error)
 	SelectUserById(ctx context.Context, id uuid.UUID) (UsersView, error)
 	SelectUserByIdWithPassword(ctx context.Context, id uuid.UUID) (SelectUserByIdWithPasswordRow, error)
@@ -79,6 +82,7 @@ type Querier interface {
 	SoftDeleteMcp(ctx context.Context, id uuid.UUID) (int64, error)
 	SoftDeleteMcpToolsByMcpId(ctx context.Context, mcpID uuid.UUID) (int64, error)
 	SoftDeleteMember(ctx context.Context, id uuid.UUID) (int64, error)
+	SoftDeleteTag(ctx context.Context, id uuid.UUID) (int64, error)
 	UpdateAgent(ctx context.Context, arg UpdateAgentParams) (UpdateAgentRow, error)
 	UpdateAgentKnowledge(ctx context.Context, arg UpdateAgentKnowledgeParams) (UpdateAgentKnowledgeRow, error)
 	UpdateAgentKnowledgeStatus(ctx context.Context, arg UpdateAgentKnowledgeStatusParams) (int64, error)
@@ -86,8 +90,12 @@ type Querier interface {
 	UpdateKnowledge(ctx context.Context, arg UpdateKnowledgeParams) (UpdateKnowledgeRow, error)
 	UpdateMcp(ctx context.Context, arg UpdateMcpParams) (UpdateMcpRow, error)
 	UpdateMemberStatus(ctx context.Context, arg UpdateMemberStatusParams) (UpdateMemberStatusRow, error)
+	UpdateTag(ctx context.Context, arg UpdateTagParams) (UpdateTagRow, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateUserRow, error)
 	UpsertConversation(ctx context.Context, arg UpsertConversationParams) error
+	// Insert a tag by name, or return the existing live one (case-insensitive).
+	// ON CONFLICT targets the partial unique index on lower(name) WHERE deleted_at IS NULL.
+	UpsertTagByName(ctx context.Context, arg UpsertTagByNameParams) (UpsertTagByNameRow, error)
 }
 
 var _ Querier = (*Queries)(nil)

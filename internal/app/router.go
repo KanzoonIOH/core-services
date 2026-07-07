@@ -30,6 +30,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 	objectStorage := newObjectStorage()
 
 	agentHandler := handler.NewAgentHandler(conn)
+	tagHandler := handler.NewTagHandler(conn)
 	mcpHandler := handler.NewMcpHandler(conn)
 	knowledgeHandler := handler.NewKnowledgeHandler(conn, objectStorage)
 	agentKnowledgeHandler := handler.NewAgentKnowledgeHandler(conn)
@@ -110,6 +111,11 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 				r.Get("/{id}/mcps/all", mcpHandler.ReadAllByAgentId)
 				r.Get("/{id}/knowledges", knowledgeHandler.ReadByAgentId)
 				r.Get("/{id}/knowledges/all", knowledgeHandler.ReadAllByAgentId)
+			})
+			r.Route("/tags", func(r chi.Router) {
+				r.Get("/", tagHandler.Read)
+				r.Patch("/{id}", tagHandler.Update)
+				r.Delete("/{id}", tagHandler.Delete)
 			})
 			r.Route("/knowledges", func(r chi.Router) {
 				r.Post("/", knowledgeHandler.Create)

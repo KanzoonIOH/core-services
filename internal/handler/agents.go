@@ -3,6 +3,7 @@ package handler
 import (
 	db "aic3-service/db/postgres/sqlc"
 	"aic3-service/internal/lib"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"net/netip"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -70,6 +72,52 @@ func trimNonEmpty(in []string) []string {
 	return out
 }
 
+// tagPalette is the fixed set of default colors a newly typed tag can get.
+// Deterministic pick by name hash, so the same tag name always starts the same
+// color until the user recolors it in the Tags menu.
+var tagPalette = []string{
+	"#ef4444", "#f97316", "#eab308", "#22c55e", "#14b8a6",
+	"#3b82f6", "#6366f1", "#a855f7", "#ec4899", "#64748b",
+}
+
+func defaultTagColor(name string) string {
+	var sum uint32
+	for _, r := range strings.ToLower(strings.TrimSpace(name)) {
+		sum = sum*31 + uint32(r)
+	}
+	return tagPalette[sum%uint32(len(tagPalette))]
+}
+
+// syncAgentTags upserts each tag name to a tag row, then replaces the agent's
+// tag links to exactly that set. Blank names are dropped; dupes collapse.
+func (h *AgentHandler) syncAgentTags(ctx context.Context, agentID uuid.UUID, names []string) error {
+	if err := h.Queries.DeleteAgentTags(ctx, agentID); err != nil {
+		return err
+	}
+	seen := map[string]bool{}
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" || seen[strings.ToLower(name)] {
+			continue
+		}
+		seen[strings.ToLower(name)] = true
+		tag, err := h.Queries.UpsertTagByName(ctx, db.UpsertTagByNameParams{
+			Name:  name,
+			Color: defaultTagColor(name),
+		})
+		if err != nil {
+			return err
+		}
+		if err := h.Queries.InsertAgentTag(ctx, db.InsertAgentTagParams{
+			AgentID: agentID,
+			TagID:   tag.ID,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // parseAllowedIPs converts a list of IP strings into netip.Addr.
 // Empty/nil means "allow all". Invalid entries are rejected.
 func parseAllowedIPs(in []string) ([]netip.Addr, error) {
@@ -109,6 +157,8 @@ type createAgentRequest struct {
 	WebhookOutputField    string      `json:"webhook_output_field"`
 	WebhookBodyFields     []BodyField `json:"webhook_body_fields"`
 	WebhookHeaderFields   []BodyField `json:"webhook_header_fields"`
+	Guardrail             string      `json:"guardrail"`
+	Tags                  []string    `json:"tags"`
 }
 
 // buildMilvusCollection sanitizes the user-supplied base name and appends a
@@ -205,6 +255,7 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		WebhookOutputField:    webhookFieldOrDefault(req.WebhookOutputField, "output"),
 		WebhookBodyFields:     marshalBodyFields(req.WebhookBodyFields),
 		WebhookHeaderFields:   marshalBodyFields(req.WebhookHeaderFields),
+		Guardrail:             strings.TrimSpace(req.Guardrail),
 	})
 	if err != nil {
 		log.Printf("[core-service][agent-create] db insert error params=%s error=%v", jsonForLog(req), err)
@@ -212,8 +263,22 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[core-service][agent-create] api success status=%d response=%s", http.StatusOK, jsonForLog(agent))
-	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agent, nil)
+	if err := h.syncAgentTags(r.Context(), agent.ID, req.Tags); err != nil {
+		log.Printf("[core-service][agent-create] tag sync error agent_id=%s error=%v", agent.ID, err)
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to set agent tags")
+		return
+	}
+
+	// Re-read so the response carries the freshly-linked tags.
+	full, err := h.Queries.SelectAgentById(r.Context(), agent.ID)
+	if err != nil {
+		log.Printf("[core-service][agent-create] reload error agent_id=%s error=%v", agent.ID, err)
+		lib.ResponseJSONTemplate(w, http.StatusOK, nil, agent, nil)
+		return
+	}
+
+	log.Printf("[core-service][agent-create] api success status=%d response=%s", http.StatusOK, jsonForLog(full))
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, full, nil)
 }
 
 func (h *AgentHandler) Read(w http.ResponseWriter, r *http.Request) {
@@ -356,6 +421,8 @@ type updateAgentRequest struct {
 	WebhookOutputField    string      `json:"webhook_output_field"`
 	WebhookBodyFields     []BodyField `json:"webhook_body_fields"`
 	WebhookHeaderFields   []BodyField `json:"webhook_header_fields"`
+	Guardrail             string      `json:"guardrail"`
+	Tags                  []string    `json:"tags"`
 	// milvus_collection is intentionally omitted: it is immutable after create.
 }
 
@@ -406,6 +473,7 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		WebhookOutputField:    webhookFieldOrDefault(req.WebhookOutputField, "output"),
 		WebhookBodyFields:     marshalBodyFields(req.WebhookBodyFields),
 		WebhookHeaderFields:   marshalBodyFields(req.WebhookHeaderFields),
+		Guardrail:             strings.TrimSpace(req.Guardrail),
 		ID:                    id,
 	})
 	if err != nil {
@@ -420,8 +488,21 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[core-service][agent-update] api success status=%d response=%s", http.StatusOK, jsonForLog(agent))
-	lib.ResponseJSONTemplate(w, http.StatusOK, nil, agent, nil)
+	if err := h.syncAgentTags(r.Context(), agent.ID, req.Tags); err != nil {
+		log.Printf("[core-service][agent-update] tag sync error agent_id=%s error=%v", agent.ID, err)
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to set agent tags")
+		return
+	}
+
+	full, err := h.Queries.SelectAgentById(r.Context(), agent.ID)
+	if err != nil {
+		log.Printf("[core-service][agent-update] reload error agent_id=%s error=%v", agent.ID, err)
+		lib.ResponseJSONTemplate(w, http.StatusOK, nil, agent, nil)
+		return
+	}
+
+	log.Printf("[core-service][agent-update] api success status=%d response=%s", http.StatusOK, jsonForLog(full))
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, full, nil)
 }
 
 func (h *AgentHandler) Delete(w http.ResponseWriter, r *http.Request) {
