@@ -105,7 +105,7 @@ func (q *Queries) InsertUserInvite(ctx context.Context, email string) (InsertUse
 
 const selectMembers = `-- name: SelectMembers :many
 SELECT
-    uv.id, uv.name, uv.username, uv.email, uv.role, uv.created_at, uv.updated_at,
+    uv.id, uv.name, uv.username, uv.email, uv.role, uv.image, uv.created_at, uv.updated_at,
     (u.hashed_password IS NOT NULL)::bool AS has_password,
     COALESCE((
         SELECT uc.token
@@ -146,6 +146,7 @@ type SelectMembersRow struct {
 	Username    string    `json:"username"`
 	Email       string    `json:"email"`
 	Role        UserRole  `json:"role"`
+	Image       *string   `json:"image"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 	HasPassword bool      `json:"has_password"`
@@ -174,6 +175,7 @@ func (q *Queries) SelectMembers(ctx context.Context, arg SelectMembersParams) ([
 			&i.Username,
 			&i.Email,
 			&i.Role,
+			&i.Image,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.HasPassword,
@@ -190,7 +192,7 @@ func (q *Queries) SelectMembers(ctx context.Context, arg SelectMembersParams) ([
 }
 
 const selectUserById = `-- name: SelectUserById :one
-SELECT id, name, username, email, role, created_at, updated_at FROM users_view
+SELECT id, name, username, email, role, image, created_at, updated_at FROM users_view
 WHERE id = $1
 LIMIT 1
 `
@@ -204,6 +206,7 @@ func (q *Queries) SelectUserById(ctx context.Context, id uuid.UUID) (UsersView, 
 		&i.Username,
 		&i.Email,
 		&i.Role,
+		&i.Image,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -362,11 +365,12 @@ SET
     username = coalesce($2, username),
     email = coalesce($3, email),
     hashed_password = coalesce($4, hashed_password),
+    image = coalesce($5, image),
     updated_at = now()
 WHERE
     deleted_at IS NULL
-    AND id = $5
-RETURNING id, name, username, email, role, created_at, updated_at
+    AND id = $6
+RETURNING id, name, username, email, role, image, created_at, updated_at
 `
 
 type UpdateUserParams struct {
@@ -374,6 +378,7 @@ type UpdateUserParams struct {
 	Username       *string   `json:"username"`
 	Email          *string   `json:"email"`
 	HashedPassword *string   `json:"hashed_password"`
+	Image          *string   `json:"image"`
 	ID             uuid.UUID `json:"id"`
 }
 
@@ -383,6 +388,7 @@ type UpdateUserRow struct {
 	Username  string    `json:"username"`
 	Email     string    `json:"email"`
 	Role      UserRole  `json:"role"`
+	Image     *string   `json:"image"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -393,6 +399,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateU
 		arg.Username,
 		arg.Email,
 		arg.HashedPassword,
+		arg.Image,
 		arg.ID,
 	)
 	var i UpdateUserRow
@@ -402,6 +409,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateU
 		&i.Username,
 		&i.Email,
 		&i.Role,
+		&i.Image,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

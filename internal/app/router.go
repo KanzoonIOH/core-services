@@ -37,7 +37,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 	connectHandler := handler.NewConnectHandler(conn)
 	callbackHandler := handler.NewCallbackHandler(conn)
 	authHandler := handler.NewAuthHandler(conn, signer, mailer, inviteTTL())
-	meHandler := handler.NewMeHandler(conn, mailer)
+	meHandler := handler.NewMeHandler(conn, mailer, objectStorage)
 	confirmHandler := handler.NewConfirmHandler(conn)
 	apiKeyHandler := handler.NewApiKeyHandler(conn)
 	webhookHandler := handler.NewWebhookHandler(conn, kafka)
@@ -47,6 +47,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 	logHandler := handler.NewLogHandler(ch)
 	dropdownHandler := handler.NewDropdownHandler(conn)
 	globalConfigHandler := handler.NewGlobalConfigHandler(conn)
+	uploadHandler := handler.NewUploadHandler(conn, objectStorage)
 
 	r.Get("/health", handler.Health)
 	r.Get("/all-functions", handler.AllFunctions(r))
@@ -86,6 +87,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 				r.Patch("/", meHandler.UpdateDetails)
 				r.Patch("/password", meHandler.UpdatePassword)
 				r.Patch("/email", meHandler.UpdateEmailRequest)
+				r.Patch("/avatar", meHandler.UpdateAvatar)
 			})
 			r.Route("/members", func(r chi.Router) {
 				r.Get("/", memberHandler.Read)
@@ -113,6 +115,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 				r.Get("/{id}/knowledges", knowledgeHandler.ReadByAgentId)
 				r.Get("/{id}/knowledges/all", knowledgeHandler.ReadAllByAgentId)
 			})
+			r.Post("/uploads/image", uploadHandler.Image)
 			r.Route("/tags", func(r chi.Router) {
 				r.Get("/", tagHandler.Read)
 				r.Patch("/{id}", tagHandler.Update)

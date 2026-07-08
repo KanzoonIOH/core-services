@@ -384,6 +384,7 @@ type Agent struct {
 	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
 	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 	Guardrail             string                  `json:"guardrail"`
+	Image                 *string                 `json:"image"`
 }
 
 type AgentKnowledge struct {
@@ -453,6 +454,7 @@ type AgentsView struct {
 	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
 	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 	Guardrail             string                  `json:"guardrail"`
+	Image                 *string                 `json:"image"`
 }
 
 type ApiKey struct {
@@ -617,6 +619,7 @@ type User struct {
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 	DeletedAt      *time.Time `json:"deleted_at"`
+	Image          *string    `json:"image"`
 }
 
 type UsersView struct {
@@ -625,6 +628,7 @@ type UsersView struct {
 	Username  string    `json:"username"`
 	Email     string    `json:"email"`
 	Role      UserRole  `json:"role"`
+	Image     *string   `json:"image"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }

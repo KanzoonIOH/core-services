@@ -2,14 +2,60 @@ package handler
 
 import (
 	db "aic3-service/db/postgres/sqlc"
+	"aic3-service/internal/app/middleware"
 	"aic3-service/internal/lib"
 	"errors"
 	"fmt"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// canEditMember encodes who may modify (role change / accept / remove) a target
+// member. Rules: nobody edits themselves; nobody edits a SUPERADMIN; an ADMIN
+// cannot edit another ADMIN. Only ADMIN/SUPERADMIN can edit at all (route is
+// already role-gated, so actorRole is one of those here).
+func canEditMember(actorID uuid.UUID, actorRole string, targetID uuid.UUID, targetRole db.UserRole) bool {
+	if actorID == targetID {
+		return false
+	}
+	if targetRole == db.UserRoleSUPERADMIN {
+		return false
+	}
+	if actorRole == string(db.UserRoleADMIN) && targetRole == db.UserRoleADMIN {
+		return false
+	}
+	return true
+}
+
+// authorizeMemberEdit loads the target member's role and applies canEditMember.
+// Writes a 403/404 response and returns false when the edit is not allowed.
+func (h *MemberHandler) authorizeMemberEdit(w http.ResponseWriter, r *http.Request, targetID uuid.UUID) bool {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		lib.ResponseJSONError(w, http.StatusUnauthorized, "unauthorized")
+		return false
+	}
+
+	target, err := h.Queries.SelectUserById(r.Context(), targetID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			lib.ResponseJSONError(w, http.StatusNotFound, "member not found")
+			return false
+		}
+		fmt.Printf("%v\n", err)
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to load member")
+		return false
+	}
+
+	if !canEditMember(claims.UserID, claims.Role, targetID, target.Role) {
+		lib.ResponseJSONError(w, http.StatusForbidden, "you are not allowed to edit this member")
+		return false
+	}
+	return true
+}
 
 type MemberHandler struct {
 	Queries db.Querier
@@ -52,6 +98,9 @@ func (h *MemberHandler) Accept(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !h.authorizeMemberEdit(w, r, id) {
+		return
+	}
 
 	member, err := h.Queries.AcceptMember(r.Context(), id)
 	if err != nil {
@@ -74,6 +123,10 @@ type updateMemberStatusRequest struct {
 func (h *MemberHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 	id, ok := lib.ParseID(w, r, "id")
 	if !ok {
+		return
+	}
+
+	if !h.authorizeMemberEdit(w, r, id) {
 		return
 	}
 
@@ -110,6 +163,9 @@ func (h *MemberHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 func (h *MemberHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, ok := lib.ParseID(w, r, "id")
 	if !ok {
+		return
+	}
+	if !h.authorizeMemberEdit(w, r, id) {
 		return
 	}
 

@@ -12,12 +12,13 @@ import (
 )
 
 type MeHandler struct {
-	Queries db.Querier
-	Mailer  *lib.Mailer
+	Queries       db.Querier
+	Mailer        *lib.Mailer
+	ObjectStorage *lib.ObjectStorage
 }
 
-func NewMeHandler(conn *pgxpool.Pool, mailer *lib.Mailer) *MeHandler {
-	return &MeHandler{Queries: db.New(conn), Mailer: mailer}
+func NewMeHandler(conn *pgxpool.Pool, mailer *lib.Mailer, objectStorage *lib.ObjectStorage) *MeHandler {
+	return &MeHandler{Queries: db.New(conn), Mailer: mailer, ObjectStorage: objectStorage}
 }
 
 func (h *MeHandler) Read(w http.ResponseWriter, r *http.Request) {
@@ -105,8 +106,9 @@ func (h *MeHandler) UpdatePassword(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateDetailsRequest struct {
-	Name     string `json:"name"`
-	Username string `json:"username"`
+	Name     string  `json:"name"`
+	Username string  `json:"username"`
+	Image    *string `json:"image"` // emoji string, or "" to clear; nil leaves unchanged
 }
 
 func (h *MeHandler) UpdateDetails(w http.ResponseWriter, r *http.Request) {
@@ -137,7 +139,50 @@ func (h *MeHandler) UpdateDetails(w http.ResponseWriter, r *http.Request) {
 	user, err := h.Queries.UpdateUser(r.Context(), db.UpdateUserParams{
 		Name:     &req.Name,
 		Username: &req.Username,
+		Image:    req.Image,
 		ID:       userID,
+	})
+	if err != nil {
+		fmt.Printf("%v", err)
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to update user")
+		return
+	}
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, user, nil)
+}
+
+// UpdateAvatar uploads a profile picture (multipart field "file") to object
+// storage under avatars/ and stores its URL as the user's image.
+func (h *MeHandler) UpdateAvatar(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		lib.ResponseJSONError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	userID := claims.UserID
+
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		lib.ResponseJSONError(w, http.StatusBadRequest, "invalid multipart form")
+		return
+	}
+	file, fileHeader, err := r.FormFile("file")
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusBadRequest, "file is required")
+		return
+	}
+	defer file.Close()
+
+	objectKey := "avatars/" + timestampedObjectFilename(fileHeader.Filename)
+	imageURL, err := h.ObjectStorage.Upload(r.Context(), objectKey, file, fileHeader.Header.Get("Content-Type"))
+	if err != nil {
+		fmt.Printf("%v", err)
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to upload avatar")
+		return
+	}
+
+	user, err := h.Queries.UpdateUser(r.Context(), db.UpdateUserParams{
+		Image: &imageURL,
+		ID:    userID,
 	})
 	if err != nil {
 		fmt.Printf("%v", err)

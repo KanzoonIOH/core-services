@@ -48,7 +48,7 @@ func (q *Queries) CountAgentsByMcpId(ctx context.Context) (int64, error) {
 }
 
 const insertAgent = `-- name: InsertAgent :one
-INSERT INTO agents (name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail)
+INSERT INTO agents (name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image)
 VALUES (
     $1,
     $2,
@@ -62,10 +62,11 @@ VALUES (
     $10,
     $11,
     $12,
-    $13
+    $13,
+    $14
 )
 RETURNING
-    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image
 `
 
 type InsertAgentParams struct {
@@ -82,6 +83,7 @@ type InsertAgentParams struct {
 	WebhookBodyFields     json.RawMessage `json:"webhook_body_fields"`
 	WebhookHeaderFields   json.RawMessage `json:"webhook_header_fields"`
 	Guardrail             string          `json:"guardrail"`
+	Image                 *string         `json:"image"`
 }
 
 type InsertAgentRow struct {
@@ -104,6 +106,7 @@ type InsertAgentRow struct {
 	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
 	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 	Guardrail             string                  `json:"guardrail"`
+	Image                 *string                 `json:"image"`
 }
 
 func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (InsertAgentRow, error) {
@@ -121,6 +124,7 @@ func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (Inser
 		arg.WebhookBodyFields,
 		arg.WebhookHeaderFields,
 		arg.Guardrail,
+		arg.Image,
 	)
 	var i InsertAgentRow
 	err := row.Scan(
@@ -143,13 +147,14 @@ func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (Inser
 		&i.WebhookBodyFields,
 		&i.WebhookHeaderFields,
 		&i.Guardrail,
+		&i.Image,
 	)
 	return i, err
 }
 
 const selectAgentById = `-- name: SelectAgentById :one
 SELECT
-    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at, av.milvus_collection, av.webhook_input_field, av.webhook_output_field, av.webhook_body_fields, av.webhook_header_fields, av.guardrail,
+    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at, av.milvus_collection, av.webhook_input_field, av.webhook_output_field, av.webhook_body_fields, av.webhook_header_fields, av.guardrail, av.image,
     (
         SELECT COUNT(*) FROM agent_knowledges_view akv
         WHERE akv.agent_id = av.id
@@ -189,6 +194,7 @@ type SelectAgentByIdRow struct {
 	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
 	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 	Guardrail             string                  `json:"guardrail"`
+	Image                 *string                 `json:"image"`
 	KnowledgesCount       int64                   `json:"knowledges_count"`
 	McpsCount             int64                   `json:"mcps_count"`
 	Tags                  json.RawMessage         `json:"tags"`
@@ -217,6 +223,7 @@ func (q *Queries) SelectAgentById(ctx context.Context, id uuid.UUID) (SelectAgen
 		&i.WebhookBodyFields,
 		&i.WebhookHeaderFields,
 		&i.Guardrail,
+		&i.Image,
 		&i.KnowledgesCount,
 		&i.McpsCount,
 		&i.Tags,
@@ -226,7 +233,7 @@ func (q *Queries) SelectAgentById(ctx context.Context, id uuid.UUID) (SelectAgen
 
 const selectAgents = `-- name: SelectAgents :many
 SELECT
-    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at, av.milvus_collection, av.webhook_input_field, av.webhook_output_field, av.webhook_body_fields, av.webhook_header_fields, av.guardrail,
+    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at, av.milvus_collection, av.webhook_input_field, av.webhook_output_field, av.webhook_body_fields, av.webhook_header_fields, av.guardrail, av.image,
     COALESCE(ak.knowledges_count, 0) AS knowledges_count,
     COALESCE(m.mcps_count, 0) AS mcps_count,
     (
@@ -300,6 +307,7 @@ type SelectAgentsRow struct {
 	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
 	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 	Guardrail             string                  `json:"guardrail"`
+	Image                 *string                 `json:"image"`
 	KnowledgesCount       int64                   `json:"knowledges_count"`
 	McpsCount             int64                   `json:"mcps_count"`
 	Tags                  json.RawMessage         `json:"tags"`
@@ -339,6 +347,7 @@ func (q *Queries) SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]S
 			&i.WebhookBodyFields,
 			&i.WebhookHeaderFields,
 			&i.Guardrail,
+			&i.Image,
 			&i.KnowledgesCount,
 			&i.McpsCount,
 			&i.Tags,
@@ -355,7 +364,7 @@ func (q *Queries) SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]S
 
 const selectAgentsByKnowledgeId = `-- name: SelectAgentsByKnowledgeId :many
 SELECT
-    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at, av.milvus_collection, av.webhook_input_field, av.webhook_output_field, av.webhook_body_fields, av.webhook_header_fields, av.guardrail,
+    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at, av.milvus_collection, av.webhook_input_field, av.webhook_output_field, av.webhook_body_fields, av.webhook_header_fields, av.guardrail, av.image,
     (akv.id IS NOT NULL)::bool AS connected
 FROM agents_view av
 LEFT JOIN agent_knowledges_view akv
@@ -402,6 +411,7 @@ type SelectAgentsByKnowledgeIdRow struct {
 	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
 	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 	Guardrail             string                  `json:"guardrail"`
+	Image                 *string                 `json:"image"`
 	Connected             bool                    `json:"connected"`
 }
 
@@ -439,6 +449,7 @@ func (q *Queries) SelectAgentsByKnowledgeId(ctx context.Context, arg SelectAgent
 			&i.WebhookBodyFields,
 			&i.WebhookHeaderFields,
 			&i.Guardrail,
+			&i.Image,
 			&i.Connected,
 		); err != nil {
 			return nil, err
@@ -453,7 +464,7 @@ func (q *Queries) SelectAgentsByKnowledgeId(ctx context.Context, arg SelectAgent
 
 const selectAgentsByMcpId = `-- name: SelectAgentsByMcpId :many
 SELECT
-    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at, av.milvus_collection, av.webhook_input_field, av.webhook_output_field, av.webhook_body_fields, av.webhook_header_fields, av.guardrail,
+    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at, av.milvus_collection, av.webhook_input_field, av.webhook_output_field, av.webhook_body_fields, av.webhook_header_fields, av.guardrail, av.image,
     (amv.id IS NOT NULL)::bool AS connected
 FROM agents_view av
 LEFT JOIN agent_mcps_view amv
@@ -500,6 +511,7 @@ type SelectAgentsByMcpIdRow struct {
 	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
 	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 	Guardrail             string                  `json:"guardrail"`
+	Image                 *string                 `json:"image"`
 	Connected             bool                    `json:"connected"`
 }
 
@@ -537,6 +549,7 @@ func (q *Queries) SelectAgentsByMcpId(ctx context.Context, arg SelectAgentsByMcp
 			&i.WebhookBodyFields,
 			&i.WebhookHeaderFields,
 			&i.Guardrail,
+			&i.Image,
 			&i.Connected,
 		); err != nil {
 			return nil, err
@@ -579,12 +592,13 @@ SET
     webhook_body_fields = $9,
     webhook_header_fields = $10,
     guardrail = $11,
+    image = $12,
     updated_at = NOW()
 WHERE
     deleted_at IS NULL
-    AND id = $12
+    AND id = $13
 RETURNING
-    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image
 `
 
 type UpdateAgentParams struct {
@@ -599,6 +613,7 @@ type UpdateAgentParams struct {
 	WebhookBodyFields     json.RawMessage `json:"webhook_body_fields"`
 	WebhookHeaderFields   json.RawMessage `json:"webhook_header_fields"`
 	Guardrail             string          `json:"guardrail"`
+	Image                 *string         `json:"image"`
 	ID                    uuid.UUID       `json:"id"`
 }
 
@@ -622,6 +637,7 @@ type UpdateAgentRow struct {
 	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
 	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 	Guardrail             string                  `json:"guardrail"`
+	Image                 *string                 `json:"image"`
 }
 
 func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (UpdateAgentRow, error) {
@@ -637,6 +653,7 @@ func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Updat
 		arg.WebhookBodyFields,
 		arg.WebhookHeaderFields,
 		arg.Guardrail,
+		arg.Image,
 		arg.ID,
 	)
 	var i UpdateAgentRow
@@ -660,6 +677,7 @@ func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Updat
 		&i.WebhookBodyFields,
 		&i.WebhookHeaderFields,
 		&i.Guardrail,
+		&i.Image,
 	)
 	return i, err
 }
@@ -675,7 +693,7 @@ WHERE
     deleted_at IS NULL
     AND id = $4
 RETURNING
-    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image
 `
 
 type UpdateAgentPersonaParams struct {
@@ -705,6 +723,7 @@ type UpdateAgentPersonaRow struct {
 	WebhookBodyFields     json.RawMessage         `json:"webhook_body_fields"`
 	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 	Guardrail             string                  `json:"guardrail"`
+	Image                 *string                 `json:"image"`
 }
 
 func (q *Queries) UpdateAgentPersona(ctx context.Context, arg UpdateAgentPersonaParams) (UpdateAgentPersonaRow, error) {
@@ -735,6 +754,7 @@ func (q *Queries) UpdateAgentPersona(ctx context.Context, arg UpdateAgentPersona
 		&i.WebhookBodyFields,
 		&i.WebhookHeaderFields,
 		&i.Guardrail,
+		&i.Image,
 	)
 	return i, err
 }

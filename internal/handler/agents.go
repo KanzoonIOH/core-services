@@ -145,13 +145,13 @@ func NewAgentHandler(conn *pgxpool.Pool) *AgentHandler {
 }
 
 type createAgentRequest struct {
-	Name                  string   `json:"name"`
-	Description           *string  `json:"description"`
-	Type                  string   `json:"type"`
-	IsActive              *bool    `json:"is_active"`
-	WebhookUri            string   `json:"webhook_uri"`
-	WebhookAllowedIps     []string `json:"webhook_allowed_ips"`
-	WebhookAllowedOrigins []string `json:"webhook_allowed_origins"`
+	Name                  string      `json:"name"`
+	Description           *string     `json:"description"`
+	Type                  string      `json:"type"`
+	IsActive              *bool       `json:"is_active"`
+	WebhookUri            string      `json:"webhook_uri"`
+	WebhookAllowedIps     []string    `json:"webhook_allowed_ips"`
+	WebhookAllowedOrigins []string    `json:"webhook_allowed_origins"`
 	MilvusCollection      string      `json:"milvus_collection"`
 	WebhookInputField     string      `json:"webhook_input_field"`
 	WebhookOutputField    string      `json:"webhook_output_field"`
@@ -159,6 +159,7 @@ type createAgentRequest struct {
 	WebhookHeaderFields   []BodyField `json:"webhook_header_fields"`
 	Guardrail             string      `json:"guardrail"`
 	Tags                  []string    `json:"tags"`
+	Image                 *string     `json:"image"` // emoji string or object-storage URL
 }
 
 // buildMilvusCollection sanitizes the user-supplied base name and appends a
@@ -256,6 +257,7 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		WebhookBodyFields:     marshalBodyFields(req.WebhookBodyFields),
 		WebhookHeaderFields:   marshalBodyFields(req.WebhookHeaderFields),
 		Guardrail:             strings.TrimSpace(req.Guardrail),
+		Image:                 req.Image,
 	})
 	if err != nil {
 		log.Printf("[core-service][agent-create] db insert error params=%s error=%v", jsonForLog(req), err)
@@ -411,18 +413,19 @@ func (h *AgentHandler) ReadById(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateAgentRequest struct {
-	Name                  string   `json:"name"`
-	Description           *string  `json:"description"`
-	IsActive              bool     `json:"is_active"`
-	WebhookUri            string   `json:"webhook_uri"`
-	WebhookAllowedIps     []string `json:"webhook_allowed_ips"`
-	WebhookAllowedOrigins []string `json:"webhook_allowed_origins"`
+	Name                  string      `json:"name"`
+	Description           *string     `json:"description"`
+	IsActive              bool        `json:"is_active"`
+	WebhookUri            string      `json:"webhook_uri"`
+	WebhookAllowedIps     []string    `json:"webhook_allowed_ips"`
+	WebhookAllowedOrigins []string    `json:"webhook_allowed_origins"`
 	WebhookInputField     string      `json:"webhook_input_field"`
 	WebhookOutputField    string      `json:"webhook_output_field"`
 	WebhookBodyFields     []BodyField `json:"webhook_body_fields"`
 	WebhookHeaderFields   []BodyField `json:"webhook_header_fields"`
 	Guardrail             string      `json:"guardrail"`
 	Tags                  []string    `json:"tags"`
+	Image                 *string     `json:"image"` // emoji string or object-storage URL
 	// milvus_collection is intentionally omitted: it is immutable after create.
 }
 
@@ -474,6 +477,7 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		WebhookBodyFields:     marshalBodyFields(req.WebhookBodyFields),
 		WebhookHeaderFields:   marshalBodyFields(req.WebhookHeaderFields),
 		Guardrail:             strings.TrimSpace(req.Guardrail),
+		Image:                 req.Image,
 		ID:                    id,
 	})
 	if err != nil {

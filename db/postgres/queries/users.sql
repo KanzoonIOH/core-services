@@ -26,11 +26,12 @@ SET
     username = coalesce(sqlc.narg(username), username),
     email = coalesce(sqlc.narg(email), email),
     hashed_password = coalesce(sqlc.narg(hashed_password), hashed_password),
+    image = coalesce(sqlc.narg(image), image),
     updated_at = now()
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id)
-RETURNING id, name, username, email, role, created_at, updated_at;
+RETURNING id, name, username, email, role, image, created_at, updated_at;
 
 -- name: CountMembers :one
 SELECT count(*) FROM users_view

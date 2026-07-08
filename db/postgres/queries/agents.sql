@@ -1,5 +1,5 @@
 -- name: InsertAgent :one
-INSERT INTO agents (name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail)
+INSERT INTO agents (name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image)
 VALUES (
     sqlc.arg(name),
     sqlc.narg(description),
@@ -13,10 +13,11 @@ VALUES (
     sqlc.arg(webhook_output_field),
     sqlc.arg(webhook_body_fields),
     sqlc.arg(webhook_header_fields),
-    sqlc.arg(guardrail)
+    sqlc.arg(guardrail),
+    sqlc.narg(image)
 )
 RETURNING
-    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail;
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image;
 
 -- name: SelectAgentById :one
 SELECT
@@ -53,12 +54,13 @@ SET
     webhook_body_fields = sqlc.arg(webhook_body_fields),
     webhook_header_fields = sqlc.arg(webhook_header_fields),
     guardrail = sqlc.arg(guardrail),
+    image = sqlc.narg(image),
     updated_at = NOW()
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id)
 RETURNING
-    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail;
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image;
 
 -- name: UpdateAgentPersona :one
 UPDATE agents
@@ -71,7 +73,7 @@ WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id)
 RETURNING
-    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail;
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image;
 
 -- name: SoftDeleteAgent :execrows
 UPDATE agents
