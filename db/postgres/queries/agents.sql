@@ -83,7 +83,23 @@ WHERE
     AND id = sqlc.arg(id);
 
 -- name: CountAgents :one
-SELECT COUNT(*) FROM agents_view;
+SELECT COUNT(*) FROM agents_view av
+WHERE (
+    sqlc.narg('search')::text IS NULL
+    OR av.name ILIKE '%' || sqlc.narg('search')::text || '%'
+    OR av.description ILIKE '%' || sqlc.narg('search')::text || '%'
+)
+AND (
+    sqlc.narg('is_active')::bool IS NULL
+    OR av.is_active = sqlc.narg('is_active')::bool
+)
+AND (
+    sqlc.narg('tag_id')::uuid IS NULL
+    OR EXISTS (
+        SELECT 1 FROM agent_tags at
+        WHERE at.agent_id = av.id AND at.tag_id = sqlc.narg('tag_id')::uuid
+    )
+);
 
 -- name: SelectAgents :many
 SELECT
@@ -112,8 +128,20 @@ LEFT JOIN (
     GROUP BY agent_id
 ) m ON m.agent_id = av.id
 WHERE (
+    sqlc.narg('search')::text IS NULL
+    OR av.name ILIKE '%' || sqlc.narg('search')::text || '%'
+    OR av.description ILIKE '%' || sqlc.narg('search')::text || '%'
+)
+AND (
     sqlc.narg('is_active')::bool IS NULL
     OR av.is_active = sqlc.narg('is_active')::bool
+)
+AND (
+    sqlc.narg('tag_id')::uuid IS NULL
+    OR EXISTS (
+        SELECT 1 FROM agent_tags at
+        WHERE at.agent_id = av.id AND at.tag_id = sqlc.narg('tag_id')::uuid
+    )
 )
 ORDER BY
     CASE
@@ -129,6 +157,12 @@ ORDER BY
     END ASC,
     CASE
         WHEN sqlc.narg('sort')::text = 'created_desc' THEN av.created_at
+    END DESC,
+    CASE
+        WHEN sqlc.narg('sort')::text = 'modified_asc' THEN av.updated_at
+    END ASC,
+    CASE
+        WHEN sqlc.narg('sort')::text = 'modified_desc' THEN av.updated_at
     END DESC,
     av.created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');

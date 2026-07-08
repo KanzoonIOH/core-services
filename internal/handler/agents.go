@@ -289,10 +289,14 @@ func (h *AgentHandler) Read(w http.ResponseWriter, r *http.Request) {
 
 	pagination := lib.ParsePaginationParams(params)
 	isActive := lib.ParseParamsBool(params, "is_active")
-	log.Printf("[core-service][agent-read] request params={is_active:%v sort:%v limit:%d offset:%d}", isActive, pagination.Sort, pagination.Limit, pagination.Offset)
+	search := lib.ParseParamsString(params, "search")
+	tagID := lib.ParseParamsUUID(params, "tag_id")
+	log.Printf("[core-service][agent-read] request params={search:%v is_active:%v tag_id:%v sort:%v limit:%d offset:%d}", search, isActive, tagID, pagination.Sort, pagination.Limit, pagination.Offset)
 
 	agents, err := h.Queries.SelectAgents(r.Context(), db.SelectAgentsParams{
+		Search:   search,
 		IsActive: isActive,
+		TagID:    tagID,
 		Sort:     pagination.Sort,
 		Limit:    pagination.Limit,
 		Offset:   pagination.Offset * pagination.Limit,
@@ -303,7 +307,11 @@ func (h *AgentHandler) Read(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totalRow, err := h.Queries.CountAgents(r.Context())
+	totalRow, err := h.Queries.CountAgents(r.Context(), db.CountAgentsParams{
+		Search:   search,
+		IsActive: isActive,
+		TagID:    tagID,
+	})
 	if err != nil {
 		log.Printf("[core-service][agent-read] db count error error=%v", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agents")

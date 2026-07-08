@@ -72,7 +72,7 @@ func (q *Queries) InsertAgentKnowledge(ctx context.Context, arg InsertAgentKnowl
 const selectAgentKnowledgesByAgentId = `-- name: SelectAgentKnowledgesByAgentId :many
 SELECT
     akv.id, akv.agent_id, akv.knowledge_id, akv.is_active_prod, akv.is_active_dev, akv.created_at, akv.updated_at, akv.status,
-    kv.id, kv.name, kv.description, kv.source_type, kv.source_uri, kv.created_at, kv.updated_at
+    kv.id, kv.name, kv.description, kv.source_type, kv.source_uri, kv.is_crawl, kv.created_at, kv.updated_at
 FROM agent_knowledges_view akv
 JOIN knowledges_view kv
     ON akv.knowledge_id = kv.id
@@ -135,6 +135,7 @@ func (q *Queries) SelectAgentKnowledgesByAgentId(ctx context.Context, arg Select
 			&i.KnowledgesView.Description,
 			&i.KnowledgesView.SourceType,
 			&i.KnowledgesView.SourceUri,
+			&i.KnowledgesView.IsCrawl,
 			&i.KnowledgesView.CreatedAt,
 			&i.KnowledgesView.UpdatedAt,
 		); err != nil {

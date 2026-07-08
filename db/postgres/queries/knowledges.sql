@@ -1,13 +1,14 @@
 -- name: InsertKnowledge :one
-INSERT INTO knowledges (name, description, source_type, source_uri)
+INSERT INTO knowledges (name, description, source_type, source_uri, is_crawl)
 VALUES (
     sqlc.arg(name),
     sqlc.narg(description),
     sqlc.arg(source_type),
-    sqlc.narg(source_uri)
+    sqlc.narg(source_uri),
+    sqlc.arg(is_crawl)
 )
 RETURNING
-    id, name, description, source_type, source_uri, created_at, updated_at;
+    id, name, description, source_type, source_uri, is_crawl, created_at, updated_at;
 
 -- name: SelectKnowledgeById :one
 SELECT * FROM knowledges_view
@@ -39,6 +40,11 @@ WHERE (
     sqlc.narg('source_type')::text IS NULL
     OR sqlc.narg('source_type')::text = ''
     OR source_type = sqlc.narg('source_type')::text
+)
+AND (
+    sqlc.narg('search')::text IS NULL
+    OR name ILIKE '%' || sqlc.narg('search')::text || '%'
+    OR description ILIKE '%' || sqlc.narg('search')::text || '%'
 );
 
 -- name: SelectKnowledges :many
@@ -55,11 +61,18 @@ WHERE (
     OR sqlc.narg('source_type')::text = ''
     OR kv.source_type = sqlc.narg('source_type')::text
 )
+AND (
+    sqlc.narg('search')::text IS NULL
+    OR kv.name ILIKE '%' || sqlc.narg('search')::text || '%'
+    OR kv.description ILIKE '%' || sqlc.narg('search')::text || '%'
+)
 ORDER BY
     CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN name END ASC,
     CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN name END DESC,
     CASE WHEN sqlc.narg('sort')::text = 'created_asc' THEN created_at END ASC,
     CASE WHEN sqlc.narg('sort')::text = 'created_desc' THEN created_at END DESC,
+    CASE WHEN sqlc.narg('sort')::text = 'source_type_asc' THEN source_type END ASC,
+    CASE WHEN sqlc.narg('sort')::text = 'source_type_desc' THEN source_type END DESC,
     created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
@@ -68,7 +81,12 @@ SELECT count(*)
 FROM knowledges_view kv
 JOIN agent_knowledges_view akv
     ON akv.knowledge_id = kv.id
-WHERE akv.agent_id = sqlc.arg(agent_id);
+WHERE akv.agent_id = sqlc.arg(agent_id)
+AND (
+    sqlc.narg('search')::text IS NULL
+    OR kv.name ILIKE '%' || sqlc.narg('search')::text || '%'
+    OR kv.description ILIKE '%' || sqlc.narg('search')::text || '%'
+);
 
 -- name: SelectKnowledgesByAgentId :many
 SELECT
@@ -78,6 +96,11 @@ FROM knowledges_view kv
 JOIN agent_knowledges_view akv
     ON akv.knowledge_id = kv.id
 WHERE akv.agent_id = sqlc.arg(agent_id)
+AND (
+    sqlc.narg('search')::text IS NULL
+    OR kv.name ILIKE '%' || sqlc.narg('search')::text || '%'
+    OR kv.description ILIKE '%' || sqlc.narg('search')::text || '%'
+)
 ORDER BY
     CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN kv.name END ASC,
     CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN kv.name END DESC,
@@ -91,7 +114,12 @@ ORDER BY
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
 -- name: CountAllKnowledges :one
-SELECT count(*) FROM knowledges_view;
+SELECT count(*) FROM knowledges_view kv
+WHERE (
+    sqlc.narg('search')::text IS NULL
+    OR kv.name ILIKE '%' || sqlc.narg('search')::text || '%'
+    OR kv.description ILIKE '%' || sqlc.narg('search')::text || '%'
+);
 
 -- name: SelectKnowledgesWithAgentStatus :many
 SELECT
@@ -101,6 +129,11 @@ FROM knowledges_view kv
 LEFT JOIN agent_knowledges_view akv
     ON akv.knowledge_id = kv.id
     AND akv.agent_id = sqlc.arg(agent_id)
+WHERE (
+    sqlc.narg('search')::text IS NULL
+    OR kv.name ILIKE '%' || sqlc.narg('search')::text || '%'
+    OR kv.description ILIKE '%' || sqlc.narg('search')::text || '%'
+)
 ORDER BY
     connected DESC,
     CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN kv.name END ASC,

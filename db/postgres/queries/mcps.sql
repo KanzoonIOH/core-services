@@ -34,7 +34,12 @@ WHERE
     AND id = sqlc.arg(id);
 
 -- name: CountMcps :one
-SELECT count(*) FROM mcps_view;
+SELECT count(*) FROM mcps_view m
+WHERE (
+    sqlc.narg('search')::text IS NULL
+    OR m.name ILIKE '%' || sqlc.narg('search')::text || '%'
+    OR m.description ILIKE '%' || sqlc.narg('search')::text || '%'
+);
 
 -- name: SelectMcps :many
 SELECT
@@ -45,6 +50,11 @@ SELECT
         WHERE t.mcp_id = m.id AND t.deleted_at IS NULL
     ) AS tools_count
 FROM mcps_view AS m
+WHERE (
+    sqlc.narg('search')::text IS NULL
+    OR m.name ILIKE '%' || sqlc.narg('search')::text || '%'
+    OR m.description ILIKE '%' || sqlc.narg('search')::text || '%'
+)
 ORDER BY
     CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN m.name END ASC,
     CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN m.name END DESC,
@@ -52,6 +62,14 @@ ORDER BY
     CASE
         WHEN sqlc.narg('sort')::text = 'created_desc' THEN m.created_at
     END DESC,
+    CASE WHEN sqlc.narg('sort')::text = 'tools_count_asc' THEN (
+        SELECT count(*) FROM mcp_tools AS t
+        WHERE t.mcp_id = m.id AND t.deleted_at IS NULL
+    ) END ASC,
+    CASE WHEN sqlc.narg('sort')::text = 'tools_count_desc' THEN (
+        SELECT count(*) FROM mcp_tools AS t
+        WHERE t.mcp_id = m.id AND t.deleted_at IS NULL
+    ) END DESC,
     m.created_at DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
@@ -60,7 +78,12 @@ SELECT count(*)
 FROM mcps_view m
 JOIN agent_mcps_view amv
     ON amv.mcp_id = m.id
-WHERE amv.agent_id = sqlc.arg(agent_id);
+WHERE amv.agent_id = sqlc.arg(agent_id)
+AND (
+    sqlc.narg('search')::text IS NULL
+    OR m.name ILIKE '%' || sqlc.narg('search')::text || '%'
+    OR m.description ILIKE '%' || sqlc.narg('search')::text || '%'
+);
 
 -- name: SelectMcpsWithAgentStatus :many
 SELECT
@@ -75,6 +98,11 @@ FROM mcps_view AS m
 LEFT JOIN agent_mcps_view amv
     ON amv.mcp_id = m.id
     AND amv.agent_id = sqlc.arg(agent_id)
+WHERE (
+    sqlc.narg('search')::text IS NULL
+    OR m.name ILIKE '%' || sqlc.narg('search')::text || '%'
+    OR m.description ILIKE '%' || sqlc.narg('search')::text || '%'
+)
 ORDER BY
     connected DESC,
     CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN m.name END ASC,
@@ -98,6 +126,11 @@ FROM mcps_view AS m
 JOIN agent_mcps_view amv
     ON amv.mcp_id = m.id
 WHERE amv.agent_id = sqlc.arg(agent_id)
+AND (
+    sqlc.narg('search')::text IS NULL
+    OR m.name ILIKE '%' || sqlc.narg('search')::text || '%'
+    OR m.description ILIKE '%' || sqlc.narg('search')::text || '%'
+)
 ORDER BY
     CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN m.name END ASC,
     CASE WHEN sqlc.narg('sort')::text = 'name_desc' THEN m.name END DESC,

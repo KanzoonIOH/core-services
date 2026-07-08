@@ -105,7 +105,7 @@ func (q *Queries) InsertUserInvite(ctx context.Context, email string) (InsertUse
 
 const selectMembers = `-- name: SelectMembers :many
 SELECT
-    uv.id, uv.name, uv.username, uv.email, uv.role, uv.image, uv.created_at, uv.updated_at,
+    uv.id, uv.name, uv.username, uv.email, uv.role, uv.created_at, uv.updated_at, uv.image,
     (u.hashed_password IS NOT NULL)::bool AS has_password,
     COALESCE((
         SELECT uc.token
@@ -146,9 +146,9 @@ type SelectMembersRow struct {
 	Username    string    `json:"username"`
 	Email       string    `json:"email"`
 	Role        UserRole  `json:"role"`
-	Image       *string   `json:"image"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	Image       *string   `json:"image"`
 	HasPassword bool      `json:"has_password"`
 	InviteToken string    `json:"invite_token"`
 }
@@ -175,9 +175,9 @@ func (q *Queries) SelectMembers(ctx context.Context, arg SelectMembersParams) ([
 			&i.Username,
 			&i.Email,
 			&i.Role,
-			&i.Image,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Image,
 			&i.HasPassword,
 			&i.InviteToken,
 		); err != nil {
@@ -192,7 +192,7 @@ func (q *Queries) SelectMembers(ctx context.Context, arg SelectMembersParams) ([
 }
 
 const selectUserById = `-- name: SelectUserById :one
-SELECT id, name, username, email, role, image, created_at, updated_at FROM users_view
+SELECT id, name, username, email, role, created_at, updated_at, image FROM users_view
 WHERE id = $1
 LIMIT 1
 `
@@ -206,9 +206,9 @@ func (q *Queries) SelectUserById(ctx context.Context, id uuid.UUID) (UsersView, 
 		&i.Username,
 		&i.Email,
 		&i.Role,
-		&i.Image,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Image,
 	)
 	return i, err
 }

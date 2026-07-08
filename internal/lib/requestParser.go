@@ -80,3 +80,14 @@ func ParseParamsString(params url.Values, name string) *string {
 
 	return v
 }
+
+func ParseParamsUUID(params url.Values, name string) *uuid.UUID {
+	var v *uuid.UUID
+	if s := params.Get(name); s != "" {
+		if id, err := uuid.Parse(s); err == nil {
+			v = &id
+		}
+	}
+
+	return v
+}

@@ -14,11 +14,16 @@ import (
 )
 
 const countMcps = `-- name: CountMcps :one
-SELECT count(*) FROM mcps_view
+SELECT count(*) FROM mcps_view m
+WHERE (
+    $1::text IS NULL
+    OR m.name ILIKE '%' || $1::text || '%'
+    OR m.description ILIKE '%' || $1::text || '%'
+)
 `
 
-func (q *Queries) CountMcps(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countMcps)
+func (q *Queries) CountMcps(ctx context.Context, search *string) (int64, error) {
+	row := q.db.QueryRow(ctx, countMcps, search)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -30,10 +35,20 @@ FROM mcps_view m
 JOIN agent_mcps_view amv
     ON amv.mcp_id = m.id
 WHERE amv.agent_id = $1
+AND (
+    $2::text IS NULL
+    OR m.name ILIKE '%' || $2::text || '%'
+    OR m.description ILIKE '%' || $2::text || '%'
+)
 `
 
-func (q *Queries) CountMcpsByAgentId(ctx context.Context, agentID uuid.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countMcpsByAgentId, agentID)
+type CountMcpsByAgentIdParams struct {
+	AgentID uuid.UUID `json:"agent_id"`
+	Search  *string   `json:"search"`
+}
+
+func (q *Queries) CountMcpsByAgentId(ctx context.Context, arg CountMcpsByAgentIdParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countMcpsByAgentId, arg.AgentID, arg.Search)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -117,18 +132,32 @@ SELECT
         WHERE t.mcp_id = m.id AND t.deleted_at IS NULL
     ) AS tools_count
 FROM mcps_view AS m
+WHERE (
+    $1::text IS NULL
+    OR m.name ILIKE '%' || $1::text || '%'
+    OR m.description ILIKE '%' || $1::text || '%'
+)
 ORDER BY
-    CASE WHEN $1::text = 'name_asc' THEN m.name END ASC,
-    CASE WHEN $1::text = 'name_desc' THEN m.name END DESC,
-    CASE WHEN $1::text = 'created_asc' THEN m.created_at END ASC,
+    CASE WHEN $2::text = 'name_asc' THEN m.name END ASC,
+    CASE WHEN $2::text = 'name_desc' THEN m.name END DESC,
+    CASE WHEN $2::text = 'created_asc' THEN m.created_at END ASC,
     CASE
-        WHEN $1::text = 'created_desc' THEN m.created_at
+        WHEN $2::text = 'created_desc' THEN m.created_at
     END DESC,
+    CASE WHEN $2::text = 'tools_count_asc' THEN (
+        SELECT count(*) FROM mcp_tools AS t
+        WHERE t.mcp_id = m.id AND t.deleted_at IS NULL
+    ) END ASC,
+    CASE WHEN $2::text = 'tools_count_desc' THEN (
+        SELECT count(*) FROM mcp_tools AS t
+        WHERE t.mcp_id = m.id AND t.deleted_at IS NULL
+    ) END DESC,
     m.created_at DESC
-LIMIT $3 OFFSET $2
+LIMIT $4 OFFSET $3
 `
 
 type SelectMcpsParams struct {
+	Search *string `json:"search"`
 	Sort   *string `json:"sort"`
 	Offset int32   `json:"offset"`
 	Limit  int32   `json:"limit"`
@@ -146,7 +175,12 @@ type SelectMcpsRow struct {
 }
 
 func (q *Queries) SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]SelectMcpsRow, error) {
-	rows, err := q.db.Query(ctx, selectMcps, arg.Sort, arg.Offset, arg.Limit)
+	rows, err := q.db.Query(ctx, selectMcps,
+		arg.Search,
+		arg.Sort,
+		arg.Offset,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -186,19 +220,25 @@ FROM mcps_view AS m
 JOIN agent_mcps_view amv
     ON amv.mcp_id = m.id
 WHERE amv.agent_id = $1
+AND (
+    $2::text IS NULL
+    OR m.name ILIKE '%' || $2::text || '%'
+    OR m.description ILIKE '%' || $2::text || '%'
+)
 ORDER BY
-    CASE WHEN $2::text = 'name_asc' THEN m.name END ASC,
-    CASE WHEN $2::text = 'name_desc' THEN m.name END DESC,
-    CASE WHEN $2::text = 'created_asc' THEN m.created_at END ASC,
+    CASE WHEN $3::text = 'name_asc' THEN m.name END ASC,
+    CASE WHEN $3::text = 'name_desc' THEN m.name END DESC,
+    CASE WHEN $3::text = 'created_asc' THEN m.created_at END ASC,
     CASE
-        WHEN $2::text = 'created_desc' THEN m.created_at
+        WHEN $3::text = 'created_desc' THEN m.created_at
     END DESC,
     m.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type SelectMcpsByAgentIdParams struct {
 	AgentID uuid.UUID `json:"agent_id"`
+	Search  *string   `json:"search"`
 	Sort    *string   `json:"sort"`
 	Offset  int32     `json:"offset"`
 	Limit   int32     `json:"limit"`
@@ -218,6 +258,7 @@ type SelectMcpsByAgentIdRow struct {
 func (q *Queries) SelectMcpsByAgentId(ctx context.Context, arg SelectMcpsByAgentIdParams) ([]SelectMcpsByAgentIdRow, error) {
 	rows, err := q.db.Query(ctx, selectMcpsByAgentId,
 		arg.AgentID,
+		arg.Search,
 		arg.Sort,
 		arg.Offset,
 		arg.Limit,
@@ -262,20 +303,26 @@ FROM mcps_view AS m
 LEFT JOIN agent_mcps_view amv
     ON amv.mcp_id = m.id
     AND amv.agent_id = $1
+WHERE (
+    $2::text IS NULL
+    OR m.name ILIKE '%' || $2::text || '%'
+    OR m.description ILIKE '%' || $2::text || '%'
+)
 ORDER BY
     connected DESC,
-    CASE WHEN $2::text = 'name_asc' THEN m.name END ASC,
-    CASE WHEN $2::text = 'name_desc' THEN m.name END DESC,
-    CASE WHEN $2::text = 'created_asc' THEN m.created_at END ASC,
+    CASE WHEN $3::text = 'name_asc' THEN m.name END ASC,
+    CASE WHEN $3::text = 'name_desc' THEN m.name END DESC,
+    CASE WHEN $3::text = 'created_asc' THEN m.created_at END ASC,
     CASE
-        WHEN $2::text = 'created_desc' THEN m.created_at
+        WHEN $3::text = 'created_desc' THEN m.created_at
     END DESC,
     m.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type SelectMcpsWithAgentStatusParams struct {
 	AgentID uuid.UUID `json:"agent_id"`
+	Search  *string   `json:"search"`
 	Sort    *string   `json:"sort"`
 	Offset  int32     `json:"offset"`
 	Limit   int32     `json:"limit"`
@@ -296,6 +343,7 @@ type SelectMcpsWithAgentStatusRow struct {
 func (q *Queries) SelectMcpsWithAgentStatus(ctx context.Context, arg SelectMcpsWithAgentStatusParams) ([]SelectMcpsWithAgentStatusRow, error) {
 	rows, err := q.db.Query(ctx, selectMcpsWithAgentStatus,
 		arg.AgentID,
+		arg.Search,
 		arg.Sort,
 		arg.Offset,
 		arg.Limit,

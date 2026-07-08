@@ -135,8 +135,10 @@ func (h *McpHandler) Read(w http.ResponseWriter, r *http.Request) {
 	params := r.URL.Query()
 
 	pagination := lib.ParsePaginationParams(params)
+	search := lib.ParseParamsString(params, "search")
 
 	mcps, err := h.Queries.SelectMcps(r.Context(), db.SelectMcpsParams{
+		Search: search,
 		Sort:   pagination.Sort,
 		Limit:  pagination.Limit,
 		Offset: pagination.Offset * pagination.Limit,
@@ -146,7 +148,7 @@ func (h *McpHandler) Read(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totalRow, err := h.Queries.CountMcps(r.Context())
+	totalRow, err := h.Queries.CountMcps(r.Context(), search)
 	if err != nil {
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get mcps")
 		return
@@ -164,9 +166,11 @@ func (h *McpHandler) ReadByAgentId(w http.ResponseWriter, r *http.Request) {
 	params := r.URL.Query()
 
 	pagination := lib.ParsePaginationParams(params)
+	search := lib.ParseParamsString(params, "search")
 
 	mcps, err := h.Queries.SelectMcpsByAgentId(r.Context(), db.SelectMcpsByAgentIdParams{
 		AgentID: agent_id,
+		Search:  search,
 		Sort:    pagination.Sort,
 		Limit:   pagination.Limit,
 		Offset:  pagination.Offset * pagination.Limit,
@@ -176,7 +180,10 @@ func (h *McpHandler) ReadByAgentId(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totalRow, err := h.Queries.CountMcpsByAgentId(r.Context(), agent_id)
+	totalRow, err := h.Queries.CountMcpsByAgentId(r.Context(), db.CountMcpsByAgentIdParams{
+		AgentID: agent_id,
+		Search:  search,
+	})
 	if err != nil {
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get mcps")
 		return
@@ -194,9 +201,11 @@ func (h *McpHandler) ReadAllByAgentId(w http.ResponseWriter, r *http.Request) {
 	params := r.URL.Query()
 
 	pagination := lib.ParsePaginationParams(params)
+	search := lib.ParseParamsString(params, "search")
 
 	mcps, err := h.Queries.SelectMcpsWithAgentStatus(r.Context(), db.SelectMcpsWithAgentStatusParams{
 		AgentID: agent_id,
+		Search:  search,
 		Sort:    pagination.Sort,
 		Limit:   pagination.Limit,
 		Offset:  pagination.Offset * pagination.Limit,
@@ -206,7 +215,7 @@ func (h *McpHandler) ReadAllByAgentId(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totalRow, err := h.Queries.CountMcps(r.Context())
+	totalRow, err := h.Queries.CountMcps(r.Context(), search)
 	if err != nil {
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get mcps")
 		return

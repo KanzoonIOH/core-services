@@ -515,6 +515,7 @@ type Knowledge struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 	DeletedAt   *time.Time `json:"deleted_at"`
+	IsCrawl     bool       `json:"is_crawl"`
 }
 
 type KnowledgesView struct {
@@ -523,6 +524,7 @@ type KnowledgesView struct {
 	Description *string   `json:"description"`
 	SourceType  string    `json:"source_type"`
 	SourceUri   *string   `json:"source_uri"`
+	IsCrawl     bool      `json:"is_crawl"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
@@ -628,7 +630,7 @@ type UsersView struct {
 	Username  string    `json:"username"`
 	Email     string    `json:"email"`
 	Role      UserRole  `json:"role"`
-	Image     *string   `json:"image"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	Image     *string   `json:"image"`
 }

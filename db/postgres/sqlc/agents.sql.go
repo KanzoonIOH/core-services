@@ -15,11 +15,33 @@ import (
 )
 
 const countAgents = `-- name: CountAgents :one
-SELECT COUNT(*) FROM agents_view
+SELECT COUNT(*) FROM agents_view av
+WHERE (
+    $1::text IS NULL
+    OR av.name ILIKE '%' || $1::text || '%'
+    OR av.description ILIKE '%' || $1::text || '%'
+)
+AND (
+    $2::bool IS NULL
+    OR av.is_active = $2::bool
+)
+AND (
+    $3::uuid IS NULL
+    OR EXISTS (
+        SELECT 1 FROM agent_tags at
+        WHERE at.agent_id = av.id AND at.tag_id = $3::uuid
+    )
+)
 `
 
-func (q *Queries) CountAgents(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countAgents)
+type CountAgentsParams struct {
+	Search   *string    `json:"search"`
+	IsActive *bool      `json:"is_active"`
+	TagID    *uuid.UUID `json:"tag_id"`
+}
+
+func (q *Queries) CountAgents(ctx context.Context, arg CountAgentsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countAgents, arg.Search, arg.IsActive, arg.TagID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -258,33 +280,53 @@ LEFT JOIN (
     GROUP BY agent_id
 ) m ON m.agent_id = av.id
 WHERE (
-    $1::bool IS NULL
-    OR av.is_active = $1::bool
+    $1::text IS NULL
+    OR av.name ILIKE '%' || $1::text || '%'
+    OR av.description ILIKE '%' || $1::text || '%'
+)
+AND (
+    $2::bool IS NULL
+    OR av.is_active = $2::bool
+)
+AND (
+    $3::uuid IS NULL
+    OR EXISTS (
+        SELECT 1 FROM agent_tags at
+        WHERE at.agent_id = av.id AND at.tag_id = $3::uuid
+    )
 )
 ORDER BY
     CASE
-        WHEN $2::text = 'is_active_asc' THEN av.is_active
+        WHEN $4::text = 'is_active_asc' THEN av.is_active
     END DESC,
     CASE
-        WHEN $2::text = 'is_active_desc' THEN av.is_active
+        WHEN $4::text = 'is_active_desc' THEN av.is_active
     END ASC,
-    CASE WHEN $2::text = 'name_asc' THEN av.name END ASC,
-    CASE WHEN $2::text = 'name_desc' THEN av.name END DESC,
+    CASE WHEN $4::text = 'name_asc' THEN av.name END ASC,
+    CASE WHEN $4::text = 'name_desc' THEN av.name END DESC,
     CASE
-        WHEN $2::text = 'created_asc' THEN av.created_at
+        WHEN $4::text = 'created_asc' THEN av.created_at
     END ASC,
     CASE
-        WHEN $2::text = 'created_desc' THEN av.created_at
+        WHEN $4::text = 'created_desc' THEN av.created_at
+    END DESC,
+    CASE
+        WHEN $4::text = 'modified_asc' THEN av.updated_at
+    END ASC,
+    CASE
+        WHEN $4::text = 'modified_desc' THEN av.updated_at
     END DESC,
     av.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $6 OFFSET $5
 `
 
 type SelectAgentsParams struct {
-	IsActive *bool   `json:"is_active"`
-	Sort     *string `json:"sort"`
-	Offset   int32   `json:"offset"`
-	Limit    int32   `json:"limit"`
+	Search   *string    `json:"search"`
+	IsActive *bool      `json:"is_active"`
+	TagID    *uuid.UUID `json:"tag_id"`
+	Sort     *string    `json:"sort"`
+	Offset   int32      `json:"offset"`
+	Limit    int32      `json:"limit"`
 }
 
 type SelectAgentsRow struct {
@@ -315,7 +357,9 @@ type SelectAgentsRow struct {
 
 func (q *Queries) SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]SelectAgentsRow, error) {
 	rows, err := q.db.Query(ctx, selectAgents,
+		arg.Search,
 		arg.IsActive,
+		arg.TagID,
 		arg.Sort,
 		arg.Offset,
 		arg.Limit,

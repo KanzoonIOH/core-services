@@ -13,17 +13,17 @@ import (
 type Querier interface {
 	AcceptMember(ctx context.Context, id uuid.UUID) (AcceptMemberRow, error)
 	CountAgentKnowledgesByAgentId(ctx context.Context, agentID uuid.UUID) (int64, error)
-	CountAgents(ctx context.Context) (int64, error)
+	CountAgents(ctx context.Context, arg CountAgentsParams) (int64, error)
 	CountAgentsByKnowledgeId(ctx context.Context) (int64, error)
 	CountAgentsByMcpId(ctx context.Context) (int64, error)
-	CountAllKnowledges(ctx context.Context) (int64, error)
+	CountAllKnowledges(ctx context.Context, search *string) (int64, error)
 	CountApiKeys(ctx context.Context) (int64, error)
 	CountConversations(ctx context.Context) (int64, error)
-	CountKnowledges(ctx context.Context, sourceType *string) (int64, error)
-	CountKnowledgesByAgentId(ctx context.Context, agentID uuid.UUID) (int64, error)
+	CountKnowledges(ctx context.Context, arg CountKnowledgesParams) (int64, error)
+	CountKnowledgesByAgentId(ctx context.Context, arg CountKnowledgesByAgentIdParams) (int64, error)
 	CountMcpToolsByMcpId(ctx context.Context, mcpID uuid.UUID) (int64, error)
-	CountMcps(ctx context.Context) (int64, error)
-	CountMcpsByAgentId(ctx context.Context, agentID uuid.UUID) (int64, error)
+	CountMcps(ctx context.Context, search *string) (int64, error)
+	CountMcpsByAgentId(ctx context.Context, arg CountMcpsByAgentIdParams) (int64, error)
 	CountMembers(ctx context.Context, role *string) (int64, error)
 	DeleteAgentTags(ctx context.Context, agentID uuid.UUID) error
 	DeleteConversation(ctx context.Context, id uuid.UUID) error

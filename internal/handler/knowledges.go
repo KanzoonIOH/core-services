@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"mime/multipart"
 	"net/http"
 	"path/filepath"
 	"regexp"
@@ -26,25 +25,34 @@ func NewKnowledgeHandler(conn *pgxpool.Pool, objectStorage *lib.ObjectStorage) *
 	return &KnowledgeHandler{Queries: db.New(conn), ObjectStorage: objectStorage}
 }
 
+// sourceTypeLink is the source_type for URL-based knowledges (no file upload).
+const sourceTypeLink = "link"
+
 type createKnowledgeRequest struct {
 	Name        string  `json:"name"`
 	Description *string `json:"description"`
 	SourceType  string  `json:"source_type"`
 	SourceUri   *string `json:"source_uri"`
+	IsCrawl     bool    `json:"is_crawl"`
 }
 
 func (h *KnowledgeHandler) Create(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[core-service][knowledge-create] api hit method=%s path=%s", r.Method, r.URL.Path)
-	req, file, fileHeader, ok := parseCreateKnowledgeMultipart(w, r)
-	if !ok {
+
+	if err := r.ParseMultipartForm(100 << 20); err != nil {
 		log.Printf("[core-service][knowledge-create] api error invalid multipart form")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "invalid multipart form")
 		return
 	}
-	defer file.Close()
 
-	log.Printf("[core-service][knowledge-create] request params={name:%q source_type:%q description_present:%t file_name:%q file_size:%d content_type:%q}", req.Name, req.SourceType, req.Description != nil, fileHeader.Filename, fileHeader.Size, fileHeader.Header.Get("Content-Type"))
-	req.Name = strings.TrimSpace(req.Name)
-	req.SourceType = strings.TrimSpace(req.SourceType)
+	req := createKnowledgeRequest{
+		Name:        strings.TrimSpace(r.FormValue("name")),
+		Description: formStringPtr(r.FormValue("description")),
+		SourceType:  strings.TrimSpace(r.FormValue("source_type")),
+		SourceUri:   formStringPtr(r.FormValue("source_uri")),
+		IsCrawl:     r.FormValue("is_crawl") == "true",
+	}
+
 	if req.Name == "" {
 		log.Printf("[core-service][knowledge-create] api error status=%d reason=name is required", http.StatusBadRequest)
 		lib.ResponseJSONError(w, http.StatusBadRequest, "name are required")
@@ -56,21 +64,45 @@ func (h *KnowledgeHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	objectKey := "knowledges/" + timestampedObjectFilename(fileHeader.Filename)
-	log.Printf("[core-service][knowledge-create] object storage upload start key=%q content_type=%q", objectKey, fileHeader.Header.Get("Content-Type"))
-	sourceURI, err := h.ObjectStorage.Upload(r.Context(), objectKey, file, fileHeader.Header.Get("Content-Type"))
-	if err != nil {
-		log.Printf("[core-service][knowledge-create] object storage upload error key=%q error=%v", objectKey, err)
-		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to upload knowledge file")
-		return
+	// Link knowledges store the URL directly; everything else uploads a file.
+	var sourceURI string
+	if req.SourceType == sourceTypeLink {
+		if req.SourceUri == nil {
+			log.Printf("[core-service][knowledge-create] api error status=%d reason=source_uri is required for link", http.StatusBadRequest)
+			lib.ResponseJSONError(w, http.StatusBadRequest, "source_uri is required for link knowledge")
+			return
+		}
+		sourceURI = *req.SourceUri
+		log.Printf("[core-service][knowledge-create] request params={name:%q source_type:link source_uri:%q is_crawl:%t}", req.Name, sourceURI, req.IsCrawl)
+	} else {
+		req.IsCrawl = false // crawl is only meaningful for links
+		file, fileHeader, err := r.FormFile("file")
+		if err != nil {
+			log.Printf("[core-service][knowledge-create] api error status=%d reason=file is required", http.StatusBadRequest)
+			lib.ResponseJSONError(w, http.StatusBadRequest, "file is required")
+			return
+		}
+		defer file.Close()
+
+		log.Printf("[core-service][knowledge-create] request params={name:%q source_type:%q description_present:%t file_name:%q file_size:%d content_type:%q}", req.Name, req.SourceType, req.Description != nil, fileHeader.Filename, fileHeader.Size, fileHeader.Header.Get("Content-Type"))
+
+		objectKey := "knowledges/" + timestampedObjectFilename(fileHeader.Filename)
+		log.Printf("[core-service][knowledge-create] object storage upload start key=%q content_type=%q", objectKey, fileHeader.Header.Get("Content-Type"))
+		sourceURI, err = h.ObjectStorage.Upload(r.Context(), objectKey, file, fileHeader.Header.Get("Content-Type"))
+		if err != nil {
+			log.Printf("[core-service][knowledge-create] object storage upload error key=%q error=%v", objectKey, err)
+			lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to upload knowledge file")
+			return
+		}
+		log.Printf("[core-service][knowledge-create] object storage upload success key=%q source_uri=%q", objectKey, sourceURI)
 	}
-	log.Printf("[core-service][knowledge-create] object storage upload success key=%q source_uri=%q", objectKey, sourceURI)
 
 	knowledge, err := h.Queries.InsertKnowledge(r.Context(), db.InsertKnowledgeParams{
 		Name:        req.Name,
 		Description: req.Description,
 		SourceType:  req.SourceType,
 		SourceUri:   &sourceURI,
+		IsCrawl:     req.IsCrawl,
 	})
 	if err != nil {
 		log.Printf("[core-service][knowledge-create] db insert error params={name:%q source_type:%q source_uri:%q} error=%v", req.Name, req.SourceType, sourceURI, err)
@@ -80,27 +112,6 @@ func (h *KnowledgeHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[core-service][knowledge-create] api success status=%d response=%s", http.StatusOK, jsonForLog(knowledge))
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, knowledge, nil)
-}
-
-func parseCreateKnowledgeMultipart(w http.ResponseWriter, r *http.Request) (createKnowledgeRequest, multipart.File, *multipart.FileHeader, bool) {
-	var req createKnowledgeRequest
-
-	if err := r.ParseMultipartForm(100 << 20); err != nil {
-		lib.ResponseJSONError(w, http.StatusBadRequest, "invalid multipart form")
-		return req, nil, nil, false
-	}
-
-	req.Name = r.FormValue("name")
-	req.Description = formStringPtr(r.FormValue("description"))
-	req.SourceType = r.FormValue("source_type")
-
-	file, fileHeader, err := r.FormFile("file")
-	if err != nil {
-		lib.ResponseJSONError(w, http.StatusBadRequest, "file is required")
-		return req, nil, nil, false
-	}
-
-	return req, file, fileHeader, true
 }
 
 func formStringPtr(v string) *string {
@@ -137,10 +148,12 @@ func (h *KnowledgeHandler) Read(w http.ResponseWriter, r *http.Request) {
 
 	pagination := lib.ParsePaginationParams(params)
 	sourceType := lib.ParseParamsString(params, "source_type")
-	log.Printf("[core-service][knowledge-read] request params={source_type:%v sort:%v limit:%d offset:%d}", sourceType, pagination.Sort, pagination.Limit, pagination.Offset)
+	search := lib.ParseParamsString(params, "search")
+	log.Printf("[core-service][knowledge-read] request params={search:%v source_type:%v sort:%v limit:%d offset:%d}", search, sourceType, pagination.Sort, pagination.Limit, pagination.Offset)
 
 	knowledges, err := h.Queries.SelectKnowledges(r.Context(), db.SelectKnowledgesParams{
 		SourceType: sourceType,
+		Search:     search,
 		Sort:       pagination.Sort,
 		Limit:      pagination.Limit,
 		Offset:     pagination.Offset * pagination.Limit,
@@ -151,7 +164,10 @@ func (h *KnowledgeHandler) Read(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totalRow, err := h.Queries.CountKnowledges(r.Context(), sourceType)
+	totalRow, err := h.Queries.CountKnowledges(r.Context(), db.CountKnowledgesParams{
+		SourceType: sourceType,
+		Search:     search,
+	})
 	if err != nil {
 		log.Printf("[core-service][knowledge-read] db count error error=%v", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get knowledges")
@@ -173,10 +189,12 @@ func (h *KnowledgeHandler) ReadByAgentId(w http.ResponseWriter, r *http.Request)
 	params := r.URL.Query()
 
 	pagination := lib.ParsePaginationParams(params)
-	log.Printf("[core-service][knowledge-read-by-agent] request params={agent_id:%s sort:%v limit:%d offset:%d}", agent_id, pagination.Sort, pagination.Limit, pagination.Offset)
+	search := lib.ParseParamsString(params, "search")
+	log.Printf("[core-service][knowledge-read-by-agent] request params={agent_id:%s search:%v sort:%v limit:%d offset:%d}", agent_id, search, pagination.Sort, pagination.Limit, pagination.Offset)
 
 	knowledges, err := h.Queries.SelectKnowledgesByAgentId(r.Context(), db.SelectKnowledgesByAgentIdParams{
 		AgentID: agent_id,
+		Search:  search,
 		Sort:    pagination.Sort,
 		Limit:   pagination.Limit,
 		Offset:  pagination.Offset * pagination.Limit,
@@ -187,7 +205,10 @@ func (h *KnowledgeHandler) ReadByAgentId(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	totalRow, err := h.Queries.CountKnowledgesByAgentId(r.Context(), agent_id)
+	totalRow, err := h.Queries.CountKnowledgesByAgentId(r.Context(), db.CountKnowledgesByAgentIdParams{
+		AgentID: agent_id,
+		Search:  search,
+	})
 	if err != nil {
 		log.Printf("[core-service][knowledge-read-by-agent] db count error agent_id=%s error=%v", agent_id, err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get knowledges")
@@ -209,10 +230,12 @@ func (h *KnowledgeHandler) ReadAllByAgentId(w http.ResponseWriter, r *http.Reque
 	params := r.URL.Query()
 
 	pagination := lib.ParsePaginationParams(params)
-	log.Printf("[core-service][knowledge-read-all-by-agent] request params={agent_id:%s sort:%v limit:%d offset:%d}", agent_id, pagination.Sort, pagination.Limit, pagination.Offset)
+	search := lib.ParseParamsString(params, "search")
+	log.Printf("[core-service][knowledge-read-all-by-agent] request params={agent_id:%s search:%v sort:%v limit:%d offset:%d}", agent_id, search, pagination.Sort, pagination.Limit, pagination.Offset)
 
 	knowledges, err := h.Queries.SelectKnowledgesWithAgentStatus(r.Context(), db.SelectKnowledgesWithAgentStatusParams{
 		AgentID: agent_id,
+		Search:  search,
 		Sort:    pagination.Sort,
 		Limit:   pagination.Limit,
 		Offset:  pagination.Offset * pagination.Limit,
@@ -223,7 +246,7 @@ func (h *KnowledgeHandler) ReadAllByAgentId(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	totalRow, err := h.Queries.CountAllKnowledges(r.Context())
+	totalRow, err := h.Queries.CountAllKnowledges(r.Context(), search)
 	if err != nil {
 		log.Printf("[core-service][knowledge-read-all-by-agent] db count error error=%v", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get knowledges")
