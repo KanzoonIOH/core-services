@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
@@ -237,6 +238,7 @@ func (h *McpHandler) ReadById(w http.ResponseWriter, r *http.Request) {
 type mcpUpdateRequest struct {
 	Name        string            `json:"name"`
 	Description *string           `json:"description"`
+	Uri         string            `json:"uri"`
 	Headers     map[string]string `json:"headers"`
 }
 
@@ -257,9 +259,16 @@ func (h *McpHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.Uri = strings.TrimSpace(req.Uri)
+	if req.Uri == "" {
+		lib.ResponseJSONError(w, http.StatusBadRequest, "uri are required")
+		return
+	}
+
 	mcp, err := h.Queries.UpdateMcp(r.Context(), db.UpdateMcpParams{
 		Name:        req.Name,
 		Description: req.Description,
+		Uri:         req.Uri,
 		Headers:     marshalHeaders(req.Headers),
 		ID:          id,
 	})
@@ -271,6 +280,13 @@ func (h *McpHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to update mcp")
 		return
+	}
+
+	// URI or headers may have changed — re-discover tools from the new target.
+	// Best-effort: don't fail the update if the server is unreachable, the user
+	// can hit Refresh once it's fixed.
+	if _, err := h.syncTools(r.Context(), mcp.ID, mcp.Uri, req.Headers); err != nil {
+		log.Printf("[core-service][mcp-update] tool re-sync failed mcp_id=%s: %v", mcp.ID, err)
 	}
 
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, mcp, nil)

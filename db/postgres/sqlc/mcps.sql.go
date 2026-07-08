@@ -349,17 +349,19 @@ UPDATE mcps
 SET
     name = $1,
     description = $2,
-    headers = $3,
+    uri = $3,
+    headers = $4,
     updated_at = now()
 WHERE
     deleted_at IS NULL
-    AND id = $4
+    AND id = $5
 RETURNING id, name, description, uri, headers, created_at, updated_at
 `
 
 type UpdateMcpParams struct {
 	Name        string          `json:"name"`
 	Description *string         `json:"description"`
+	Uri         string          `json:"uri"`
 	Headers     json.RawMessage `json:"headers"`
 	ID          uuid.UUID       `json:"id"`
 }
@@ -378,6 +380,7 @@ func (q *Queries) UpdateMcp(ctx context.Context, arg UpdateMcpParams) (UpdateMcp
 	row := q.db.QueryRow(ctx, updateMcp,
 		arg.Name,
 		arg.Description,
+		arg.Uri,
 		arg.Headers,
 		arg.ID,
 	)

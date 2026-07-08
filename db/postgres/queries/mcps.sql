@@ -18,6 +18,7 @@ UPDATE mcps
 SET
     name = sqlc.arg(name),
     description = sqlc.narg(description),
+    uri = sqlc.arg(uri),
     headers = sqlc.arg(headers),
     updated_at = now()
 WHERE

@@ -495,6 +495,15 @@ type ConversationsView struct {
 	ResolutionMs *int64                 `json:"resolution_ms"`
 }
 
+type GlobalConfig struct {
+	ID                  bool      `json:"id"`
+	AgentName           string    `json:"agent_name"`
+	IndustryDescription string    `json:"industry_description"`
+	Guardrail           string    `json:"guardrail"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
+}
+
 type Knowledge struct {
 	ID          uuid.UUID  `json:"id"`
 	Name        string     `json:"name"`

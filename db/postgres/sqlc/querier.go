@@ -28,6 +28,7 @@ type Querier interface {
 	DeleteAgentTags(ctx context.Context, agentID uuid.UUID) error
 	DeleteConversation(ctx context.Context, id uuid.UUID) error
 	DeleteMessagesByConversation(ctx context.Context, conversationID uuid.UUID) error
+	GetGlobalConfig(ctx context.Context) (GlobalConfig, error)
 	InsertAgent(ctx context.Context, arg InsertAgentParams) (InsertAgentRow, error)
 	InsertAgentKnowledge(ctx context.Context, arg InsertAgentKnowledgeParams) (InsertAgentKnowledgeRow, error)
 	InsertAgentMcp(ctx context.Context, arg InsertAgentMcpParams) (InsertAgentMcpRow, error)
@@ -87,6 +88,7 @@ type Querier interface {
 	UpdateAgentKnowledge(ctx context.Context, arg UpdateAgentKnowledgeParams) (UpdateAgentKnowledgeRow, error)
 	UpdateAgentKnowledgeStatus(ctx context.Context, arg UpdateAgentKnowledgeStatusParams) (int64, error)
 	UpdateAgentPersona(ctx context.Context, arg UpdateAgentPersonaParams) (UpdateAgentPersonaRow, error)
+	UpdateGlobalConfig(ctx context.Context, arg UpdateGlobalConfigParams) (GlobalConfig, error)
 	UpdateKnowledge(ctx context.Context, arg UpdateKnowledgeParams) (UpdateKnowledgeRow, error)
 	UpdateMcp(ctx context.Context, arg UpdateMcpParams) (UpdateMcpRow, error)
 	UpdateMemberStatus(ctx context.Context, arg UpdateMemberStatusParams) (UpdateMemberStatusRow, error)

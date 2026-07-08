@@ -46,6 +46,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 	memberHandler := handler.NewMemberHandler(conn)
 	logHandler := handler.NewLogHandler(ch)
 	dropdownHandler := handler.NewDropdownHandler(conn)
+	globalConfigHandler := handler.NewGlobalConfigHandler(conn)
 
 	r.Get("/health", handler.Health)
 	r.Get("/all-functions", handler.AllFunctions(r))
@@ -116,6 +117,11 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 				r.Get("/", tagHandler.Read)
 				r.Patch("/{id}", tagHandler.Update)
 				r.Delete("/{id}", tagHandler.Delete)
+			})
+			// Singleton — no {id}.
+			r.Route("/global-config", func(r chi.Router) {
+				r.Get("/", globalConfigHandler.Read)
+				r.Patch("/", globalConfigHandler.Update)
 			})
 			r.Route("/knowledges", func(r chi.Router) {
 				r.Post("/", knowledgeHandler.Create)

@@ -210,6 +210,18 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 	bodyMap["length"] = string(agent.ResponseLength)
 	bodyMap["style"] = string(agent.CommunicationStyle)
 
+	// App-wide system prompt applied to every agent. Best-effort: a config read
+	// failure must not block the chat, so fall back to empty values.
+	cfg, cfgErr := h.Queries.GetGlobalConfig(r.Context())
+	if cfgErr != nil {
+		log.Printf("[core-service][chat-webhook] global config read failed: %v", cfgErr)
+	}
+	bodyMap["systemPrompt"] = map[string]any{
+		"agent_name":           cfg.AgentName,
+		"industry_description": cfg.IndustryDescription,
+		"guardrail":            cfg.Guardrail,
+	}
+
 	// Reserved "headers" object in the incoming body carries per-request
 	// dynamic header values. Pull it out so it isn't forwarded in the body.
 	callerHeaders := map[string]string{}
