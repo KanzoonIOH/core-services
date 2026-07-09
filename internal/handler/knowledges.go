@@ -26,7 +26,7 @@ func NewKnowledgeHandler(conn *pgxpool.Pool, objectStorage *lib.ObjectStorage) *
 }
 
 // sourceTypeLink is the source_type for URL-based knowledges (no file upload).
-const sourceTypeLink = "link"
+const sourceTypeLink = "web"
 
 type createKnowledgeRequest struct {
 	Name        string  `json:"name"`

@@ -8,7 +8,6 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -27,8 +26,7 @@ const defaultKnowledgeAPIBaseURL = "https://103.67.43.198:8443/milvus"
 type ConnectHandler struct {
 	Queries    db.Querier
 	HTTPClient *http.Client
-	// knowledgeAddURL is POSTed to on connect; knowledgeDeleteURL is a
-	// fmt template ("...%s") DELETEd on disconnect.
+	// knowledgeAddURL and knowledgeDeleteURL are both POSTed to (v2 API).
 	knowledgeAddURL    string
 	knowledgeDeleteURL string
 }
@@ -41,8 +39,8 @@ func NewConnectHandler(conn *pgxpool.Pool) *ConnectHandler {
 
 	return &ConnectHandler{
 		Queries:            db.New(conn),
-		knowledgeAddURL:    base + "/knowledge/add",
-		knowledgeDeleteURL: base + "/knowledge/%s", // DELETE /knowledge/{knowledge_id}
+		knowledgeAddURL:    base + "/knowledge/add/v2",
+		knowledgeDeleteURL: base + "/knowledge/delete/v2",
 		HTTPClient: &http.Client{
 			Timeout: 10 * time.Minute,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -166,7 +164,7 @@ func (h *ConnectHandler) ConnectAgentKnowledge(w http.ResponseWriter, r *http.Re
 		milvusCollection = agent.MilvusCollection
 	}
 
-	go h.triggerKnowledgeConversion(agent_knowledge.ID, req.AgentId, req.KnowledgeId, knowledge.SourceUri, milvusCollection)
+	go h.triggerKnowledgeConversion(agent_knowledge.ID, req.AgentId, req.KnowledgeId, knowledge.SourceUri, knowledge.SourceType, knowledge.IsCrawl, milvusCollection)
 	log.Printf("[core-service][connect-agent-knowledge] rag conversion trigger queued agent_knowledge_id=%s agent_id=%s knowledge_id=%s collection=%s", agent_knowledge.ID, req.AgentId, req.KnowledgeId, milvusCollection)
 
 	log.Printf("[core-service][connect-agent-knowledge] api success status=%d response=%s", http.StatusOK, jsonForLog(agent_knowledge))
@@ -179,19 +177,13 @@ func (h *ConnectHandler) ConnectAgentKnowledge(w http.ResponseWriter, r *http.Re
 // owns the final 'completed'/'failed' status and reports it via the
 // agent-knowledge-status callback endpoint. Only a payload we cannot even build
 // (which means the row can never complete) is marked failed here.
-func (h *ConnectHandler) triggerKnowledgeConversion(agentKnowledgeID, agentID, knowledgeID uuid.UUID, sourceURI *string, milvusCollection string) {
+func (h *ConnectHandler) triggerKnowledgeConversion(agentKnowledgeID, agentID, knowledgeID uuid.UUID, sourceURI *string, sourceType string, isCrawl bool, milvusCollection string) {
 	// Generous ceiling so we don't cancel a long-but-progressing ingestion.
 	// The client also has its own 10-minute Timeout as a hard cap.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	payload, err := json.Marshal(map[string]any{
-		"agent_knowledge_id": agentKnowledgeID,
-		"agent_id":           agentID,
-		"document_id":        knowledgeID,
-		"document_link":      sourceURI,
-		"collection_name":    milvusCollection,
-	})
+	payload, err := json.Marshal(knowledgeV2Body(agentKnowledgeID, agentID, knowledgeID, sourceURI, sourceType, isCrawl, milvusCollection))
 	if err != nil {
 		log.Printf("[core-service][rag-knowledge-add] payload marshal error agent_knowledge_id=%s agent_id=%s knowledge_id=%s source_uri=%v collection=%s error=%v", agentKnowledgeID, agentID, knowledgeID, sourceURI, milvusCollection, err)
 		h.markKnowledgeConversionFailed(agentKnowledgeID, err)
@@ -275,13 +267,17 @@ func (h *ConnectHandler) DisconnectAgentKnowledge(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Look up source_uri (document_link) so the delete body matches connect's
-	// exactly. Best effort: empty on lookup failure.
+	// Look up the knowledge row so the delete body matches connect's exactly
+	// (source_uri, source_type, is_crawl). Best effort: zero values on failure.
 	var sourceURI *string
+	var sourceType string
+	var isCrawl bool
 	if knowledge, err := h.Queries.SelectKnowledgeById(r.Context(), req.KnowledgeId); err != nil {
-		log.Printf("[core-service][disconnect-agent-knowledge] knowledge lookup for source_uri failed knowledge_id=%s error=%v", req.KnowledgeId, err)
+		log.Printf("[core-service][disconnect-agent-knowledge] knowledge lookup failed knowledge_id=%s error=%v", req.KnowledgeId, err)
 	} else {
 		sourceURI = knowledge.SourceUri
+		sourceType = knowledge.SourceType
+		isCrawl = knowledge.IsCrawl
 	}
 
 	// Same collection resolution as connect: delete from the agent's own
@@ -293,7 +289,7 @@ func (h *ConnectHandler) DisconnectAgentKnowledge(w http.ResponseWriter, r *http
 		milvusCollection = agent.MilvusCollection
 	}
 
-	go h.triggerKnowledgeDeletion(agentKnowledgeID, req.AgentId, req.KnowledgeId, sourceURI, milvusCollection)
+	go h.triggerKnowledgeDeletion(agentKnowledgeID, req.AgentId, req.KnowledgeId, sourceURI, sourceType, isCrawl, milvusCollection)
 	log.Printf("[core-service][disconnect-agent-knowledge] rag deletion trigger queued agent_knowledge_id=%s agent_id=%s knowledge_id=%s collection=%s", agentKnowledgeID, req.AgentId, req.KnowledgeId, milvusCollection)
 
 	log.Printf("[core-service][disconnect-agent-knowledge] api success status=%d", http.StatusNoContent)
@@ -303,26 +299,20 @@ func (h *ConnectHandler) DisconnectAgentKnowledge(w http.ResponseWriter, r *http
 // triggerKnowledgeDeletion fires the knowledge REST API delete endpoint in the
 // background. Failures are logged only; the local disconnect has already
 // succeeded by the time this runs.
-func (h *ConnectHandler) triggerKnowledgeDeletion(agentKnowledgeID, agentID, knowledgeID uuid.UUID, sourceURI *string, milvusCollection string) {
+func (h *ConnectHandler) triggerKnowledgeDeletion(agentKnowledgeID, agentID, knowledgeID uuid.UUID, sourceURI *string, sourceType string, isCrawl bool, milvusCollection string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	url := fmt.Sprintf(h.knowledgeDeleteURL, knowledgeID)
+	url := h.knowledgeDeleteURL
 	// Identical body shape to connect (triggerKnowledgeConversion).
-	payload, err := json.Marshal(map[string]any{
-		"agent_knowledge_id": agentKnowledgeID,
-		"agent_id":           agentID,
-		"document_id":        knowledgeID,
-		"document_link":      sourceURI,
-		"collection_name":    milvusCollection,
-	})
+	payload, err := json.Marshal(knowledgeV2Body(agentKnowledgeID, agentID, knowledgeID, sourceURI, sourceType, isCrawl, milvusCollection))
 	if err != nil {
 		log.Printf("[core-service][rag-knowledge-delete] payload marshal error knowledge_id=%s collection=%s error=%v", knowledgeID, milvusCollection, err)
 		return
 	}
-	log.Printf("[core-service][rag-knowledge-delete] fetch start method=%s url=%s params={knowledge_id:%s collection:%s} payload=%s", http.MethodDelete, url, knowledgeID, milvusCollection, string(payload))
+	log.Printf("[core-service][rag-knowledge-delete] fetch start method=%s url=%s params={knowledge_id:%s collection:%s} payload=%s", http.MethodPost, url, knowledgeID, milvusCollection, string(payload))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		log.Printf("[core-service][rag-knowledge-delete] request build error knowledge_id=%s url=%s error=%v", knowledgeID, url, err)
 		return
@@ -333,7 +323,7 @@ func (h *ConnectHandler) triggerKnowledgeDeletion(agentKnowledgeID, agentID, kno
 	resp, err := h.HTTPClient.Do(req)
 	duration := time.Since(started)
 	if err != nil {
-		log.Printf("[core-service][rag-knowledge-delete] fetch error method=%s url=%s duration=%s knowledge_id=%s error=%v", http.MethodDelete, url, duration, knowledgeID, err)
+		log.Printf("[core-service][rag-knowledge-delete] fetch error method=%s url=%s duration=%s knowledge_id=%s error=%v", http.MethodPost, url, duration, knowledgeID, err)
 		return
 	}
 	defer resp.Body.Close()
@@ -344,11 +334,35 @@ func (h *ConnectHandler) triggerKnowledgeDeletion(agentKnowledgeID, agentID, kno
 		log.Printf("[core-service][rag-knowledge-delete] response body read error status=%d duration=%s error=%v", resp.StatusCode, duration, readErr)
 	}
 
-	log.Printf("[core-service][rag-knowledge-delete] fetch returned method=%s url=%s status=%d duration=%s response_body=%q", http.MethodDelete, url, resp.StatusCode, duration, bodyText)
+	log.Printf("[core-service][rag-knowledge-delete] fetch returned method=%s url=%s status=%d duration=%s response_body=%q", http.MethodPost, url, resp.StatusCode, duration, bodyText)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		log.Printf("[core-service][rag-knowledge-delete] fetch failed knowledge_id=%s status=%d reason=API returned non-2xx body=%q", knowledgeID, resp.StatusCode, bodyText)
 		return
 	}
 
 	log.Printf("[core-service][rag-knowledge-delete] fetch success knowledge_id=%s status=%d body=%q", knowledgeID, resp.StatusCode, bodyText)
+}
+
+// knowledgeV2Body builds the shared /knowledge/{add,delete}/v2 request body.
+// scrape_mode is only sent for web sources: "crawl" when is_crawl, else
+// "single". source_type passes through except non-web (file) sources report
+// "file" to the v2 API regardless of the stored extension.
+func knowledgeV2Body(agentKnowledgeID, agentID, knowledgeID uuid.UUID, sourceURI *string, sourceType string, isCrawl bool, milvusCollection string) map[string]any {
+	v2SourceType := "file"
+	if sourceType == "web" {
+		v2SourceType = "web"
+	}
+
+	body := map[string]any{
+		"agent_knowledge_id": agentKnowledgeID,
+		"document_id":        knowledgeID,
+		"document_link":      sourceURI,
+		"source_type":        v2SourceType,
+		"agent_id":           agentID,
+		"collection_name":    milvusCollection,
+	}
+	if v2SourceType == "web" && isCrawl {
+		body["scrape_mode"] = "crawl"
+	}
+	return body
 }
