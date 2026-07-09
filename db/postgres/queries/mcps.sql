@@ -9,8 +9,16 @@ VALUES (
 RETURNING id, name, description, uri, headers, created_at, updated_at;
 
 -- name: SelectMcpById :one
-SELECT * FROM mcps_view
-WHERE id = sqlc.arg(id)
+SELECT
+    m.*,
+    (
+        SELECT COALESCE(jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'color', t.color) ORDER BY t.name), '[]'::jsonb)
+        FROM mcp_tags mt
+        JOIN tags_view t ON t.id = mt.tag_id
+        WHERE mt.mcp_id = m.id
+    )::jsonb AS tags
+FROM mcps_view m
+WHERE m.id = sqlc.arg(id)
 LIMIT 1;
 
 -- name: UpdateMcp :one
@@ -39,6 +47,13 @@ WHERE (
     sqlc.narg('search')::text IS NULL
     OR m.name ILIKE '%' || sqlc.narg('search')::text || '%'
     OR m.description ILIKE '%' || sqlc.narg('search')::text || '%'
+)
+AND (
+    sqlc.narg('tag_id')::uuid IS NULL
+    OR EXISTS (
+        SELECT 1 FROM mcp_tags mt
+        WHERE mt.mcp_id = m.id AND mt.tag_id = sqlc.narg('tag_id')::uuid
+    )
 );
 
 -- name: SelectMcps :many
@@ -48,12 +63,25 @@ SELECT
         SELECT count(*)
         FROM mcp_tools AS t
         WHERE t.mcp_id = m.id AND t.deleted_at IS NULL
-    ) AS tools_count
+    ) AS tools_count,
+    (
+        SELECT COALESCE(jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'color', t.color) ORDER BY t.name), '[]'::jsonb)
+        FROM mcp_tags mt
+        JOIN tags_view t ON t.id = mt.tag_id
+        WHERE mt.mcp_id = m.id
+    )::jsonb AS tags
 FROM mcps_view AS m
 WHERE (
     sqlc.narg('search')::text IS NULL
     OR m.name ILIKE '%' || sqlc.narg('search')::text || '%'
     OR m.description ILIKE '%' || sqlc.narg('search')::text || '%'
+)
+AND (
+    sqlc.narg('tag_id')::uuid IS NULL
+    OR EXISTS (
+        SELECT 1 FROM mcp_tags mt
+        WHERE mt.mcp_id = m.id AND mt.tag_id = sqlc.narg('tag_id')::uuid
+    )
 )
 ORDER BY
     CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN m.name END ASC,

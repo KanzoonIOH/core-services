@@ -11,8 +11,16 @@ RETURNING
     id, name, description, source_type, source_uri, is_crawl, created_at, updated_at;
 
 -- name: SelectKnowledgeById :one
-SELECT * FROM knowledges_view
-WHERE id = sqlc.arg(id)
+SELECT
+    kv.*,
+    (
+        SELECT COALESCE(jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'color', t.color) ORDER BY t.name), '[]'::jsonb)
+        FROM knowledge_tags kt
+        JOIN tags_view t ON t.id = kt.tag_id
+        WHERE kt.knowledge_id = kv.id
+    )::jsonb AS tags
+FROM knowledges_view kv
+WHERE kv.id = sqlc.arg(id)
 LIMIT 1;
 
 -- name: UpdateKnowledge :one
@@ -35,16 +43,23 @@ WHERE
     AND id = sqlc.arg(id);
 
 -- name: CountKnowledges :one
-SELECT count(*) FROM knowledges_view
+SELECT count(*) FROM knowledges_view kv
 WHERE (
     sqlc.narg('source_type')::text IS NULL
     OR sqlc.narg('source_type')::text = ''
-    OR source_type = sqlc.narg('source_type')::text
+    OR kv.source_type = sqlc.narg('source_type')::text
 )
 AND (
     sqlc.narg('search')::text IS NULL
-    OR name ILIKE '%' || sqlc.narg('search')::text || '%'
-    OR description ILIKE '%' || sqlc.narg('search')::text || '%'
+    OR kv.name ILIKE '%' || sqlc.narg('search')::text || '%'
+    OR kv.description ILIKE '%' || sqlc.narg('search')::text || '%'
+)
+AND (
+    sqlc.narg('tag_id')::uuid IS NULL
+    OR EXISTS (
+        SELECT 1 FROM knowledge_tags kt
+        WHERE kt.knowledge_id = kv.id AND kt.tag_id = sqlc.narg('tag_id')::uuid
+    )
 );
 
 -- name: SelectKnowledges :many
@@ -54,7 +69,13 @@ SELECT
         SELECT count(*)
         FROM agent_knowledges_view akv
         WHERE akv.knowledge_id = kv.id
-    ) AS agents_count
+    ) AS agents_count,
+    (
+        SELECT COALESCE(jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'color', t.color) ORDER BY t.name), '[]'::jsonb)
+        FROM knowledge_tags kt
+        JOIN tags_view t ON t.id = kt.tag_id
+        WHERE kt.knowledge_id = kv.id
+    )::jsonb AS tags
 FROM knowledges_view kv
 WHERE (
     sqlc.narg('source_type')::text IS NULL
@@ -65,6 +86,13 @@ AND (
     sqlc.narg('search')::text IS NULL
     OR kv.name ILIKE '%' || sqlc.narg('search')::text || '%'
     OR kv.description ILIKE '%' || sqlc.narg('search')::text || '%'
+)
+AND (
+    sqlc.narg('tag_id')::uuid IS NULL
+    OR EXISTS (
+        SELECT 1 FROM knowledge_tags kt
+        WHERE kt.knowledge_id = kv.id AND kt.tag_id = sqlc.narg('tag_id')::uuid
+    )
 )
 ORDER BY
     CASE WHEN sqlc.narg('sort')::text = 'name_asc' THEN name END ASC,

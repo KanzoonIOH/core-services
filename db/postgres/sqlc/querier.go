@@ -22,11 +22,13 @@ type Querier interface {
 	CountKnowledges(ctx context.Context, arg CountKnowledgesParams) (int64, error)
 	CountKnowledgesByAgentId(ctx context.Context, arg CountKnowledgesByAgentIdParams) (int64, error)
 	CountMcpToolsByMcpId(ctx context.Context, mcpID uuid.UUID) (int64, error)
-	CountMcps(ctx context.Context, search *string) (int64, error)
+	CountMcps(ctx context.Context, arg CountMcpsParams) (int64, error)
 	CountMcpsByAgentId(ctx context.Context, arg CountMcpsByAgentIdParams) (int64, error)
 	CountMembers(ctx context.Context, role *string) (int64, error)
 	DeleteAgentTags(ctx context.Context, agentID uuid.UUID) error
 	DeleteConversation(ctx context.Context, id uuid.UUID) error
+	DeleteKnowledgeTags(ctx context.Context, knowledgeID uuid.UUID) error
+	DeleteMcpTags(ctx context.Context, mcpID uuid.UUID) error
 	DeleteMessagesByConversation(ctx context.Context, conversationID uuid.UUID) error
 	GetGlobalConfig(ctx context.Context) (GlobalConfig, error)
 	InsertAgent(ctx context.Context, arg InsertAgentParams) (InsertAgentRow, error)
@@ -35,7 +37,9 @@ type Querier interface {
 	InsertAgentTag(ctx context.Context, arg InsertAgentTagParams) error
 	InsertApiKey(ctx context.Context, arg InsertApiKeyParams) (InsertApiKeyRow, error)
 	InsertKnowledge(ctx context.Context, arg InsertKnowledgeParams) (InsertKnowledgeRow, error)
+	InsertKnowledgeTag(ctx context.Context, arg InsertKnowledgeTagParams) error
 	InsertMcp(ctx context.Context, arg InsertMcpParams) (InsertMcpRow, error)
+	InsertMcpTag(ctx context.Context, arg InsertMcpTagParams) error
 	InsertMcpTool(ctx context.Context, arg InsertMcpToolParams) (InsertMcpToolRow, error)
 	InsertMessage(ctx context.Context, arg InsertMessageParams) error
 	InsertUpcomingChange(ctx context.Context, arg InsertUpcomingChangeParams) (UpcomingChange, error)
@@ -56,11 +60,11 @@ type Querier interface {
 	SelectConversationById(ctx context.Context, id uuid.UUID) (SelectConversationByIdRow, error)
 	SelectConversations(ctx context.Context, arg SelectConversationsParams) ([]SelectConversationsRow, error)
 	SelectDropdownAgents(ctx context.Context, arg SelectDropdownAgentsParams) ([]SelectDropdownAgentsRow, error)
-	SelectKnowledgeById(ctx context.Context, id uuid.UUID) (KnowledgesView, error)
+	SelectKnowledgeById(ctx context.Context, id uuid.UUID) (SelectKnowledgeByIdRow, error)
 	SelectKnowledges(ctx context.Context, arg SelectKnowledgesParams) ([]SelectKnowledgesRow, error)
 	SelectKnowledgesByAgentId(ctx context.Context, arg SelectKnowledgesByAgentIdParams) ([]SelectKnowledgesByAgentIdRow, error)
 	SelectKnowledgesWithAgentStatus(ctx context.Context, arg SelectKnowledgesWithAgentStatusParams) ([]SelectKnowledgesWithAgentStatusRow, error)
-	SelectMcpById(ctx context.Context, id uuid.UUID) (McpsView, error)
+	SelectMcpById(ctx context.Context, id uuid.UUID) (SelectMcpByIdRow, error)
 	SelectMcpToolsByMcpId(ctx context.Context, mcpID uuid.UUID) ([]McpToolsView, error)
 	SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]SelectMcpsRow, error)
 	SelectMcpsByAgentId(ctx context.Context, arg SelectMcpsByAgentIdParams) ([]SelectMcpsByAgentIdRow, error)

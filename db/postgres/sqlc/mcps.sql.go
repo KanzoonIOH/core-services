@@ -20,10 +20,22 @@ WHERE (
     OR m.name ILIKE '%' || $1::text || '%'
     OR m.description ILIKE '%' || $1::text || '%'
 )
+AND (
+    $2::uuid IS NULL
+    OR EXISTS (
+        SELECT 1 FROM mcp_tags mt
+        WHERE mt.mcp_id = m.id AND mt.tag_id = $2::uuid
+    )
+)
 `
 
-func (q *Queries) CountMcps(ctx context.Context, search *string) (int64, error) {
-	row := q.db.QueryRow(ctx, countMcps, search)
+type CountMcpsParams struct {
+	Search *string    `json:"search"`
+	TagID  *uuid.UUID `json:"tag_id"`
+}
+
+func (q *Queries) CountMcps(ctx context.Context, arg CountMcpsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countMcps, arg.Search, arg.TagID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -103,14 +115,33 @@ func (q *Queries) InsertMcp(ctx context.Context, arg InsertMcpParams) (InsertMcp
 }
 
 const selectMcpById = `-- name: SelectMcpById :one
-SELECT id, name, description, uri, created_at, updated_at, headers FROM mcps_view
-WHERE id = $1
+SELECT
+    m.id, m.name, m.description, m.uri, m.created_at, m.updated_at, m.headers,
+    (
+        SELECT COALESCE(jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'color', t.color) ORDER BY t.name), '[]'::jsonb)
+        FROM mcp_tags mt
+        JOIN tags_view t ON t.id = mt.tag_id
+        WHERE mt.mcp_id = m.id
+    )::jsonb AS tags
+FROM mcps_view m
+WHERE m.id = $1
 LIMIT 1
 `
 
-func (q *Queries) SelectMcpById(ctx context.Context, id uuid.UUID) (McpsView, error) {
+type SelectMcpByIdRow struct {
+	ID          uuid.UUID       `json:"id"`
+	Name        string          `json:"name"`
+	Description *string         `json:"description"`
+	Uri         string          `json:"uri"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+	Headers     json.RawMessage `json:"headers"`
+	Tags        json.RawMessage `json:"tags"`
+}
+
+func (q *Queries) SelectMcpById(ctx context.Context, id uuid.UUID) (SelectMcpByIdRow, error) {
 	row := q.db.QueryRow(ctx, selectMcpById, id)
-	var i McpsView
+	var i SelectMcpByIdRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
@@ -119,6 +150,7 @@ func (q *Queries) SelectMcpById(ctx context.Context, id uuid.UUID) (McpsView, er
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Headers,
+		&i.Tags,
 	)
 	return i, err
 }
@@ -130,37 +162,51 @@ SELECT
         SELECT count(*)
         FROM mcp_tools AS t
         WHERE t.mcp_id = m.id AND t.deleted_at IS NULL
-    ) AS tools_count
+    ) AS tools_count,
+    (
+        SELECT COALESCE(jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'color', t.color) ORDER BY t.name), '[]'::jsonb)
+        FROM mcp_tags mt
+        JOIN tags_view t ON t.id = mt.tag_id
+        WHERE mt.mcp_id = m.id
+    )::jsonb AS tags
 FROM mcps_view AS m
 WHERE (
     $1::text IS NULL
     OR m.name ILIKE '%' || $1::text || '%'
     OR m.description ILIKE '%' || $1::text || '%'
 )
+AND (
+    $2::uuid IS NULL
+    OR EXISTS (
+        SELECT 1 FROM mcp_tags mt
+        WHERE mt.mcp_id = m.id AND mt.tag_id = $2::uuid
+    )
+)
 ORDER BY
-    CASE WHEN $2::text = 'name_asc' THEN m.name END ASC,
-    CASE WHEN $2::text = 'name_desc' THEN m.name END DESC,
-    CASE WHEN $2::text = 'created_asc' THEN m.created_at END ASC,
+    CASE WHEN $3::text = 'name_asc' THEN m.name END ASC,
+    CASE WHEN $3::text = 'name_desc' THEN m.name END DESC,
+    CASE WHEN $3::text = 'created_asc' THEN m.created_at END ASC,
     CASE
-        WHEN $2::text = 'created_desc' THEN m.created_at
+        WHEN $3::text = 'created_desc' THEN m.created_at
     END DESC,
-    CASE WHEN $2::text = 'tools_count_asc' THEN (
+    CASE WHEN $3::text = 'tools_count_asc' THEN (
         SELECT count(*) FROM mcp_tools AS t
         WHERE t.mcp_id = m.id AND t.deleted_at IS NULL
     ) END ASC,
-    CASE WHEN $2::text = 'tools_count_desc' THEN (
+    CASE WHEN $3::text = 'tools_count_desc' THEN (
         SELECT count(*) FROM mcp_tools AS t
         WHERE t.mcp_id = m.id AND t.deleted_at IS NULL
     ) END DESC,
     m.created_at DESC
-LIMIT $4 OFFSET $3
+LIMIT $5 OFFSET $4
 `
 
 type SelectMcpsParams struct {
-	Search *string `json:"search"`
-	Sort   *string `json:"sort"`
-	Offset int32   `json:"offset"`
-	Limit  int32   `json:"limit"`
+	Search *string    `json:"search"`
+	TagID  *uuid.UUID `json:"tag_id"`
+	Sort   *string    `json:"sort"`
+	Offset int32      `json:"offset"`
+	Limit  int32      `json:"limit"`
 }
 
 type SelectMcpsRow struct {
@@ -172,11 +218,13 @@ type SelectMcpsRow struct {
 	UpdatedAt   time.Time       `json:"updated_at"`
 	Headers     json.RawMessage `json:"headers"`
 	ToolsCount  int64           `json:"tools_count"`
+	Tags        json.RawMessage `json:"tags"`
 }
 
 func (q *Queries) SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]SelectMcpsRow, error) {
 	rows, err := q.db.Query(ctx, selectMcps,
 		arg.Search,
+		arg.TagID,
 		arg.Sort,
 		arg.Offset,
 		arg.Limit,
@@ -197,6 +245,7 @@ func (q *Queries) SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]Selec
 			&i.UpdatedAt,
 			&i.Headers,
 			&i.ToolsCount,
+			&i.Tags,
 		); err != nil {
 			return nil, err
 		}

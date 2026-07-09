@@ -54,6 +54,37 @@ type mcpCreateRequest struct {
 	Description *string           `json:"description"`
 	Uri         string            `json:"uri"`
 	Headers     map[string]string `json:"headers"`
+	Tags        []string          `json:"tags"`
+}
+
+// syncMcpTags mirrors syncAgentTags: upsert each tag name, then replace the
+// mcp's tag links with exactly that set.
+func (h *McpHandler) syncMcpTags(ctx context.Context, mcpID uuid.UUID, names []string) error {
+	if err := h.Queries.DeleteMcpTags(ctx, mcpID); err != nil {
+		return err
+	}
+	seen := map[string]bool{}
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" || seen[strings.ToLower(name)] {
+			continue
+		}
+		seen[strings.ToLower(name)] = true
+		tag, err := h.Queries.UpsertTagByName(ctx, db.UpsertTagByNameParams{
+			Name:  name,
+			Color: defaultTagColor(name),
+		})
+		if err != nil {
+			return err
+		}
+		if err := h.Queries.InsertMcpTag(ctx, db.InsertMcpTagParams{
+			McpID: mcpID,
+			TagID: tag.ID,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (h *McpHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -86,13 +117,23 @@ func (h *McpHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.syncMcpTags(r.Context(), mcp.ID, req.Tags); err != nil {
+		fmt.Printf("mcp tag sync failed for %s: %v\n", mcp.ID, err)
+	}
+
 	tools, discoverErr := h.syncTools(r.Context(), mcp.ID, mcp.Uri, req.Headers)
 	if discoverErr != nil {
 		fmt.Printf("mcp tool discovery failed for %s: %v\n", mcp.ID, discoverErr)
 	}
 
+	full, err := h.Queries.SelectMcpById(r.Context(), mcp.ID)
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to create mcp")
+		return
+	}
+
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, map[string]any{
-		"mcp":   mcp,
+		"mcp":   full,
 		"tools": tools,
 	}, nil)
 }
@@ -136,9 +177,11 @@ func (h *McpHandler) Read(w http.ResponseWriter, r *http.Request) {
 
 	pagination := lib.ParsePaginationParams(params)
 	search := lib.ParseParamsString(params, "search")
+	tagID := lib.ParseParamsUUID(params, "tag_id")
 
 	mcps, err := h.Queries.SelectMcps(r.Context(), db.SelectMcpsParams{
 		Search: search,
+		TagID:  tagID,
 		Sort:   pagination.Sort,
 		Limit:  pagination.Limit,
 		Offset: pagination.Offset * pagination.Limit,
@@ -148,7 +191,10 @@ func (h *McpHandler) Read(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totalRow, err := h.Queries.CountMcps(r.Context(), search)
+	totalRow, err := h.Queries.CountMcps(r.Context(), db.CountMcpsParams{
+		Search: search,
+		TagID:  tagID,
+	})
 	if err != nil {
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get mcps")
 		return
@@ -215,7 +261,7 @@ func (h *McpHandler) ReadAllByAgentId(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totalRow, err := h.Queries.CountMcps(r.Context(), search)
+	totalRow, err := h.Queries.CountMcps(r.Context(), db.CountMcpsParams{Search: search})
 	if err != nil {
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get mcps")
 		return
@@ -249,6 +295,7 @@ type mcpUpdateRequest struct {
 	Description *string           `json:"description"`
 	Uri         string            `json:"uri"`
 	Headers     map[string]string `json:"headers"`
+	Tags        []string          `json:"tags"`
 }
 
 func (h *McpHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -291,6 +338,10 @@ func (h *McpHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.syncMcpTags(r.Context(), mcp.ID, req.Tags); err != nil {
+		log.Printf("[core-service][mcp-update] tag sync failed mcp_id=%s: %v", mcp.ID, err)
+	}
+
 	// URI or headers may have changed — re-discover tools from the new target.
 	// Best-effort: don't fail the update if the server is unreachable, the user
 	// can hit Refresh once it's fixed.
@@ -298,7 +349,13 @@ func (h *McpHandler) Update(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[core-service][mcp-update] tool re-sync failed mcp_id=%s: %v", mcp.ID, err)
 	}
 
-	lib.ResponseJSONTemplate(w, http.StatusOK, nil, mcp, nil)
+	full, err := h.Queries.SelectMcpById(r.Context(), mcp.ID)
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to update mcp")
+		return
+	}
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, full, nil)
 }
 
 func (h *McpHandler) Delete(w http.ResponseWriter, r *http.Request) {

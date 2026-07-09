@@ -21,6 +21,24 @@ func (q *Queries) DeleteAgentTags(ctx context.Context, agentID uuid.UUID) error 
 	return err
 }
 
+const deleteKnowledgeTags = `-- name: DeleteKnowledgeTags :exec
+DELETE FROM knowledge_tags WHERE knowledge_id = $1
+`
+
+func (q *Queries) DeleteKnowledgeTags(ctx context.Context, knowledgeID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteKnowledgeTags, knowledgeID)
+	return err
+}
+
+const deleteMcpTags = `-- name: DeleteMcpTags :exec
+DELETE FROM mcp_tags WHERE mcp_id = $1
+`
+
+func (q *Queries) DeleteMcpTags(ctx context.Context, mcpID uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteMcpTags, mcpID)
+	return err
+}
+
 const insertAgentTag = `-- name: InsertAgentTag :exec
 INSERT INTO agent_tags (agent_id, tag_id)
 VALUES ($1, $2)
@@ -37,6 +55,38 @@ func (q *Queries) InsertAgentTag(ctx context.Context, arg InsertAgentTagParams) 
 	return err
 }
 
+const insertKnowledgeTag = `-- name: InsertKnowledgeTag :exec
+INSERT INTO knowledge_tags (knowledge_id, tag_id)
+VALUES ($1, $2)
+ON CONFLICT (knowledge_id, tag_id) DO NOTHING
+`
+
+type InsertKnowledgeTagParams struct {
+	KnowledgeID uuid.UUID `json:"knowledge_id"`
+	TagID       uuid.UUID `json:"tag_id"`
+}
+
+func (q *Queries) InsertKnowledgeTag(ctx context.Context, arg InsertKnowledgeTagParams) error {
+	_, err := q.db.Exec(ctx, insertKnowledgeTag, arg.KnowledgeID, arg.TagID)
+	return err
+}
+
+const insertMcpTag = `-- name: InsertMcpTag :exec
+INSERT INTO mcp_tags (mcp_id, tag_id)
+VALUES ($1, $2)
+ON CONFLICT (mcp_id, tag_id) DO NOTHING
+`
+
+type InsertMcpTagParams struct {
+	McpID uuid.UUID `json:"mcp_id"`
+	TagID uuid.UUID `json:"tag_id"`
+}
+
+func (q *Queries) InsertMcpTag(ctx context.Context, arg InsertMcpTagParams) error {
+	_, err := q.db.Exec(ctx, insertMcpTag, arg.McpID, arg.TagID)
+	return err
+}
+
 const selectTags = `-- name: SelectTags :many
 SELECT
     t.id, t.name, t.color, t.created_at, t.updated_at,
@@ -45,18 +95,32 @@ SELECT
         FROM agent_tags at
         JOIN agents a ON a.id = at.agent_id AND a.deleted_at IS NULL
         WHERE at.tag_id = t.id
-    ) AS agents_count
+    ) AS agents_count,
+    (
+        SELECT COUNT(*)
+        FROM mcp_tags mt
+        JOIN mcps m ON m.id = mt.mcp_id AND m.deleted_at IS NULL
+        WHERE mt.tag_id = t.id
+    ) AS mcps_count,
+    (
+        SELECT COUNT(*)
+        FROM knowledge_tags kt
+        JOIN knowledges k ON k.id = kt.knowledge_id AND k.deleted_at IS NULL
+        WHERE kt.tag_id = t.id
+    ) AS knowledges_count
 FROM tags_view t
 ORDER BY t.name
 `
 
 type SelectTagsRow struct {
-	ID          uuid.UUID `json:"id"`
-	Name        string    `json:"name"`
-	Color       string    `json:"color"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	AgentsCount int64     `json:"agents_count"`
+	ID              uuid.UUID `json:"id"`
+	Name            string    `json:"name"`
+	Color           string    `json:"color"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+	AgentsCount     int64     `json:"agents_count"`
+	McpsCount       int64     `json:"mcps_count"`
+	KnowledgesCount int64     `json:"knowledges_count"`
 }
 
 func (q *Queries) SelectTags(ctx context.Context) ([]SelectTagsRow, error) {
@@ -75,6 +139,8 @@ func (q *Queries) SelectTags(ctx context.Context) ([]SelectTagsRow, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.AgentsCount,
+			&i.McpsCount,
+			&i.KnowledgesCount,
 		); err != nil {
 			return nil, err
 		}

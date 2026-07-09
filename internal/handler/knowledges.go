@@ -3,6 +3,7 @@ package handler
 import (
 	db "aic3-service/db/postgres/sqlc"
 	"aic3-service/internal/lib"
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -27,6 +29,45 @@ func NewKnowledgeHandler(conn *pgxpool.Pool, objectStorage *lib.ObjectStorage) *
 
 // sourceTypeLink is the source_type for URL-based knowledges (no file upload).
 const sourceTypeLink = "web"
+
+// syncKnowledgeTags mirrors syncAgentTags for knowledges.
+func (h *KnowledgeHandler) syncKnowledgeTags(ctx context.Context, knowledgeID uuid.UUID, names []string) error {
+	if err := h.Queries.DeleteKnowledgeTags(ctx, knowledgeID); err != nil {
+		return err
+	}
+	seen := map[string]bool{}
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" || seen[strings.ToLower(name)] {
+			continue
+		}
+		seen[strings.ToLower(name)] = true
+		tag, err := h.Queries.UpsertTagByName(ctx, db.UpsertTagByNameParams{
+			Name:  name,
+			Color: defaultTagColor(name),
+		})
+		if err != nil {
+			return err
+		}
+		if err := h.Queries.InsertKnowledgeTag(ctx, db.InsertKnowledgeTagParams{
+			KnowledgeID: knowledgeID,
+			TagID:       tag.ID,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// formTags reads tags from a multipart form: repeated `tags` fields, or a single
+// comma-separated `tags` value. Blank entries are dropped by syncKnowledgeTags.
+func formTags(r *http.Request) []string {
+	vals := r.Form["tags"]
+	if len(vals) == 1 && strings.Contains(vals[0], ",") {
+		return strings.Split(vals[0], ",")
+	}
+	return vals
+}
 
 type createKnowledgeRequest struct {
 	Name        string  `json:"name"`
@@ -110,8 +151,18 @@ func (h *KnowledgeHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[core-service][knowledge-create] api success status=%d response=%s", http.StatusOK, jsonForLog(knowledge))
-	lib.ResponseJSONTemplate(w, http.StatusOK, nil, knowledge, nil)
+	if err := h.syncKnowledgeTags(r.Context(), knowledge.ID, formTags(r)); err != nil {
+		log.Printf("[core-service][knowledge-create] tag sync failed id=%s error=%v", knowledge.ID, err)
+	}
+
+	full, err := h.Queries.SelectKnowledgeById(r.Context(), knowledge.ID)
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to create knowledge")
+		return
+	}
+
+	log.Printf("[core-service][knowledge-create] api success status=%d response=%s", http.StatusOK, jsonForLog(full))
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, full, nil)
 }
 
 func formStringPtr(v string) *string {
@@ -149,11 +200,13 @@ func (h *KnowledgeHandler) Read(w http.ResponseWriter, r *http.Request) {
 	pagination := lib.ParsePaginationParams(params)
 	sourceType := lib.ParseParamsString(params, "source_type")
 	search := lib.ParseParamsString(params, "search")
-	log.Printf("[core-service][knowledge-read] request params={search:%v source_type:%v sort:%v limit:%d offset:%d}", search, sourceType, pagination.Sort, pagination.Limit, pagination.Offset)
+	tagID := lib.ParseParamsUUID(params, "tag_id")
+	log.Printf("[core-service][knowledge-read] request params={search:%v source_type:%v tag_id:%v sort:%v limit:%d offset:%d}", search, sourceType, tagID, pagination.Sort, pagination.Limit, pagination.Offset)
 
 	knowledges, err := h.Queries.SelectKnowledges(r.Context(), db.SelectKnowledgesParams{
 		SourceType: sourceType,
 		Search:     search,
+		TagID:      tagID,
 		Sort:       pagination.Sort,
 		Limit:      pagination.Limit,
 		Offset:     pagination.Offset * pagination.Limit,
@@ -167,6 +220,7 @@ func (h *KnowledgeHandler) Read(w http.ResponseWriter, r *http.Request) {
 	totalRow, err := h.Queries.CountKnowledges(r.Context(), db.CountKnowledgesParams{
 		SourceType: sourceType,
 		Search:     search,
+		TagID:      tagID,
 	})
 	if err != nil {
 		log.Printf("[core-service][knowledge-read] db count error error=%v", err)
@@ -284,8 +338,9 @@ func (h *KnowledgeHandler) ReadById(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateKnowledgeRequest struct {
-	Name        string  `json:"name"`
-	Description *string `json:"description"`
+	Name        string   `json:"name"`
+	Description *string  `json:"description"`
+	Tags        []string `json:"tags"`
 }
 
 func (h *KnowledgeHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -327,8 +382,18 @@ func (h *KnowledgeHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[core-service][knowledge-update] api success status=%d response=%s", http.StatusOK, jsonForLog(knowledge))
-	lib.ResponseJSONTemplate(w, http.StatusOK, nil, knowledge, nil)
+	if err := h.syncKnowledgeTags(r.Context(), knowledge.ID, req.Tags); err != nil {
+		log.Printf("[core-service][knowledge-update] tag sync failed id=%s error=%v", knowledge.ID, err)
+	}
+
+	full, err := h.Queries.SelectKnowledgeById(r.Context(), knowledge.ID)
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to update knowledge")
+		return
+	}
+
+	log.Printf("[core-service][knowledge-update] api success status=%d response=%s", http.StatusOK, jsonForLog(full))
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, full, nil)
 }
 
 func (h *KnowledgeHandler) Delete(w http.ResponseWriter, r *http.Request) {

@@ -518,15 +518,22 @@ type Knowledge struct {
 	IsCrawl     bool       `json:"is_crawl"`
 }
 
+type KnowledgeTag struct {
+	ID          uuid.UUID `json:"id"`
+	KnowledgeID uuid.UUID `json:"knowledge_id"`
+	TagID       uuid.UUID `json:"tag_id"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
 type KnowledgesView struct {
 	ID          uuid.UUID `json:"id"`
 	Name        string    `json:"name"`
 	Description *string   `json:"description"`
 	SourceType  string    `json:"source_type"`
 	SourceUri   *string   `json:"source_uri"`
-	IsCrawl     bool      `json:"is_crawl"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	IsCrawl     bool      `json:"is_crawl"`
 }
 
 type Mcp struct {
@@ -538,6 +545,13 @@ type Mcp struct {
 	UpdatedAt   time.Time       `json:"updated_at"`
 	DeletedAt   *time.Time      `json:"deleted_at"`
 	Headers     json.RawMessage `json:"headers"`
+}
+
+type McpTag struct {
+	ID        uuid.UUID `json:"id"`
+	McpID     uuid.UUID `json:"mcp_id"`
+	TagID     uuid.UUID `json:"tag_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type McpTool struct {

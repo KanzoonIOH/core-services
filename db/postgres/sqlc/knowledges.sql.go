@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,26 +30,34 @@ func (q *Queries) CountAllKnowledges(ctx context.Context, search *string) (int64
 }
 
 const countKnowledges = `-- name: CountKnowledges :one
-SELECT count(*) FROM knowledges_view
+SELECT count(*) FROM knowledges_view kv
 WHERE (
     $1::text IS NULL
     OR $1::text = ''
-    OR source_type = $1::text
+    OR kv.source_type = $1::text
 )
 AND (
     $2::text IS NULL
-    OR name ILIKE '%' || $2::text || '%'
-    OR description ILIKE '%' || $2::text || '%'
+    OR kv.name ILIKE '%' || $2::text || '%'
+    OR kv.description ILIKE '%' || $2::text || '%'
+)
+AND (
+    $3::uuid IS NULL
+    OR EXISTS (
+        SELECT 1 FROM knowledge_tags kt
+        WHERE kt.knowledge_id = kv.id AND kt.tag_id = $3::uuid
+    )
 )
 `
 
 type CountKnowledgesParams struct {
-	SourceType *string `json:"source_type"`
-	Search     *string `json:"search"`
+	SourceType *string    `json:"source_type"`
+	Search     *string    `json:"search"`
+	TagID      *uuid.UUID `json:"tag_id"`
 }
 
 func (q *Queries) CountKnowledges(ctx context.Context, arg CountKnowledgesParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countKnowledges, arg.SourceType, arg.Search)
+	row := q.db.QueryRow(ctx, countKnowledges, arg.SourceType, arg.Search, arg.TagID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -134,35 +143,62 @@ func (q *Queries) InsertKnowledge(ctx context.Context, arg InsertKnowledgeParams
 }
 
 const selectKnowledgeById = `-- name: SelectKnowledgeById :one
-SELECT id, name, description, source_type, source_uri, is_crawl, created_at, updated_at FROM knowledges_view
-WHERE id = $1
+SELECT
+    kv.id, kv.name, kv.description, kv.source_type, kv.source_uri, kv.created_at, kv.updated_at, kv.is_crawl,
+    (
+        SELECT COALESCE(jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'color', t.color) ORDER BY t.name), '[]'::jsonb)
+        FROM knowledge_tags kt
+        JOIN tags_view t ON t.id = kt.tag_id
+        WHERE kt.knowledge_id = kv.id
+    )::jsonb AS tags
+FROM knowledges_view kv
+WHERE kv.id = $1
 LIMIT 1
 `
 
-func (q *Queries) SelectKnowledgeById(ctx context.Context, id uuid.UUID) (KnowledgesView, error) {
+type SelectKnowledgeByIdRow struct {
+	ID          uuid.UUID       `json:"id"`
+	Name        string          `json:"name"`
+	Description *string         `json:"description"`
+	SourceType  string          `json:"source_type"`
+	SourceUri   *string         `json:"source_uri"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+	IsCrawl     bool            `json:"is_crawl"`
+	Tags        json.RawMessage `json:"tags"`
+}
+
+func (q *Queries) SelectKnowledgeById(ctx context.Context, id uuid.UUID) (SelectKnowledgeByIdRow, error) {
 	row := q.db.QueryRow(ctx, selectKnowledgeById, id)
-	var i KnowledgesView
+	var i SelectKnowledgeByIdRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Description,
 		&i.SourceType,
 		&i.SourceUri,
-		&i.IsCrawl,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IsCrawl,
+		&i.Tags,
 	)
 	return i, err
 }
 
 const selectKnowledges = `-- name: SelectKnowledges :many
 SELECT
-    kv.id, kv.name, kv.description, kv.source_type, kv.source_uri, kv.is_crawl, kv.created_at, kv.updated_at,
+    kv.id, kv.name, kv.description, kv.source_type, kv.source_uri, kv.created_at, kv.updated_at, kv.is_crawl,
     (
         SELECT count(*)
         FROM agent_knowledges_view akv
         WHERE akv.knowledge_id = kv.id
-    ) AS agents_count
+    ) AS agents_count,
+    (
+        SELECT COALESCE(jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'color', t.color) ORDER BY t.name), '[]'::jsonb)
+        FROM knowledge_tags kt
+        JOIN tags_view t ON t.id = kt.tag_id
+        WHERE kt.knowledge_id = kv.id
+    )::jsonb AS tags
 FROM knowledges_view kv
 WHERE (
     $1::text IS NULL
@@ -174,41 +210,51 @@ AND (
     OR kv.name ILIKE '%' || $2::text || '%'
     OR kv.description ILIKE '%' || $2::text || '%'
 )
+AND (
+    $3::uuid IS NULL
+    OR EXISTS (
+        SELECT 1 FROM knowledge_tags kt
+        WHERE kt.knowledge_id = kv.id AND kt.tag_id = $3::uuid
+    )
+)
 ORDER BY
-    CASE WHEN $3::text = 'name_asc' THEN name END ASC,
-    CASE WHEN $3::text = 'name_desc' THEN name END DESC,
-    CASE WHEN $3::text = 'created_asc' THEN created_at END ASC,
-    CASE WHEN $3::text = 'created_desc' THEN created_at END DESC,
-    CASE WHEN $3::text = 'source_type_asc' THEN source_type END ASC,
-    CASE WHEN $3::text = 'source_type_desc' THEN source_type END DESC,
+    CASE WHEN $4::text = 'name_asc' THEN name END ASC,
+    CASE WHEN $4::text = 'name_desc' THEN name END DESC,
+    CASE WHEN $4::text = 'created_asc' THEN created_at END ASC,
+    CASE WHEN $4::text = 'created_desc' THEN created_at END DESC,
+    CASE WHEN $4::text = 'source_type_asc' THEN source_type END ASC,
+    CASE WHEN $4::text = 'source_type_desc' THEN source_type END DESC,
     created_at DESC
-LIMIT $5 OFFSET $4
+LIMIT $6 OFFSET $5
 `
 
 type SelectKnowledgesParams struct {
-	SourceType *string `json:"source_type"`
-	Search     *string `json:"search"`
-	Sort       *string `json:"sort"`
-	Offset     int32   `json:"offset"`
-	Limit      int32   `json:"limit"`
+	SourceType *string    `json:"source_type"`
+	Search     *string    `json:"search"`
+	TagID      *uuid.UUID `json:"tag_id"`
+	Sort       *string    `json:"sort"`
+	Offset     int32      `json:"offset"`
+	Limit      int32      `json:"limit"`
 }
 
 type SelectKnowledgesRow struct {
-	ID          uuid.UUID `json:"id"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description"`
-	SourceType  string    `json:"source_type"`
-	SourceUri   *string   `json:"source_uri"`
-	IsCrawl     bool      `json:"is_crawl"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	AgentsCount int64     `json:"agents_count"`
+	ID          uuid.UUID       `json:"id"`
+	Name        string          `json:"name"`
+	Description *string         `json:"description"`
+	SourceType  string          `json:"source_type"`
+	SourceUri   *string         `json:"source_uri"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+	IsCrawl     bool            `json:"is_crawl"`
+	AgentsCount int64           `json:"agents_count"`
+	Tags        json.RawMessage `json:"tags"`
 }
 
 func (q *Queries) SelectKnowledges(ctx context.Context, arg SelectKnowledgesParams) ([]SelectKnowledgesRow, error) {
 	rows, err := q.db.Query(ctx, selectKnowledges,
 		arg.SourceType,
 		arg.Search,
+		arg.TagID,
 		arg.Sort,
 		arg.Offset,
 		arg.Limit,
@@ -226,10 +272,11 @@ func (q *Queries) SelectKnowledges(ctx context.Context, arg SelectKnowledgesPara
 			&i.Description,
 			&i.SourceType,
 			&i.SourceUri,
-			&i.IsCrawl,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.IsCrawl,
 			&i.AgentsCount,
+			&i.Tags,
 		); err != nil {
 			return nil, err
 		}
@@ -243,7 +290,7 @@ func (q *Queries) SelectKnowledges(ctx context.Context, arg SelectKnowledgesPara
 
 const selectKnowledgesByAgentId = `-- name: SelectKnowledgesByAgentId :many
 SELECT
-    kv.id, kv.name, kv.description, kv.source_type, kv.source_uri, kv.is_crawl, kv.created_at, kv.updated_at,
+    kv.id, kv.name, kv.description, kv.source_type, kv.source_uri, kv.created_at, kv.updated_at, kv.is_crawl,
     akv.status
 FROM knowledges_view kv
 JOIN agent_knowledges_view akv
@@ -281,9 +328,9 @@ type SelectKnowledgesByAgentIdRow struct {
 	Description *string   `json:"description"`
 	SourceType  string    `json:"source_type"`
 	SourceUri   *string   `json:"source_uri"`
-	IsCrawl     bool      `json:"is_crawl"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	IsCrawl     bool      `json:"is_crawl"`
 	Status      string    `json:"status"`
 }
 
@@ -308,9 +355,9 @@ func (q *Queries) SelectKnowledgesByAgentId(ctx context.Context, arg SelectKnowl
 			&i.Description,
 			&i.SourceType,
 			&i.SourceUri,
-			&i.IsCrawl,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.IsCrawl,
 			&i.Status,
 		); err != nil {
 			return nil, err
@@ -325,7 +372,7 @@ func (q *Queries) SelectKnowledgesByAgentId(ctx context.Context, arg SelectKnowl
 
 const selectKnowledgesWithAgentStatus = `-- name: SelectKnowledgesWithAgentStatus :many
 SELECT
-    kv.id, kv.name, kv.description, kv.source_type, kv.source_uri, kv.is_crawl, kv.created_at, kv.updated_at,
+    kv.id, kv.name, kv.description, kv.source_type, kv.source_uri, kv.created_at, kv.updated_at, kv.is_crawl,
     (akv.id IS NOT NULL)::bool AS connected
 FROM knowledges_view kv
 LEFT JOIN agent_knowledges_view akv
@@ -364,9 +411,9 @@ type SelectKnowledgesWithAgentStatusRow struct {
 	Description *string   `json:"description"`
 	SourceType  string    `json:"source_type"`
 	SourceUri   *string   `json:"source_uri"`
-	IsCrawl     bool      `json:"is_crawl"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	IsCrawl     bool      `json:"is_crawl"`
 	Connected   bool      `json:"connected"`
 }
 
@@ -391,9 +438,9 @@ func (q *Queries) SelectKnowledgesWithAgentStatus(ctx context.Context, arg Selec
 			&i.Description,
 			&i.SourceType,
 			&i.SourceUri,
-			&i.IsCrawl,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.IsCrawl,
 			&i.Connected,
 		); err != nil {
 			return nil, err
