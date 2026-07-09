@@ -41,6 +41,35 @@ func (h *LogHandler) ReadMessages(w http.ResponseWriter, r *http.Request) {
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, messages, lib.ResponsePagination(int(pagination.Limit), int(pagination.Offset), len(messages), int(totalRow)))
 }
 
+// ReadAuditLogs returns the paginated audit feed. Optional ?user_id=, ?menu=,
+// and ?action= filters narrow the results; absent filters match all.
+func (h *LogHandler) ReadAuditLogs(w http.ResponseWriter, r *http.Request) {
+	params := r.URL.Query()
+	pagination := lib.ParsePaginationParams(params)
+
+	filter := store.SelectAuditLogsParams{
+		UserID: params.Get("user_id"),
+		Menu:   params.Get("menu"),
+		Action: params.Get("action"),
+		Limit:  pagination.Limit,
+		Offset: pagination.Offset * pagination.Limit,
+	}
+
+	logs, err := h.Queries.SelectAuditLogs(r.Context(), filter)
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get audit logs")
+		return
+	}
+
+	totalRow, err := h.Queries.CountAuditLogs(r.Context(), filter)
+	if err != nil {
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get audit logs")
+		return
+	}
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, logs, lib.ResponsePagination(int(pagination.Limit), int(pagination.Offset), len(logs), int(totalRow)))
+}
+
 // rangeSince maps a dashboard range param to the inclusive lower bound for
 // `bucket >= since`, and reports the timeseries bucket step ("hour" or "day").
 // Windows are rolling relative to now (24h = the last 24 hours, not since

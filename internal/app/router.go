@@ -82,6 +82,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(signer))
+			r.Use(middleware.Audit(kafka))
 			r.Route("/me", func(r chi.Router) {
 				r.Get("/", meHandler.Read)
 				r.Patch("/", meHandler.UpdateDetails)
@@ -170,6 +171,9 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 				r.Delete("/{id}", apiKeyHandler.Delete)
 			})
 			r.Route("/logs", func(r chi.Router) {
+				// audit trail (write/delete actions)
+				r.Get("/audit", logHandler.ReadAuditLogs)
+
 				// webhook message logs
 				r.Get("/messages", logHandler.ReadMessages)
 				r.Get("/messages/{id}", logHandler.ReadMessagesByAgentId)

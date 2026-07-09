@@ -19,6 +19,10 @@ type Querier interface {
 	IntentStats(ctx context.Context, arg IntentStatsParams) ([]IntentStatRow, error)
 	TopicStats(ctx context.Context, arg TopicStatsParams) ([]TopicStatRow, error)
 	SentimentStats(ctx context.Context, arg SentimentStatsParams) ([]SentimentStatRow, error)
+
+	// audit logs
+	SelectAuditLogs(ctx context.Context, arg SelectAuditLogsParams) ([]AuditLogView, error)
+	CountAuditLogs(ctx context.Context, arg SelectAuditLogsParams) (int64, error)
 }
 
 var _ Querier = (*Queries)(nil)

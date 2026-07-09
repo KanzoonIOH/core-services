@@ -11,3 +11,15 @@ type WebhookMessagesView struct {
 	Error          *string   `json:"error"`
 	OccurredAt     time.Time `json:"occurred_at"`
 }
+
+type AuditLogView struct {
+	OccurredAt time.Time `json:"occurred_at"`
+	UserID     string    `json:"user_id"`
+	Role       string    `json:"role"`
+	AuthMethod string    `json:"auth_method"`
+	Action     string    `json:"action"`
+	Menu       string    `json:"menu"`
+	Method     string    `json:"method"`
+	Path       string    `json:"path"`
+	Status     int32     `json:"status"`
+}

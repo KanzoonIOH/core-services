@@ -42,6 +42,7 @@ func main() {
 	defer stop()
 
 	handler.StartChatConsumer(ctx, app.KafkaBrokers(), ch)
+	handler.StartAuditConsumer(ctx, app.KafkaBrokers(), ch)
 
 	r := app.AppRouter(conn, kafka, ch)
 
