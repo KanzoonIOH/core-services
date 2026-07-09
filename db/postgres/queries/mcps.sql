@@ -65,6 +65,11 @@ SELECT
         WHERE t.mcp_id = m.id AND t.deleted_at IS NULL
     ) AS tools_count,
     (
+        SELECT count(*)
+        FROM agent_mcps_view amv
+        WHERE amv.mcp_id = m.id
+    ) AS agents_count,
+    (
         SELECT COALESCE(jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'color', t.color) ORDER BY t.name), '[]'::jsonb)
         FROM mcp_tags mt
         JOIN tags_view t ON t.id = mt.tag_id

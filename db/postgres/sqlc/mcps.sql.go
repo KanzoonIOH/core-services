@@ -164,6 +164,11 @@ SELECT
         WHERE t.mcp_id = m.id AND t.deleted_at IS NULL
     ) AS tools_count,
     (
+        SELECT count(*)
+        FROM agent_mcps_view amv
+        WHERE amv.mcp_id = m.id
+    ) AS agents_count,
+    (
         SELECT COALESCE(jsonb_agg(jsonb_build_object('id', t.id, 'name', t.name, 'color', t.color) ORDER BY t.name), '[]'::jsonb)
         FROM mcp_tags mt
         JOIN tags_view t ON t.id = mt.tag_id
@@ -218,6 +223,7 @@ type SelectMcpsRow struct {
 	UpdatedAt   time.Time       `json:"updated_at"`
 	Headers     json.RawMessage `json:"headers"`
 	ToolsCount  int64           `json:"tools_count"`
+	AgentsCount int64           `json:"agents_count"`
 	Tags        json.RawMessage `json:"tags"`
 }
 
@@ -245,6 +251,7 @@ func (q *Queries) SelectMcps(ctx context.Context, arg SelectMcpsParams) ([]Selec
 			&i.UpdatedAt,
 			&i.Headers,
 			&i.ToolsCount,
+			&i.AgentsCount,
 			&i.Tags,
 		); err != nil {
 			return nil, err
