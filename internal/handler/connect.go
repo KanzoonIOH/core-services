@@ -41,7 +41,7 @@ func NewConnectHandler(conn *pgxpool.Pool) *ConnectHandler {
 	return &ConnectHandler{
 		Queries:            db.New(conn),
 		knowledgeAddURL:    base + "/knowledge/add/v2",
-		knowledgeDeleteURL: base + "/knowledge/delete",
+		knowledgeDeleteURL: base + "/knowledge",
 		HTTPClient: &http.Client{
 			Timeout: 10 * time.Minute,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
