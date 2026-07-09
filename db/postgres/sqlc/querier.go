@@ -55,6 +55,7 @@ type Querier interface {
 	SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]SelectAgentsRow, error)
 	SelectAgentsByKnowledgeId(ctx context.Context, arg SelectAgentsByKnowledgeIdParams) ([]SelectAgentsByKnowledgeIdRow, error)
 	SelectAgentsByMcpId(ctx context.Context, arg SelectAgentsByMcpIdParams) ([]SelectAgentsByMcpIdRow, error)
+	// Auth lookup: rejects expired keys (NULL expires_at = never expires).
 	SelectApiKeyByToken(ctx context.Context, token string) (ApiKeysView, error)
 	SelectApiKeys(ctx context.Context, arg SelectApiKeysParams) ([]ApiKeysView, error)
 	SelectConversationById(ctx context.Context, id uuid.UUID) (SelectConversationByIdRow, error)

@@ -463,13 +463,15 @@ type ApiKey struct {
 	Token     string     `json:"token"`
 	CreatedAt time.Time  `json:"created_at"`
 	RevokedAt *time.Time `json:"revoked_at"`
+	ExpiresAt *time.Time `json:"expires_at"`
 }
 
 type ApiKeysView struct {
-	ID        uuid.UUID `json:"id"`
-	Name      string    `json:"name"`
-	Token     string    `json:"token"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        uuid.UUID  `json:"id"`
+	Name      string     `json:"name"`
+	Token     string     `json:"token"`
+	ExpiresAt *time.Time `json:"expires_at"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 type Conversation struct {

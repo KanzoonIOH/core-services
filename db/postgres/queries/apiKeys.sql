@@ -1,17 +1,20 @@
 -- name: InsertApiKey :one
-INSERT INTO api_keys (name, token)
+INSERT INTO api_keys (name, token, expires_at)
 VALUES (
     sqlc.arg(name),
-    sqlc.arg(token)
+    sqlc.arg(token),
+    sqlc.narg(expires_at)
 )
-RETURNING id, name, token, created_at;
+RETURNING id, name, token, expires_at, created_at;
 
 -- name: CountApiKeys :one
 SELECT COUNT(*) FROM api_keys_view;
 
 -- name: SelectApiKeyByToken :one
+-- Auth lookup: rejects expired keys (NULL expires_at = never expires).
 SELECT * FROM api_keys_view
-WHERE token = sqlc.arg(token);
+WHERE token = sqlc.arg(token)
+    AND (expires_at IS NULL OR expires_at > now());
 
 -- name: RevokeApiKey :execrows
 UPDATE api_keys

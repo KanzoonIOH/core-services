@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -30,6 +31,8 @@ func generateApiToken() (string, error) {
 
 type apiKeyCreateRequest struct {
 	Name string `json:"name"`
+	// Optional; null/omitted means the key never expires.
+	ExpiresAt *time.Time `json:"expires_at"`
 }
 
 func (h *ApiKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -45,6 +48,11 @@ func (h *ApiKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.ExpiresAt != nil && !req.ExpiresAt.After(time.Now()) {
+		lib.ResponseJSONError(w, http.StatusBadRequest, "expiration date must be in the future")
+		return
+	}
+
 	token, err := generateApiToken()
 	if err != nil {
 		fmt.Printf("%v\n", err)
@@ -53,8 +61,9 @@ func (h *ApiKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	apiKey, err := h.Queries.InsertApiKey(r.Context(), db.InsertApiKeyParams{
-		Name:  req.Name,
-		Token: token,
+		Name:      req.Name,
+		Token:     token,
+		ExpiresAt: req.ExpiresAt,
 	})
 	if err != nil {
 		fmt.Printf("%v\n", err)

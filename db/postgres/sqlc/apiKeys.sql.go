@@ -24,33 +24,37 @@ func (q *Queries) CountApiKeys(ctx context.Context) (int64, error) {
 }
 
 const insertApiKey = `-- name: InsertApiKey :one
-INSERT INTO api_keys (name, token)
+INSERT INTO api_keys (name, token, expires_at)
 VALUES (
     $1,
-    $2
+    $2,
+    $3
 )
-RETURNING id, name, token, created_at
+RETURNING id, name, token, expires_at, created_at
 `
 
 type InsertApiKeyParams struct {
-	Name  string `json:"name"`
-	Token string `json:"token"`
+	Name      string     `json:"name"`
+	Token     string     `json:"token"`
+	ExpiresAt *time.Time `json:"expires_at"`
 }
 
 type InsertApiKeyRow struct {
-	ID        uuid.UUID `json:"id"`
-	Name      string    `json:"name"`
-	Token     string    `json:"token"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        uuid.UUID  `json:"id"`
+	Name      string     `json:"name"`
+	Token     string     `json:"token"`
+	ExpiresAt *time.Time `json:"expires_at"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 func (q *Queries) InsertApiKey(ctx context.Context, arg InsertApiKeyParams) (InsertApiKeyRow, error) {
-	row := q.db.QueryRow(ctx, insertApiKey, arg.Name, arg.Token)
+	row := q.db.QueryRow(ctx, insertApiKey, arg.Name, arg.Token, arg.ExpiresAt)
 	var i InsertApiKeyRow
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
 		&i.Token,
+		&i.ExpiresAt,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -73,10 +77,12 @@ func (q *Queries) RevokeApiKey(ctx context.Context, id uuid.UUID) (int64, error)
 }
 
 const selectApiKeyByToken = `-- name: SelectApiKeyByToken :one
-SELECT id, name, token, created_at FROM api_keys_view
+SELECT id, name, token, expires_at, created_at FROM api_keys_view
 WHERE token = $1
+    AND (expires_at IS NULL OR expires_at > now())
 `
 
+// Auth lookup: rejects expired keys (NULL expires_at = never expires).
 func (q *Queries) SelectApiKeyByToken(ctx context.Context, token string) (ApiKeysView, error) {
 	row := q.db.QueryRow(ctx, selectApiKeyByToken, token)
 	var i ApiKeysView
@@ -84,13 +90,14 @@ func (q *Queries) SelectApiKeyByToken(ctx context.Context, token string) (ApiKey
 		&i.ID,
 		&i.Name,
 		&i.Token,
+		&i.ExpiresAt,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const selectApiKeys = `-- name: SelectApiKeys :many
-SELECT id, name, token, created_at FROM api_keys_view
+SELECT id, name, token, expires_at, created_at FROM api_keys_view
 ORDER BY
     CASE WHEN $1::text = 'name_asc' THEN name END ASC,
     CASE WHEN $1::text = 'name_desc' THEN name END DESC,
@@ -119,6 +126,7 @@ func (q *Queries) SelectApiKeys(ctx context.Context, arg SelectApiKeysParams) ([
 			&i.ID,
 			&i.Name,
 			&i.Token,
+			&i.ExpiresAt,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
