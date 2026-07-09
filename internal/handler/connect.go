@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"strings"
 	"time"
@@ -40,7 +41,7 @@ func NewConnectHandler(conn *pgxpool.Pool) *ConnectHandler {
 	return &ConnectHandler{
 		Queries:            db.New(conn),
 		knowledgeAddURL:    base + "/knowledge/add/v2",
-		knowledgeDeleteURL: base + "/knowledge/delete/v2",
+		knowledgeDeleteURL: base + "/knowledge/delete",
 		HTTPClient: &http.Client{
 			Timeout: 10 * time.Minute,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -303,27 +304,37 @@ func (h *ConnectHandler) triggerKnowledgeDeletion(agentKnowledgeID, agentID, kno
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	url := h.knowledgeDeleteURL
-	// Identical body shape to connect (triggerKnowledgeConversion).
-	payload, err := json.Marshal(knowledgeV2Body(agentKnowledgeID, agentID, knowledgeID, sourceURI, sourceType, isCrawl, milvusCollection))
-	if err != nil {
-		log.Printf("[core-service][rag-knowledge-delete] payload marshal error knowledge_id=%s collection=%s error=%v", knowledgeID, milvusCollection, err)
-		return
-	}
-	log.Printf("[core-service][rag-knowledge-delete] fetch start method=%s url=%s params={knowledge_id:%s collection:%s} payload=%s", http.MethodPost, url, knowledgeID, milvusCollection, string(payload))
+	// Delete is DELETE with no body: everything goes in the query string.
+	// v2SourceType := "file"
+	// if sourceType == "web" {
+	// 	v2SourceType = "web"
+	// }
+	q := neturl.Values{}
+	q.Set("agent_knowledge_id", agentKnowledgeID.String())
+	q.Set("document_id", knowledgeID.String())
+	// if sourceURI != nil {
+	// 	q.Set("document_link", *sourceURI)
+	// }
+	// q.Set("source_type", v2SourceType)
+	// if v2SourceType == "web" && isCrawl {
+	// 	q.Set("scrape_mode", "crawl")
+	// }
+	// q.Set("agent_id", agentID.String())
+	q.Set("collection_name", milvusCollection)
+	url := h.knowledgeDeleteURL + "?" + q.Encode()
+	log.Printf("[core-service][rag-knowledge-delete] fetch start method=%s url=%s params={knowledge_id:%s collection:%s}", http.MethodDelete, url, knowledgeID, milvusCollection)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
 	if err != nil {
 		log.Printf("[core-service][rag-knowledge-delete] request build error knowledge_id=%s url=%s error=%v", knowledgeID, url, err)
 		return
 	}
-	req.Header.Set("Content-Type", "application/json")
 
 	started := time.Now()
 	resp, err := h.HTTPClient.Do(req)
 	duration := time.Since(started)
 	if err != nil {
-		log.Printf("[core-service][rag-knowledge-delete] fetch error method=%s url=%s duration=%s knowledge_id=%s error=%v", http.MethodPost, url, duration, knowledgeID, err)
+		log.Printf("[core-service][rag-knowledge-delete] fetch error method=%s url=%s duration=%s knowledge_id=%s error=%v", http.MethodDelete, url, duration, knowledgeID, err)
 		return
 	}
 	defer resp.Body.Close()
@@ -334,7 +345,7 @@ func (h *ConnectHandler) triggerKnowledgeDeletion(agentKnowledgeID, agentID, kno
 		log.Printf("[core-service][rag-knowledge-delete] response body read error status=%d duration=%s error=%v", resp.StatusCode, duration, readErr)
 	}
 
-	log.Printf("[core-service][rag-knowledge-delete] fetch returned method=%s url=%s status=%d duration=%s response_body=%q", http.MethodPost, url, resp.StatusCode, duration, bodyText)
+	log.Printf("[core-service][rag-knowledge-delete] fetch returned method=%s url=%s status=%d duration=%s response_body=%q", http.MethodDelete, url, resp.StatusCode, duration, bodyText)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		log.Printf("[core-service][rag-knowledge-delete] fetch failed knowledge_id=%s status=%d reason=API returned non-2xx body=%q", knowledgeID, resp.StatusCode, bodyText)
 		return
