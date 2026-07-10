@@ -78,6 +78,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 			r.Use(middleware.AuthOrApiKey(signer, webhookHandler.Queries))
 			// No timeout here — webhook forwards to upstream and may take a long time
 			r.Post("/chat/{id}", webhookHandler.ForwardChatWebhook)
+			r.Post("/chat/{id}/stream", webhookHandler.ForwardChatWebhookStream)
 			r.Post("/chat/{id}/conversation/end", conversationHandler.EndConversation)
 		})
 		r.Group(func(r chi.Router) {
