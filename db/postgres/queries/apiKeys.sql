@@ -16,6 +16,12 @@ SELECT * FROM api_keys_view
 WHERE token = sqlc.arg(token)
     AND (expires_at IS NULL OR expires_at > now());
 
+-- name: UpdateApiKeyName :one
+UPDATE api_keys
+SET name = sqlc.arg(name)
+WHERE revoked_at IS NULL AND id = sqlc.arg(id)
+RETURNING id, name, token, expires_at, created_at;
+
 -- name: RevokeApiKey :execrows
 UPDATE api_keys
 SET revoked_at = NOW()

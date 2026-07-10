@@ -138,3 +138,36 @@ func (q *Queries) SelectApiKeys(ctx context.Context, arg SelectApiKeysParams) ([
 	}
 	return items, nil
 }
+
+const updateApiKeyName = `-- name: UpdateApiKeyName :one
+UPDATE api_keys
+SET name = $1
+WHERE revoked_at IS NULL AND id = $2
+RETURNING id, name, token, expires_at, created_at
+`
+
+type UpdateApiKeyNameParams struct {
+	Name string    `json:"name"`
+	ID   uuid.UUID `json:"id"`
+}
+
+type UpdateApiKeyNameRow struct {
+	ID        uuid.UUID  `json:"id"`
+	Name      string     `json:"name"`
+	Token     string     `json:"token"`
+	ExpiresAt *time.Time `json:"expires_at"`
+	CreatedAt time.Time  `json:"created_at"`
+}
+
+func (q *Queries) UpdateApiKeyName(ctx context.Context, arg UpdateApiKeyNameParams) (UpdateApiKeyNameRow, error) {
+	row := q.db.QueryRow(ctx, updateApiKeyName, arg.Name, arg.ID)
+	var i UpdateApiKeyNameRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Token,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}

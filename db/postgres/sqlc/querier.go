@@ -93,6 +93,7 @@ type Querier interface {
 	UpdateAgentKnowledge(ctx context.Context, arg UpdateAgentKnowledgeParams) (UpdateAgentKnowledgeRow, error)
 	UpdateAgentKnowledgeStatus(ctx context.Context, arg UpdateAgentKnowledgeStatusParams) (int64, error)
 	UpdateAgentPersona(ctx context.Context, arg UpdateAgentPersonaParams) (UpdateAgentPersonaRow, error)
+	UpdateApiKeyName(ctx context.Context, arg UpdateApiKeyNameParams) (UpdateApiKeyNameRow, error)
 	UpdateGlobalConfig(ctx context.Context, arg UpdateGlobalConfigParams) (GlobalConfig, error)
 	UpdateKnowledge(ctx context.Context, arg UpdateKnowledgeParams) (UpdateKnowledgeRow, error)
 	UpdateMcp(ctx context.Context, arg UpdateMcpParams) (UpdateMcpRow, error)

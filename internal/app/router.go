@@ -168,6 +168,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 			r.Route("/api-keys", func(r chi.Router) {
 				r.Post("/", apiKeyHandler.Create)
 				r.Get("/", apiKeyHandler.Read)
+				r.Patch("/{id}", apiKeyHandler.Update)
 				r.Delete("/{id}", apiKeyHandler.Delete)
 			})
 			r.Route("/logs", func(r chi.Router) {

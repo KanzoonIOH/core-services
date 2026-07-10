@@ -100,6 +100,40 @@ func (h *ApiKeyHandler) Read(w http.ResponseWriter, r *http.Request) {
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, apiKeys, lib.ResponsePagination(int(pagination.Limit), int(pagination.Offset), len(apiKeys), int(totalRow)))
 }
 
+type apiKeyUpdateRequest struct {
+	Name string `json:"name"`
+}
+
+func (h *ApiKeyHandler) Update(w http.ResponseWriter, r *http.Request) {
+	id, ok := lib.ParseID(w, r, "id")
+	if !ok {
+		return
+	}
+
+	var req apiKeyUpdateRequest
+	if !lib.ParseJSONBody(w, r, &req) {
+		return
+	}
+
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		lib.ResponseJSONError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+
+	apiKey, err := h.Queries.UpdateApiKeyName(r.Context(), db.UpdateApiKeyNameParams{
+		ID:   id,
+		Name: req.Name,
+	})
+	if err != nil {
+		fmt.Printf("%v\n", err)
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to update api key")
+		return
+	}
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, apiKey, nil)
+}
+
 func (h *ApiKeyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, ok := lib.ParseID(w, r, "id")
 	if !ok {
