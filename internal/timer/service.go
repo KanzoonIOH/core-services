@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"os"
 	"sync/atomic"
 	"time"
 
@@ -123,6 +124,18 @@ func (s *Service) Run(ctx context.Context, brokers []string) error {
 		// Offsets are committed manually and gated behind unresolved timers so a
 		// restart replays pending activity (see commit logic below).
 		kgo.DisableAutoCommit(),
+		// ponytail: diagnostic — surface franz-go internals; remove once stable
+		kgo.WithLogger(kgo.BasicLogger(os.Stderr, kgo.LogLevelDebug, func() string { return "kgo " })),
+		kgo.OnPartitionsAssigned(func(_ context.Context, _ *kgo.Client, m map[string][]int32) {
+			for topic, parts := range m {
+				log.Printf("timer service assigned topic=%s partitions=%v", topic, parts)
+			}
+		}),
+		kgo.OnPartitionsRevoked(func(_ context.Context, _ *kgo.Client, m map[string][]int32) {
+			for topic, parts := range m {
+				log.Printf("timer service revoked topic=%s partitions=%v", topic, parts)
+			}
+		}),
 	)
 	if err != nil {
 		return err
