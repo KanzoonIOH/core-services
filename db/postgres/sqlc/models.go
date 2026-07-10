@@ -385,6 +385,8 @@ type Agent struct {
 	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 	Guardrail             string                  `json:"guardrail"`
 	Image                 *string                 `json:"image"`
+	CanAct                bool                    `json:"can_act"`
+	TemplateID            string                  `json:"template_id"`
 }
 
 type AgentKnowledge struct {
@@ -455,6 +457,8 @@ type AgentsView struct {
 	WebhookHeaderFields   json.RawMessage         `json:"webhook_header_fields"`
 	Guardrail             string                  `json:"guardrail"`
 	Image                 *string                 `json:"image"`
+	CanAct                bool                    `json:"can_act"`
+	TemplateID            string                  `json:"template_id"`
 }
 
 type ApiKey struct {
@@ -597,6 +601,58 @@ type Message struct {
 	Attachments    json.RawMessage `json:"attachments"`
 	Data           json.RawMessage `json:"data"`
 	CreatedAt      time.Time       `json:"created_at"`
+}
+
+type Orchestrator struct {
+	ID                  uuid.UUID  `json:"id"`
+	Name                string     `json:"name"`
+	Description         *string    `json:"description"`
+	IsActive            bool       `json:"is_active"`
+	OrchestratorAgentID string     `json:"orchestrator_agent_id"`
+	RoutingGuide        string     `json:"routing_guide"`
+	Persona             string     `json:"persona"`
+	Guardrail           string     `json:"guardrail"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
+	DeletedAt           *time.Time `json:"deleted_at"`
+	Image               *string    `json:"image"`
+	WebhookUri          string     `json:"webhook_uri"`
+}
+
+type OrchestratorAgent struct {
+	ID             uuid.UUID  `json:"id"`
+	OrchestratorID uuid.UUID  `json:"orchestrator_id"`
+	AgentID        uuid.UUID  `json:"agent_id"`
+	ToolName       string     `json:"tool_name"`
+	Description    string     `json:"description"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	DeletedAt      *time.Time `json:"deleted_at"`
+}
+
+type OrchestratorAgentsView struct {
+	ID             uuid.UUID `json:"id"`
+	OrchestratorID uuid.UUID `json:"orchestrator_id"`
+	AgentID        uuid.UUID `json:"agent_id"`
+	ToolName       string    `json:"tool_name"`
+	Description    string    `json:"description"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+type OrchestratorsView struct {
+	ID                  uuid.UUID `json:"id"`
+	Name                string    `json:"name"`
+	Description         *string   `json:"description"`
+	IsActive            bool      `json:"is_active"`
+	OrchestratorAgentID string    `json:"orchestrator_agent_id"`
+	RoutingGuide        string    `json:"routing_guide"`
+	Persona             string    `json:"persona"`
+	Guardrail           string    `json:"guardrail"`
+	Image               *string   `json:"image"`
+	WebhookUri          string    `json:"webhook_uri"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 type Tag struct {

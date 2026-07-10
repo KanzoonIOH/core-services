@@ -29,6 +29,7 @@ type Querier interface {
 	CountMcps(ctx context.Context, arg CountMcpsParams) (int64, error)
 	CountMcpsByAgentId(ctx context.Context, arg CountMcpsByAgentIdParams) (int64, error)
 	CountMembers(ctx context.Context, role *string) (int64, error)
+	CountOrchestrators(ctx context.Context, arg CountOrchestratorsParams) (int64, error)
 	DeleteAgentTags(ctx context.Context, agentID uuid.UUID) error
 	DeleteConversation(ctx context.Context, id uuid.UUID) error
 	DeleteKnowledgeTags(ctx context.Context, knowledgeID uuid.UUID) error
@@ -46,6 +47,8 @@ type Querier interface {
 	InsertMcpTag(ctx context.Context, arg InsertMcpTagParams) error
 	InsertMcpTool(ctx context.Context, arg InsertMcpToolParams) (InsertMcpToolRow, error)
 	InsertMessage(ctx context.Context, arg InsertMessageParams) error
+	InsertOrchestrator(ctx context.Context, arg InsertOrchestratorParams) (InsertOrchestratorRow, error)
+	InsertOrchestratorAgent(ctx context.Context, arg InsertOrchestratorAgentParams) (InsertOrchestratorAgentRow, error)
 	InsertUpcomingChange(ctx context.Context, arg InsertUpcomingChangeParams) (UpcomingChange, error)
 	// Creates a passwordless PENDING user for the email-invite flow. Username/name
 	// default to the email until the invitee sets their own on accept.
@@ -77,6 +80,11 @@ type Querier interface {
 	// invited_token: the active (non-revoked, non-expired) INVITE token, if any,
 	// so the UI can surface the accept link for pending invites.
 	SelectMembers(ctx context.Context, arg SelectMembersParams) ([]SelectMembersRow, error)
+	// Per-agent mapping joined to the agent row so callers get the derived fields
+	// (endpoint == agent.template_id, can_act) without us storing them redundantly.
+	SelectOrchestratorAgents(ctx context.Context, orchestratorID uuid.UUID) ([]SelectOrchestratorAgentsRow, error)
+	SelectOrchestratorById(ctx context.Context, id uuid.UUID) (OrchestratorsView, error)
+	SelectOrchestrators(ctx context.Context, arg SelectOrchestratorsParams) ([]SelectOrchestratorsRow, error)
 	SelectTags(ctx context.Context) ([]SelectTagsRow, error)
 	SelectUpcomingChangeByToken(ctx context.Context, token string) (UpcomingChange, error)
 	SelectUserById(ctx context.Context, id uuid.UUID) (UsersView, error)
@@ -92,6 +100,7 @@ type Querier interface {
 	SoftDeleteMcp(ctx context.Context, id uuid.UUID) (int64, error)
 	SoftDeleteMcpToolsByMcpId(ctx context.Context, mcpID uuid.UUID) (int64, error)
 	SoftDeleteMember(ctx context.Context, id uuid.UUID) (int64, error)
+	SoftDeleteOrchestrator(ctx context.Context, id uuid.UUID) (int64, error)
 	SoftDeleteTag(ctx context.Context, id uuid.UUID) (int64, error)
 	UpdateAgent(ctx context.Context, arg UpdateAgentParams) (UpdateAgentRow, error)
 	UpdateAgentKnowledge(ctx context.Context, arg UpdateAgentKnowledgeParams) (UpdateAgentKnowledgeRow, error)
@@ -102,6 +111,7 @@ type Querier interface {
 	UpdateKnowledge(ctx context.Context, arg UpdateKnowledgeParams) (UpdateKnowledgeRow, error)
 	UpdateMcp(ctx context.Context, arg UpdateMcpParams) (UpdateMcpRow, error)
 	UpdateMemberStatus(ctx context.Context, arg UpdateMemberStatusParams) (UpdateMemberStatusRow, error)
+	UpdateOrchestrator(ctx context.Context, arg UpdateOrchestratorParams) (UpdateOrchestratorRow, error)
 	UpdateTag(ctx context.Context, arg UpdateTagParams) (UpdateTagRow, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateUserRow, error)
 	UpsertConversation(ctx context.Context, arg UpsertConversationParams) error

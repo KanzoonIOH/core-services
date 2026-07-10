@@ -45,8 +45,7 @@ func (h *WebhookHandler) ForwardChatWebhookStream(w http.ResponseWriter, r *http
 	agent, err := h.Queries.SelectAgentById(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			h.publishWebhookMessage(id.String(), conversationID, http.StatusNotFound, hitTime, "agent not found")
-			lib.ResponseJSONError(w, http.StatusNotFound, "agent not found")
+			h.forwardOrchestratorChat(w, r, id, conversationID, hitTime, true)
 			return
 		}
 		h.publishWebhookMessage(id.String(), conversationID, http.StatusInternalServerError, hitTime, "failed to get agent")

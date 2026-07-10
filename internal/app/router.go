@@ -30,6 +30,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 	objectStorage := newObjectStorage()
 
 	agentHandler := handler.NewAgentHandler(conn)
+	orchestratorHandler := handler.NewOrchestratorHandler(conn)
 	tagHandler := handler.NewTagHandler(conn)
 	mcpHandler := handler.NewMcpHandler(conn)
 	knowledgeHandler := handler.NewKnowledgeHandler(conn, objectStorage)
@@ -67,6 +68,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 		r.Route("/internal", func(r chi.Router) {
 			r.Use(middleware.InternalKey(mustEnv("INTERNAL_API_KEY")))
 			r.Get("/agent/{id}", agentHandler.ReadById)
+			r.Get("/orchestrator/{id}", orchestratorHandler.ReadById)
 			r.Get("/mcp/{id}", mcpHandler.ReadByAgentId)
 			// Called by the n8n conversion workflow using the internal key.
 			r.Patch("/callbacks/agent-knowledge-status", callbackHandler.UpdateAgentKnowledgeStatus)
@@ -116,6 +118,13 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 				r.Get("/{id}/mcps/all", mcpHandler.ReadAllByAgentId)
 				r.Get("/{id}/knowledges", knowledgeHandler.ReadByAgentId)
 				r.Get("/{id}/knowledges/all", knowledgeHandler.ReadAllByAgentId)
+			})
+			r.Route("/orchestrators", func(r chi.Router) {
+				r.Post("/", orchestratorHandler.Create)
+				r.Get("/", orchestratorHandler.Read)
+				r.Get("/{id}", orchestratorHandler.ReadById)
+				r.Patch("/{id}", orchestratorHandler.Update)
+				r.Delete("/{id}", orchestratorHandler.Delete)
 			})
 			r.Post("/uploads/image", uploadHandler.Image)
 			r.Route("/tags", func(r chi.Router) {

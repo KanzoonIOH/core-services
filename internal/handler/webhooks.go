@@ -125,11 +125,12 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// id may be an orchestrator, not an agent. Try agent first; on NotFound,
+	// fall through to the orchestrator chat forwarder.
 	agent, err := h.Queries.SelectAgentById(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			h.publishWebhookMessage(id.String(), conversationID, http.StatusNotFound, hitTime, "agent not found")
-			lib.ResponseJSONError(w, http.StatusNotFound, "agent not found")
+			h.forwardOrchestratorChat(w, r, id, conversationID, hitTime, false)
 			return
 		}
 		h.publishWebhookMessage(id.String(), conversationID, http.StatusInternalServerError, hitTime, "failed to get agent")
@@ -522,4 +523,225 @@ func isHopByHopHeader(key string) bool {
 	default:
 		return false
 	}
+}
+
+// forwardOrchestratorChat handles /chat/{id} when the id resolves to an
+// orchestrator instead of an agent. It reads the orchestrator's webhook_uri
+// and forwards the request there, same body shape as agent chat. Orchestrators
+// have no body/header field injection, no IP/origin allowlist, and no
+// input/output field mapping — the body is assembled minimally.
+func (h *WebhookHandler) forwardOrchestratorChat(
+	w http.ResponseWriter,
+	r *http.Request,
+	id uuid.UUID,
+	conversationID string,
+	hitTime time.Time,
+	stream bool,
+) {
+	orch, err := h.Queries.SelectOrchestratorById(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			h.publishWebhookMessage(id.String(), conversationID, http.StatusNotFound, hitTime, "agent not found")
+			lib.ResponseJSONError(w, http.StatusNotFound, "agent not found")
+			return
+		}
+		h.publishWebhookMessage(id.String(), conversationID, http.StatusInternalServerError, hitTime, "failed to get orchestrator")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get orchestrator")
+		return
+	}
+
+	if middleware.IsApiKeyAuth(r.Context()) && !orch.IsActive {
+		h.publishWebhookMessage(id.String(), conversationID, http.StatusForbidden, hitTime, "orchestrator is not active")
+		lib.ResponseJSONError(w, http.StatusForbidden, "orchestrator is not active")
+		return
+	}
+
+	if orch.WebhookUri == "" {
+		h.publishWebhookMessage(id.String(), conversationID, http.StatusBadRequest, hitTime, "orchestrator has no webhook_uri configured")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "orchestrator has no webhook_uri configured")
+		return
+	}
+
+	targetURL := orch.WebhookUri
+	if stream {
+		targetURL = strings.TrimRight(orch.WebhookUri, "/") + "/stream"
+	}
+	if r.URL.RawQuery != "" {
+		targetURL += "?" + r.URL.RawQuery
+	}
+
+	log.Printf("chat orchestrator proxy: id=%s session=%s target=%s stream=%v", id, conversationID, targetURL, stream)
+	h.publishConversationActivity(id.String(), conversationID, hitTime)
+
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		h.publishWebhookMessage(id.String(), conversationID, http.StatusBadRequest, hitTime, "failed to read request body")
+		lib.ResponseJSONError(w, http.StatusBadRequest, "failed to read request body")
+		return
+	}
+
+	var bodyMap map[string]any
+	if len(bodyBytes) > 0 {
+		if err := json.Unmarshal(bodyBytes, &bodyMap); err != nil {
+			h.publishWebhookMessage(id.String(), conversationID, http.StatusBadRequest, hitTime, "invalid JSON body")
+			lib.ResponseJSONError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+	} else {
+		bodyMap = map[string]any{}
+	}
+
+	h.ensureConversation(id, conversationID)
+	h.storeMessage(conversationID, db.MessageRoleUser, bodyMap["chatInput"], bodyMap["attachments"], nil)
+
+	// Strip the reserved "headers" object (orchestrators don't use it, but the
+	// frontend may send an empty one).
+	delete(bodyMap, "headers")
+
+	bodyMap["sessionId"] = conversationID
+	bodyMap["agentId"] = id.String()
+
+	// Parse the orchestrator's persona blob for tone/length/style. Falls back
+	// to defaults if the blob is empty or not JSON.
+	tone, length, style := orchestratorPersonaFields(orch.Persona)
+	bodyMap["tone"] = tone
+	bodyMap["length"] = length
+	bodyMap["style"] = style
+
+	cfg, cfgErr := h.Queries.GetGlobalConfig(r.Context())
+	if cfgErr != nil {
+		log.Printf("[core-service][chat-orchestrator] global config read failed: %v", cfgErr)
+	}
+	bodyMap["systemPrompt"] = map[string]any{
+		"agent_name":           cfg.AgentName,
+		"industry_description": cfg.IndustryDescription,
+		"guardrail":            cfg.Guardrail,
+	}
+	// Merge the orchestrator's own guardrail on top of the global one.
+	if orch.Guardrail != "" {
+		bodyMap["guardrail"] = orch.Guardrail
+	}
+	if orch.RoutingGuide != "" {
+		bodyMap["routingGuide"] = orch.RoutingGuide
+	}
+
+	modifiedBody, err := json.Marshal(bodyMap)
+	if err != nil {
+		h.publishWebhookMessage(id.String(), conversationID, http.StatusInternalServerError, hitTime, "failed to encode request body")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to encode request body")
+		return
+	}
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, targetURL, bytes.NewReader(modifiedBody))
+	if err != nil {
+		h.publishWebhookMessage(id.String(), conversationID, http.StatusInternalServerError, hitTime, "failed to create webhook request")
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to create webhook request")
+		return
+	}
+	copyForwardHeaders(req.Header, r.Header)
+	req.Header.Set("Content-Type", "application/json")
+	if stream {
+		req.Header.Set("Accept", "text/event-stream")
+	}
+
+	log.Printf("chat orchestrator request: %s", curlPreview(req, modifiedBody))
+
+	res, err := h.HTTPClient.Do(req)
+	if err != nil {
+		log.Printf("chat orchestrator forward error: %v", err)
+		h.publishWebhookMessage(id.String(), conversationID, http.StatusBadGateway, hitTime, err.Error())
+		lib.ResponseJSONError(w, http.StatusBadGateway, "failed to forward webhook request")
+		return
+	}
+	defer res.Body.Close()
+
+	isSuccess := res.StatusCode >= 200 && res.StatusCode < 300
+	var errorMessage string
+	if !isSuccess {
+		errorMessage = fmt.Sprintf("upstream returned status %d", res.StatusCode)
+	}
+	h.publishWebhookMessage(id.String(), conversationID, res.StatusCode, hitTime, errorMessage)
+
+	if stream {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			lib.ResponseJSONError(w, http.StatusInternalServerError, "streaming unsupported")
+			return
+		}
+		copyResponseHeaders(w.Header(), res.Header)
+		w.Header().Set("X-Session-Id", conversationID)
+		if w.Header().Get("Content-Type") == "" {
+			w.Header().Set("Content-Type", "text/event-stream")
+		}
+		w.Header().Set("Cache-Control", "no-cache")
+		w.WriteHeader(res.StatusCode)
+		flusher.Flush()
+
+		var captured bytes.Buffer
+		buf := make([]byte, 32*1024)
+		for {
+			n, readErr := res.Body.Read(buf)
+			if n > 0 {
+				if _, werr := w.Write(buf[:n]); werr != nil {
+					return
+				}
+				captured.Write(buf[:n])
+				flusher.Flush()
+			}
+			if readErr == io.EOF {
+				break
+			}
+			if readErr != nil {
+				break
+			}
+		}
+		if isSuccess {
+			h.persistStreamedReply(conversationID, "reply", captured.Bytes())
+		}
+		return
+	}
+
+	// Non-stream: buffer + relay verbatim, persist the reply.
+	respBytes, _ := io.ReadAll(res.Body)
+	if isSuccess {
+		var respMap map[string]any
+		if json.Unmarshal(respBytes, &respMap) == nil {
+			outputField := "reply"
+			h.storeMessage(conversationID, db.MessageRoleAssistant, respMap[outputField], respMap["attachments"], respMap["data"])
+		}
+	}
+
+	copyResponseHeaders(w.Header(), res.Header)
+	w.Header().Set("X-Session-Id", conversationID)
+	w.WriteHeader(res.StatusCode)
+	_, _ = w.Write(respBytes)
+}
+
+// orchestratorPersonaFields parses the orchestrator persona blob (JSON with
+// tone/response_length/communication_style) and returns the values. Falls back
+// to defaults when the blob is empty or unparseable.
+func orchestratorPersonaFields(raw string) (tone, length, style string) {
+	tone = "FRIENDLY"
+	length = "MEDIUM"
+	style = "EXPERT_ADVISOR"
+	if raw == "" {
+		return
+	}
+	var p struct {
+		Tone               string `json:"tone"`
+		ResponseLength     string `json:"response_length"`
+		CommunicationStyle string `json:"communication_style"`
+	}
+	if json.Unmarshal([]byte(raw), &p) == nil {
+		if p.Tone != "" {
+			tone = p.Tone
+		}
+		if p.ResponseLength != "" {
+			length = p.ResponseLength
+		}
+		if p.CommunicationStyle != "" {
+			style = p.CommunicationStyle
+		}
+	}
+	return
 }

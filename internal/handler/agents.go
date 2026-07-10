@@ -159,7 +159,9 @@ type createAgentRequest struct {
 	WebhookHeaderFields   []BodyField `json:"webhook_header_fields"`
 	Guardrail             string      `json:"guardrail"`
 	Tags                  []string    `json:"tags"`
-	Image                 *string     `json:"image"` // emoji string or object-storage URL
+	Image                 *string     `json:"image"`  // emoji string or object-storage URL
+	CanAct                bool        `json:"can_act"`
+	TemplateID            string      `json:"template_id"` // static template id ("product", "booking", ...) or empty
 }
 
 // buildMilvusCollection sanitizes the user-supplied base name and appends a
@@ -258,6 +260,8 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		WebhookHeaderFields:   marshalBodyFields(req.WebhookHeaderFields),
 		Guardrail:             strings.TrimSpace(req.Guardrail),
 		Image:                 req.Image,
+		CanAct:                req.CanAct,
+		TemplateID:            strings.TrimSpace(req.TemplateID),
 	})
 	if err != nil {
 		log.Printf("[core-service][agent-create] db insert error params=%s error=%v", jsonForLog(req), err)
