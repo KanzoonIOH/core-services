@@ -220,11 +220,12 @@ func (s *Service) consume(ctx context.Context, client *kgo.Client, batches chan<
 			return
 		}
 
-		fetches.EachError(func(_ string, _ int32, err error) {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return
-			}
-			log.Printf("timer service fetch error: %v", err)
+		// ponytail: diagnostic — log every non-empty fetch or any error; remove once stable
+		if n := len(fetches); n > 0 {
+			log.Printf("timer service polled %d fetches", n)
+		}
+		fetches.EachError(func(topic string, partition int32, err error) {
+			log.Printf("timer service fetch error topic=%s partition=%d: %v", topic, partition, err)
 		})
 
 		events := make([]timerEvent, 0, s.cfg.PollBatch)

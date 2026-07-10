@@ -441,6 +441,9 @@ func (h *WebhookHandler) publishConversationActivity(agentID, conversationID str
 		"occurred_at":     occurredAt,
 	}); err != nil {
 		log.Printf("kafka publish %s: %v", TopicConversationActivity, err)
+	} else {
+		// ponytail: diagnostic — confirm activity publish; remove once stable
+		log.Printf("published activity agent=%s conversation=%s", agentID, conversationID)
 	}
 }
 
