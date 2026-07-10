@@ -12,6 +12,36 @@ import (
 	"github.com/google/uuid"
 )
 
+const closeConversation = `-- name: CloseConversation :exec
+UPDATE conversations
+SET
+    is_active = false,
+    ended_at = $1::TIMESTAMPTZ,
+    end_reason = upper($2::TEXT)::CONVERSATION_END_REASON,
+    resolution_ms = $3::BIGINT
+WHERE id = $4 AND is_active = true
+`
+
+type CloseConversationParams struct {
+	EndedAt      time.Time `json:"ended_at"`
+	EndReason    string    `json:"end_reason"`
+	ResolutionMs int64     `json:"resolution_ms"`
+	ID           uuid.UUID `json:"id"`
+}
+
+// Marks a conversation ended. end_reason arrives lowercase on the wire
+// (e.g. "timed_out"); upper() maps it onto the CONVERSATION_END_REASON enum.
+// Guarded by is_active so a replayed/duplicate end event is a no-op.
+func (q *Queries) CloseConversation(ctx context.Context, arg CloseConversationParams) error {
+	_, err := q.db.Exec(ctx, closeConversation,
+		arg.EndedAt,
+		arg.EndReason,
+		arg.ResolutionMs,
+		arg.ID,
+	)
+	return err
+}
+
 const countConversations = `-- name: CountConversations :one
 SELECT count(*) FROM conversations_view
 `

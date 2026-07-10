@@ -34,6 +34,18 @@ LEFT JOIN LATERAL (
 ORDER BY coalesce(lm.created_at, c.started_at) DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
+-- name: CloseConversation :exec
+-- Marks a conversation ended. end_reason arrives lowercase on the wire
+-- (e.g. "timed_out"); upper() maps it onto the CONVERSATION_END_REASON enum.
+-- Guarded by is_active so a replayed/duplicate end event is a no-op.
+UPDATE conversations
+SET
+    is_active = false,
+    ended_at = sqlc.arg(ended_at)::TIMESTAMPTZ,
+    end_reason = upper(sqlc.arg(end_reason)::TEXT)::CONVERSATION_END_REASON,
+    resolution_ms = sqlc.arg(resolution_ms)::BIGINT
+WHERE id = sqlc.arg(id) AND is_active = true;
+
 -- name: DeleteConversation :exec
 DELETE FROM conversations WHERE id = sqlc.arg(id);
 

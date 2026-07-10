@@ -1,6 +1,7 @@
 package handler
 
 import (
+	db "aic3-service/db/postgres/sqlc"
 	"aic3-service/internal/lib"
 	"context"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/twmb/franz-go/pkg/kgo"
 )
 
@@ -118,7 +120,10 @@ type ConversationAnalyticsRow struct {
 //  1. Consumes chat webhook/conversation events from Redpanda
 //  2. Batches rows in memory per table
 //  3. Flushes to ClickHouse every flushEvery or when flushSize is reached
-func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouseClient) {
+//  4. On conversation.end, marks the Postgres conversation inactive
+func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouseClient, conn *pgxpool.Pool) {
+	queries := db.New(conn)
+
 	client, err := kgo.NewClient(
 		kgo.SeedBrokers(brokers...),
 		kgo.ConsumerGroup(consumerGroup),
@@ -256,6 +261,13 @@ func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouse
 						log.Printf("chat consumer unmarshal conversation end: %v", err)
 						return
 					}
+					// Persist the end to Postgres for every reason (not just
+					// timeouts): flip is_active=false and record end metadata.
+					closeConversation(ctx, queries, evt)
+
+					// ClickHouse analytics row is only inserted for timeouts for
+					// now; other reasons are enriched later by the NLP worker via
+					// chat.conversation.analytics.
 					if evt.EndReason != EndReasonTimedOut {
 						return
 					}
@@ -282,6 +294,49 @@ func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouse
 			}
 		}
 	}()
+}
+
+// closeConversation marks the Postgres conversation inactive. The is_active
+// guard in the query makes duplicate/replayed end events a no-op.
+func closeConversation(ctx context.Context, queries db.Querier, evt ConversationEndEvent) {
+	id, err := uuid.Parse(evt.ConversationID)
+	if err != nil {
+		log.Printf("chat consumer skip close with invalid conversation_id=%q", evt.ConversationID)
+		return
+	}
+	if evt.EndReason == "" {
+		log.Printf("chat consumer skip close with empty end_reason for conversation_id=%q", evt.ConversationID)
+		return
+	}
+
+	endedAt := evt.EndedAt
+	if endedAt.IsZero() {
+		endedAt = evt.OccurredAt
+	}
+	if endedAt.IsZero() {
+		endedAt = time.Now().UTC()
+	}
+
+	resolutionMs := evt.ResolutionMs
+	if resolutionMs < 0 {
+		resolutionMs = 0
+	}
+
+	// ctx may already be cancelled during shutdown; use a fresh ctx so the
+	// close still lands.
+	closeCtx := ctx
+	if ctx.Err() != nil {
+		closeCtx = context.Background()
+	}
+
+	if err := queries.CloseConversation(closeCtx, db.CloseConversationParams{
+		ID:           id,
+		EndedAt:      endedAt,
+		EndReason:    evt.EndReason,
+		ResolutionMs: resolutionMs,
+	}); err != nil {
+		log.Printf("chat consumer close conversation %s: %v", evt.ConversationID, err)
+	}
 }
 
 func timedOutAnalyticsRow(evt ConversationEndEvent) (ConversationAnalyticsRow, bool) {

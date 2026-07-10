@@ -12,6 +12,10 @@ import (
 
 type Querier interface {
 	AcceptMember(ctx context.Context, id uuid.UUID) (AcceptMemberRow, error)
+	// Marks a conversation ended. end_reason arrives lowercase on the wire
+	// (e.g. "timed_out"); upper() maps it onto the CONVERSATION_END_REASON enum.
+	// Guarded by is_active so a replayed/duplicate end event is a no-op.
+	CloseConversation(ctx context.Context, arg CloseConversationParams) error
 	CountAgentKnowledgesByAgentId(ctx context.Context, agentID uuid.UUID) (int64, error)
 	CountAgents(ctx context.Context, arg CountAgentsParams) (int64, error)
 	CountAgentsByKnowledgeId(ctx context.Context) (int64, error)

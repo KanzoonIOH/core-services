@@ -41,7 +41,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	handler.StartChatConsumer(ctx, app.KafkaBrokers(), ch)
+	handler.StartChatConsumer(ctx, app.KafkaBrokers(), ch, conn)
 	handler.StartAuditConsumer(ctx, app.KafkaBrokers(), ch)
 
 	r := app.AppRouter(conn, kafka, ch)
