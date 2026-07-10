@@ -261,6 +261,7 @@ func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouse
 						log.Printf("chat consumer unmarshal conversation end: %v", err)
 						return
 					}
+					log.Printf("chat consumer received conversation end (conversation=%s reason=%s)", evt.ConversationID, evt.EndReason)
 					// Persist the end to Postgres for every reason (not just
 					// timeouts): flip is_active=false and record end metadata.
 					closeConversation(ctx, queries, evt)
@@ -336,7 +337,9 @@ func closeConversation(ctx context.Context, queries db.Querier, evt Conversation
 		ResolutionMs: resolutionMs,
 	}); err != nil {
 		log.Printf("chat consumer close conversation %s: %v", evt.ConversationID, err)
+		return
 	}
+	log.Printf("postgres: closed conversation %s (reason=%s)", evt.ConversationID, evt.EndReason)
 }
 
 func timedOutAnalyticsRow(evt ConversationEndEvent) (ConversationAnalyticsRow, bool) {

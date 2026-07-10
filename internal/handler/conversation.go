@@ -142,6 +142,7 @@ func (h *ConversationHandler) EndConversation(w http.ResponseWriter, r *http.Req
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to publish conversation end event")
 		return
 	}
+	log.Printf("kafka publish %s: published (conversation=%s reason=%s)", TopicConversationEnd, req.SessionID, req.EndReason)
 
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, map[string]any{
 		"session_id":    req.SessionID,
