@@ -284,12 +284,15 @@ func (h *WebhookHandler) persistStreamedReply(conversationID, outputField string
 	h.storeMessage(conversationID, db.MessageRoleAssistant, text, nil, nil)
 }
 
-// extractSSEText concatenates the text of SSE `data:` lines. For each data line
-// it tries JSON first (common shapes: {"delta":"..."} / {"text":"..."} /
-// {"content":"..."}); if not JSON, the raw line value is appended. `[DONE]`
-// sentinels are ignored.
+// extractSSEText reconstructs the assistant reply from SSE `data:` lines.
+//
+// A terminal event ({"event":"done", ...}) carries the full reply in one field
+// (reply/answer), so if present it wins outright — concatenating it on top of
+// the token deltas would duplicate the whole message. Only when there is no
+// such terminal payload do we fall back to joining the streamed token text
+// (delta/text/content). `[DONE]` sentinels are ignored.
 func extractSSEText(raw []byte) string {
-	var out bytes.Buffer
+	var tokens bytes.Buffer
 	for _, line := range bytes.Split(raw, []byte("\n")) {
 		line = bytes.TrimSpace(line)
 		if !bytes.HasPrefix(line, []byte("data:")) {
@@ -300,16 +303,23 @@ func extractSSEText(raw []byte) string {
 			continue
 		}
 		var m map[string]any
-		if json.Unmarshal(payload, &m) == nil {
-			for _, k := range []string{"delta", "text", "content", "reply"} {
-				if s, ok := m[k].(string); ok {
-					out.WriteString(s)
-					break
-				}
-			}
+		if json.Unmarshal(payload, &m) != nil {
+			tokens.Write(payload)
 			continue
 		}
-		out.Write(payload)
+		if m["event"] == "done" {
+			for _, k := range []string{"reply", "answer", "text", "content"} {
+				if s, ok := m[k].(string); ok && s != "" {
+					return s
+				}
+			}
+		}
+		for _, k := range []string{"delta", "text", "content", "reply"} {
+			if s, ok := m[k].(string); ok {
+				tokens.WriteString(s)
+				break
+			}
+		}
 	}
-	return out.String()
+	return tokens.String()
 }

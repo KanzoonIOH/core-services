@@ -14,6 +14,7 @@ func TestExtractSSEText(t *testing.T) {
 		{"done sentinel ignored", "data: {\"delta\":\"x\"}\ndata: [DONE]\n", "x"},
 		{"raw non-json payload", "data: plain text\n", "plain text"},
 		{"non-data lines skipped", "event: ping\ndata: {\"delta\":\"z\"}\n", "z"},
+		{"done event wins, no dup", "data: {\"event\":\"token\",\"text\":\"Hello\"}\ndata: {\"reply\":\"Hello\",\"answer\":\"Hello\",\"event\":\"done\"}\n", "Hello"},
 		{"empty", "", ""},
 	}
 	for _, c := range cases {
