@@ -11,7 +11,7 @@ VALUES (
     sqlc.arg(type),
     sqlc.arg(user_id),
     sqlc.narg(upcoming_value),
-    sqlc.arg(expired_at)
+    COALESCE(sqlc.narg(expired_at), now() + INTERVAL '1 hour')
 )
 RETURNING *;
 

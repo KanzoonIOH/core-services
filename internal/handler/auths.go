@@ -134,6 +134,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}, nil)
 }
 
+const resetPasswordPath = "/reset-password"
+
 type forgotPasswordRequest struct {
 	LoginID string `json:"login_id"`
 }
@@ -177,7 +179,7 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url := h.Mailer.IssueURL(upc.Token)
+	url := h.Mailer.IssuePathURL(resetPasswordPath, upc.Token)
 	body := fmt.Sprintf(
 		"Hi %s,\n\nClick the link below to reset your password:\n\n%s\n\nThis link expires in 1 hour.\n\nIf it is not you, please ignore this message.",
 		user.Name, url,

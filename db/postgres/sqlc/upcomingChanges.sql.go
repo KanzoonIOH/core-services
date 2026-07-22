@@ -7,7 +7,6 @@ package db
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -25,7 +24,7 @@ VALUES (
     $2,
     $3,
     $4,
-    $5
+    COALESCE($5, now() + INTERVAL '1 hour')
 )
 RETURNING id, token, type, upcoming_value, user_id, created_at, expired_at, revoked_at
 `
@@ -35,7 +34,7 @@ type InsertUpcomingChangeParams struct {
 	Type          UpcomingChangesType `json:"type"`
 	UserID        uuid.UUID           `json:"user_id"`
 	UpcomingValue *string             `json:"upcoming_value"`
-	ExpiredAt     time.Time           `json:"expired_at"`
+	ExpiredAt     interface{}         `json:"expired_at"`
 }
 
 func (q *Queries) InsertUpcomingChange(ctx context.Context, arg InsertUpcomingChangeParams) (UpcomingChange, error) {
