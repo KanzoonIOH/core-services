@@ -2,7 +2,9 @@ package handler
 
 import (
 	db "aic3-service/db/postgres/sqlc"
+	"aic3-service/internal/app/middleware"
 	"aic3-service/internal/lib"
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -16,15 +18,37 @@ type AuthHandler struct {
 	Signer    *lib.JWTSigner
 	Mailer    *lib.Mailer
 	InviteTTL time.Duration
+	Kafka     *lib.KafkaProducer
 }
 
-func NewAuthHandler(conn *pgxpool.Pool, signer *lib.JWTSigner, mailer *lib.Mailer, inviteTTL time.Duration) *AuthHandler {
+func NewAuthHandler(conn *pgxpool.Pool, signer *lib.JWTSigner, mailer *lib.Mailer, inviteTTL time.Duration, kafka *lib.KafkaProducer) *AuthHandler {
 	return &AuthHandler{
 		Queries:   db.New(conn),
 		Signer:    signer,
 		Mailer:    mailer,
 		InviteTTL: inviteTTL,
+		Kafka:     kafka,
 	}
+}
+
+// auditAuth records a login/logout event via the same Kafka->ClickHouse audit
+// pipeline as write actions. Fire-and-forget: a broker hiccup must never break
+// auth. ponytail: reuses the existing AuditEvent/audit_logs schema, no new table.
+func (h *AuthHandler) auditAuth(r *http.Request, userID, role, action string) {
+	if h.Kafka == nil {
+		return
+	}
+	_ = h.Kafka.Publish(context.Background(), middleware.TopicAudit, middleware.AuditEvent{
+		Time:       time.Now().UTC(),
+		UserID:     userID,
+		Role:       role,
+		AuthMethod: middleware.AuthMethodJWT,
+		Action:     action,
+		Menu:       "auth",
+		Method:     r.Method,
+		Path:       r.URL.Path,
+		Status:     http.StatusOK,
+	})
 }
 
 type registerAuthRequest struct {
@@ -117,7 +141,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if user.HashedPassword == nil || !lib.ComparePassword(*user.HashedPassword, req.Password) {
-		lib.ResponseJSONError(w, http.StatusInternalServerError, "Password is incorrect")
+		lib.ResponseJSONError(w, http.StatusUnauthorized, "Password is incorrect")
 		return
 	}
 
@@ -128,10 +152,23 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.auditAuth(r, user.ID.String(), string(user.Role), "LOGIN")
+
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, map[string]any{
 		"user":  lib.ToUserResponse(user),
 		"token": token,
 	}, nil)
+}
+
+// Logout is stateless: the JWT is not revoked server-side (no token store).
+// This endpoint exists only to record a LOGOUT audit event; the client discards
+// the token itself. ponytail: no blacklist — add one only if revocation is
+// actually required.
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	if claims, ok := middleware.ClaimsFromContext(r.Context()); ok {
+		h.auditAuth(r, claims.UserID.String(), claims.Role, "LOGOUT")
+	}
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, map[string]any{"ok": true}, nil)
 }
 
 const resetPasswordPath = "/reset-password"

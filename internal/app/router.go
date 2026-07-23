@@ -37,7 +37,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 	agentKnowledgeHandler := handler.NewAgentKnowledgeHandler(conn)
 	connectHandler := handler.NewConnectHandler(conn)
 	callbackHandler := handler.NewCallbackHandler(conn)
-	authHandler := handler.NewAuthHandler(conn, signer, mailer, inviteTTL())
+	authHandler := handler.NewAuthHandler(conn, signer, mailer, inviteTTL(), kafka)
 	meHandler := handler.NewMeHandler(conn, mailer, objectStorage)
 	confirmHandler := handler.NewConfirmHandler(conn)
 	apiKeyHandler := handler.NewApiKeyHandler(conn)
@@ -86,6 +86,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.Auth(signer))
 			r.Use(middleware.Audit(kafka))
+			r.Post("/auth/logout", authHandler.Logout)
 			r.Route("/me", func(r chi.Router) {
 				r.Get("/", meHandler.Read)
 				r.Patch("/", meHandler.UpdateDetails)
