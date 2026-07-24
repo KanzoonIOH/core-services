@@ -3,7 +3,7 @@ package handler
 import (
 	db "aic3-service/db/postgres/sqlc"
 	"aic3-service/internal/lib"
-	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -34,7 +34,7 @@ func (h *DropdownHandler) ReadAgents(w http.ResponseWriter, r *http.Request) {
 		Search:      search,
 	})
 	if err != nil {
-		fmt.Printf("%v", err)
+		slog.ErrorContext(r.Context(), "dropdown: read agents failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agents")
 		return
 	}

@@ -649,10 +649,22 @@ type OrchestratorsView struct {
 	RoutingGuide        string    `json:"routing_guide"`
 	Persona             string    `json:"persona"`
 	Guardrail           string    `json:"guardrail"`
-	Image               *string   `json:"image"`
-	WebhookUri          string    `json:"webhook_uri"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
+	Image               *string   `json:"image"`
+	WebhookUri          string    `json:"webhook_uri"`
+}
+
+type RefreshToken struct {
+	ID         uuid.UUID  `json:"id"`
+	UserID     uuid.UUID  `json:"user_id"`
+	TokenHash  string     `json:"token_hash"`
+	UserAgent  string     `json:"user_agent"`
+	Ip         string     `json:"ip"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt time.Time  `json:"last_used_at"`
+	ExpiresAt  time.Time  `json:"expires_at"`
+	RevokedAt  *time.Time `json:"revoked_at"`
 }
 
 type Tag struct {

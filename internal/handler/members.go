@@ -5,7 +5,7 @@ import (
 	"aic3-service/internal/app/middleware"
 	"aic3-service/internal/lib"
 	"errors"
-	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -45,7 +45,7 @@ func (h *MemberHandler) authorizeMemberEdit(w http.ResponseWriter, r *http.Reque
 			lib.ResponseJSONError(w, http.StatusNotFound, "member not found")
 			return false
 		}
-		fmt.Printf("%v\n", err)
+		slog.ErrorContext(r.Context(), "members: load member failed", "member_id", targetID, "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to load member")
 		return false
 	}
@@ -78,14 +78,14 @@ func (h *MemberHandler) Read(w http.ResponseWriter, r *http.Request) {
 		Offset: pagination.Offset * pagination.Limit,
 	})
 	if err != nil {
-		fmt.Printf("%v\n", err)
+		slog.ErrorContext(r.Context(), "members: read failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get members")
 		return
 	}
 
 	totalRow, err := h.Queries.CountMembers(r.Context(), role)
 	if err != nil {
-		fmt.Printf("%v\n", err)
+		slog.ErrorContext(r.Context(), "members: count failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get members")
 		return
 	}
@@ -108,7 +108,7 @@ func (h *MemberHandler) Accept(w http.ResponseWriter, r *http.Request) {
 			lib.ResponseJSONError(w, http.StatusNotFound, "member not found or already accepted")
 			return
 		}
-		fmt.Printf("%v\n", err)
+		slog.ErrorContext(r.Context(), "members: accept failed", "member_id", id, "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to accept member")
 		return
 	}
@@ -152,7 +152,7 @@ func (h *MemberHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 			lib.ResponseJSONError(w, http.StatusNotFound, "member not found or cannot change status of a new member")
 			return
 		}
-		fmt.Printf("%v\n", err)
+		slog.ErrorContext(r.Context(), "members: update status failed", "member_id", id, "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to update member status")
 		return
 	}
@@ -171,7 +171,7 @@ func (h *MemberHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	rowsAffected, err := h.Queries.SoftDeleteMember(r.Context(), id)
 	if err != nil {
-		fmt.Printf("%v\n", err)
+		slog.ErrorContext(r.Context(), "members: delete failed", "member_id", id, "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to delete member")
 		return
 	}

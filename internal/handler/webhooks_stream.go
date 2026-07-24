@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -83,7 +83,7 @@ func (h *WebhookHandler) ForwardChatWebhookStream(w http.ResponseWriter, r *http
 		targetURL += "?" + r.URL.RawQuery
 	}
 
-	log.Printf("chat webhook stream proxy: agent=%s session=%s target=%s", id, conversationID, targetURL)
+	slog.InfoContext(r.Context(), "chat webhook stream proxy", "agent", id, "session", conversationID, "target", targetURL)
 	h.publishConversationActivity(id.String(), conversationID, hitTime)
 
 	bodyBytes, err := io.ReadAll(r.Body)
@@ -122,7 +122,7 @@ func (h *WebhookHandler) ForwardChatWebhookStream(w http.ResponseWriter, r *http
 
 	cfg, cfgErr := h.Queries.GetGlobalConfig(r.Context())
 	if cfgErr != nil {
-		log.Printf("[core-service][chat-webhook-stream] global config read failed: %v", cfgErr)
+		slog.ErrorContext(r.Context(), "global config read failed", "error", cfgErr)
 	}
 	bodyMap["systemPrompt"] = map[string]any{
 		"agent_name":           cfg.AgentName,
@@ -198,11 +198,11 @@ func (h *WebhookHandler) ForwardChatWebhookStream(w http.ResponseWriter, r *http
 		req.Header.Set(k, v)
 	}
 
-	log.Printf("chat webhook stream request: %s", curlPreview(req, modifiedBody))
+	slog.InfoContext(r.Context(), "chat webhook stream request", "curl", curlPreview(req, modifiedBody))
 
 	res, err := h.HTTPClient.Do(req)
 	if err != nil {
-		log.Printf("chat webhook stream forward error: %v", err)
+		slog.ErrorContext(r.Context(), "chat webhook stream forward error", "error", err)
 		h.publishWebhookMessage(id.String(), conversationID, http.StatusBadGateway, hitTime, err.Error())
 		lib.ResponseJSONError(w, http.StatusBadGateway, "failed to forward webhook request")
 		return
@@ -241,7 +241,7 @@ func (h *WebhookHandler) ForwardChatWebhookStream(w http.ResponseWriter, r *http
 		n, readErr := res.Body.Read(buf)
 		if n > 0 {
 			if _, werr := w.Write(buf[:n]); werr != nil {
-				log.Printf("chat webhook stream client write error: %v", werr)
+				slog.ErrorContext(r.Context(), "chat webhook stream client write error", "error", werr)
 				return
 			}
 			captured.Write(buf[:n])
@@ -251,7 +251,7 @@ func (h *WebhookHandler) ForwardChatWebhookStream(w http.ResponseWriter, r *http
 			break
 		}
 		if readErr != nil {
-			log.Printf("chat webhook stream upstream read error: %v", readErr)
+			slog.ErrorContext(r.Context(), "chat webhook stream upstream read error", "error", readErr)
 			break
 		}
 	}

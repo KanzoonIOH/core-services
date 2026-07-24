@@ -2,7 +2,7 @@ package handler
 
 import (
 	"aic3-service/internal/lib"
-	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -34,7 +34,7 @@ func (h *UploadHandler) Image(w http.ResponseWriter, r *http.Request) {
 	objectKey := "avatars/" + timestampedObjectFilename(fileHeader.Filename)
 	url, err := h.ObjectStorage.Upload(r.Context(), objectKey, file, fileHeader.Header.Get("Content-Type"))
 	if err != nil {
-		fmt.Printf("%v", err)
+		slog.ErrorContext(r.Context(), "uploads: image upload failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to upload image")
 		return
 	}

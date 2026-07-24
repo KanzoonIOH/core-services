@@ -2,6 +2,7 @@ package lib
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 )
@@ -13,6 +14,15 @@ func GenerateSecureToken(byteLen int) (string, error) {
 	}
 
 	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// HashToken returns the SHA-256 hex digest of an opaque token. Used to store
+// refresh tokens: they are high-entropy random strings, so a fast digest is
+// enough (bcrypt would prevent the indexed hash lookup we need). ponytail:
+// SHA-256, not bcrypt — correct trade-off for random tokens, not passwords.
+func HashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }
 
 // RandomHex returns a random lowercase hex string of the given length. Hex is

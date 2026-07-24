@@ -11,7 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/netip"
@@ -170,7 +170,7 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 		targetURL += "?" + r.URL.RawQuery
 	}
 
-	log.Printf("chat webhook proxy: agent=%s session=%s target=%s", id, conversationID, targetURL)
+	slog.InfoContext(r.Context(), "chat webhook proxy", "agent", id, "session", conversationID, "target", targetURL)
 	h.publishConversationActivity(id.String(), conversationID, hitTime)
 
 	// Read body and inject sessionId before forwarding.
@@ -215,7 +215,7 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 	// failure must not block the chat, so fall back to empty values.
 	cfg, cfgErr := h.Queries.GetGlobalConfig(r.Context())
 	if cfgErr != nil {
-		log.Printf("[core-service][chat-webhook] global config read failed: %v", cfgErr)
+		slog.ErrorContext(r.Context(), "global config read failed", "error", cfgErr)
 	}
 	bodyMap["systemPrompt"] = map[string]any{
 		"agent_name":           cfg.AgentName,
@@ -299,11 +299,11 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 		req.Header.Set(k, v)
 	}
 
-	log.Printf("chat webhook request: %s", curlPreview(req, modifiedBody))
+	slog.InfoContext(r.Context(), "chat webhook request", "curl", curlPreview(req, modifiedBody))
 
 	res, err := h.HTTPClient.Do(req)
 	if err != nil {
-		log.Printf("chat webhook forward error: %v", err)
+		slog.ErrorContext(r.Context(), "chat webhook forward error", "error", err)
 		h.publishWebhookMessage(id.String(), conversationID, http.StatusBadGateway, hitTime, err.Error())
 		lib.ResponseJSONError(w, http.StatusBadGateway, "failed to forward webhook request")
 		return
@@ -378,7 +378,7 @@ func (h *WebhookHandler) ensureConversation(agentID uuid.UUID, conversationID st
 			ID:      convID,
 			AgentID: agentID,
 		}); err != nil {
-			log.Printf("upsert conversation conv=%s: %v", conversationID, err)
+			slog.ErrorContext(ctx, "upsert conversation", "conversation", conversationID, "error", err)
 		}
 	}()
 }
@@ -414,7 +414,7 @@ func (h *WebhookHandler) storeMessage(conversationID string, role db.MessageRole
 			Attachments:    attachJSON,
 			Data:           dataJSON,
 		}); err != nil {
-			log.Printf("store message conv=%s role=%s: %v", conversationID, role, err)
+			slog.ErrorContext(ctx, "store message", "conversation", conversationID, "role", role, "error", err)
 		}
 	}()
 }
@@ -441,10 +441,10 @@ func (h *WebhookHandler) publishConversationActivity(agentID, conversationID str
 		"conversation_id": conversationID,
 		"occurred_at":     occurredAt,
 	}); err != nil {
-		log.Printf("kafka publish %s: %v", TopicConversationActivity, err)
+		slog.Error("kafka publish", "topic", TopicConversationActivity, "error", err)
 	} else {
 		// ponytail: diagnostic — confirm activity publish; remove once stable
-		log.Printf("published activity agent=%s conversation=%s", agentID, conversationID)
+		slog.Info("published activity", "agent", agentID, "conversation", conversationID)
 	}
 }
 
@@ -466,9 +466,9 @@ func (h *WebhookHandler) publishWebhookMessage(agentID, conversationID string, s
 		"error":            errorMessage,
 		"occurred_at":      hitTime,
 	}); err != nil {
-		log.Printf("kafka publish %s: %v", TopicChatMessage, err)
+		slog.Error("kafka publish", "topic", TopicChatMessage, "error", err)
 	}
-	log.Printf("kafka publish %s: published", TopicChatMessage)
+	slog.Info("kafka publish", "topic", TopicChatMessage, "status", "published")
 }
 
 // curlPreview reconstructs the outgoing request as a copy-pasteable curl line
@@ -570,7 +570,7 @@ func (h *WebhookHandler) forwardOrchestratorChat(
 		targetURL += "?" + r.URL.RawQuery
 	}
 
-	log.Printf("chat orchestrator proxy: id=%s session=%s target=%s stream=%v", id, conversationID, targetURL, stream)
+	slog.InfoContext(r.Context(), "chat orchestrator proxy", "id", id, "session", conversationID, "target", targetURL, "stream", stream)
 	h.publishConversationActivity(id.String(), conversationID, hitTime)
 
 	bodyBytes, err := io.ReadAll(r.Body)
@@ -610,7 +610,7 @@ func (h *WebhookHandler) forwardOrchestratorChat(
 
 	cfg, cfgErr := h.Queries.GetGlobalConfig(r.Context())
 	if cfgErr != nil {
-		log.Printf("[core-service][chat-orchestrator] global config read failed: %v", cfgErr)
+		slog.ErrorContext(r.Context(), "global config read failed", "error", cfgErr)
 	}
 	bodyMap["systemPrompt"] = map[string]any{
 		"agent_name":           cfg.AgentName,
@@ -644,11 +644,11 @@ func (h *WebhookHandler) forwardOrchestratorChat(
 		req.Header.Set("Accept", "text/event-stream")
 	}
 
-	log.Printf("chat orchestrator request: %s", curlPreview(req, modifiedBody))
+	slog.InfoContext(r.Context(), "chat orchestrator request", "curl", curlPreview(req, modifiedBody))
 
 	res, err := h.HTTPClient.Do(req)
 	if err != nil {
-		log.Printf("chat orchestrator forward error: %v", err)
+		slog.ErrorContext(r.Context(), "chat orchestrator forward error", "error", err)
 		h.publishWebhookMessage(id.String(), conversationID, http.StatusBadGateway, hitTime, err.Error())
 		lib.ResponseJSONError(w, http.StatusBadGateway, "failed to forward webhook request")
 		return

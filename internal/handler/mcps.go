@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -112,18 +112,18 @@ func (h *McpHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Headers:     marshalHeaders(req.Headers),
 	})
 	if err != nil {
-		fmt.Printf("%v\n", err)
+		slog.ErrorContext(r.Context(), "mcps: create db insert failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to create mcp")
 		return
 	}
 
 	if err := h.syncMcpTags(r.Context(), mcp.ID, req.Tags); err != nil {
-		fmt.Printf("mcp tag sync failed for %s: %v\n", mcp.ID, err)
+		slog.ErrorContext(r.Context(), "mcps: create tag sync failed", "mcp_id", mcp.ID, "error", err)
 	}
 
 	tools, discoverErr := h.syncTools(r.Context(), mcp.ID, mcp.Uri, req.Headers)
 	if discoverErr != nil {
-		fmt.Printf("mcp tool discovery failed for %s: %v\n", mcp.ID, discoverErr)
+		slog.ErrorContext(r.Context(), "mcps: create tool discovery failed", "mcp_id", mcp.ID, "error", discoverErr)
 	}
 
 	full, err := h.Queries.SelectMcpById(r.Context(), mcp.ID)
@@ -339,14 +339,14 @@ func (h *McpHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.syncMcpTags(r.Context(), mcp.ID, req.Tags); err != nil {
-		log.Printf("[core-service][mcp-update] tag sync failed mcp_id=%s: %v", mcp.ID, err)
+		slog.ErrorContext(r.Context(), "mcps: update tag sync failed", "mcp_id", mcp.ID, "error", err)
 	}
 
 	// URI or headers may have changed — re-discover tools from the new target.
 	// Best-effort: don't fail the update if the server is unreachable, the user
 	// can hit Refresh once it's fixed.
 	if _, err := h.syncTools(r.Context(), mcp.ID, mcp.Uri, req.Headers); err != nil {
-		log.Printf("[core-service][mcp-update] tool re-sync failed mcp_id=%s: %v", mcp.ID, err)
+		slog.ErrorContext(r.Context(), "mcps: update tool re-sync failed", "mcp_id", mcp.ID, "error", err)
 	}
 
 	full, err := h.Queries.SelectMcpById(r.Context(), mcp.ID)
@@ -420,7 +420,7 @@ func (h *McpHandler) RefreshTools(w http.ResponseWriter, r *http.Request) {
 
 	tools, err := h.syncTools(r.Context(), mcp.ID, mcp.Uri, unmarshalHeaders(mcp.Headers))
 	if err != nil {
-		fmt.Printf("mcp tool refresh failed for %s: %v\n", mcp.ID, err)
+		slog.ErrorContext(r.Context(), "mcps: tool refresh failed", "mcp_id", mcp.ID, "error", err)
 		lib.ResponseJSONError(w, http.StatusBadGateway, "failed to discover mcp tools")
 		return
 	}

@@ -5,7 +5,7 @@ import (
 	"aic3-service/internal/lib"
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -138,11 +138,11 @@ func (h *ConversationHandler) EndConversation(w http.ResponseWriter, r *http.Req
 	}
 
 	if err := h.Kafka.Publish(context.Background(), TopicConversationEnd, event); err != nil {
-		log.Printf("kafka publish %s: %v", TopicConversationEnd, err)
+		slog.ErrorContext(r.Context(), "conversation: kafka publish failed", "topic", TopicConversationEnd, "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to publish conversation end event")
 		return
 	}
-	log.Printf("kafka publish %s: published (conversation=%s reason=%s)", TopicConversationEnd, req.SessionID, req.EndReason)
+	slog.InfoContext(r.Context(), "conversation: kafka published", "topic", TopicConversationEnd, "conversation_id", req.SessionID, "end_reason", req.EndReason)
 
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, map[string]any{
 		"session_id":    req.SessionID,

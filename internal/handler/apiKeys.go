@@ -5,7 +5,7 @@ import (
 	"aic3-service/internal/lib"
 	"crypto/rand"
 	"encoding/base64"
-	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -55,7 +55,7 @@ func (h *ApiKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	token, err := generateApiToken()
 	if err != nil {
-		fmt.Printf("%v\n", err)
+		slog.ErrorContext(r.Context(), "api keys: generate token failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to generate api key token")
 		return
 	}
@@ -66,7 +66,7 @@ func (h *ApiKeyHandler) Create(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt: req.ExpiresAt,
 	})
 	if err != nil {
-		fmt.Printf("%v\n", err)
+		slog.ErrorContext(r.Context(), "api keys: create failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to create api key")
 		return
 	}
@@ -85,14 +85,14 @@ func (h *ApiKeyHandler) Read(w http.ResponseWriter, r *http.Request) {
 		Offset: pagination.Offset,
 	})
 	if err != nil {
-		fmt.Printf("%v\n", err)
+		slog.ErrorContext(r.Context(), "api keys: read failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get api keys")
 		return
 	}
 
 	totalRow, err := h.Queries.CountApiKeys(r.Context())
 	if err != nil {
-		fmt.Printf("%v\n", err)
+		slog.ErrorContext(r.Context(), "api keys: count failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get api keys")
 		return
 	}
@@ -126,7 +126,7 @@ func (h *ApiKeyHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Name: req.Name,
 	})
 	if err != nil {
-		fmt.Printf("%v\n", err)
+		slog.ErrorContext(r.Context(), "api keys: update failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to update api key")
 		return
 	}
@@ -142,7 +142,7 @@ func (h *ApiKeyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	rowsAffected, err := h.Queries.RevokeApiKey(r.Context(), id)
 	if err != nil {
-		fmt.Printf("%v\n", err)
+		slog.ErrorContext(r.Context(), "api keys: revoke failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to revoke api key")
 		return
 	}

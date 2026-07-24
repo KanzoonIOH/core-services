@@ -9,7 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -89,13 +89,13 @@ type orchestratorCreateUpstreamResp struct {
 }
 
 func (h *OrchestratorHandler) Create(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[core-service][orchestrator-create] api hit method=%s path=%s", r.Method, r.URL.Path)
+	slog.InfoContext(r.Context(), "orchestrators: create api hit", "method", r.Method, "path", r.URL.Path)
 	var req createOrchestratorRequest
 	if !lib.ParseJSONBody(w, r, &req) {
-		log.Printf("[core-service][orchestrator-create] api error invalid JSON body")
+		slog.ErrorContext(r.Context(), "orchestrators: create invalid JSON body")
 		return
 	}
-	log.Printf("[core-service][orchestrator-create] request params=%s", jsonForLog(req))
+	slog.InfoContext(r.Context(), "orchestrators: create request", "params", jsonForLog(req))
 
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
@@ -128,7 +128,7 @@ func (h *OrchestratorHandler) Create(w http.ResponseWriter, r *http.Request) {
 				lib.ResponseJSONError(w, http.StatusBadRequest, "agent not found: "+id.String())
 				return
 			}
-			log.Printf("[core-service][orchestrator-create] agent lookup error id=%s error=%v", id, err)
+			slog.ErrorContext(r.Context(), "orchestrators: create agent lookup failed", "agent_id", id, "error", err)
 			lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to resolve agents")
 			return
 		}
@@ -151,7 +151,7 @@ func (h *OrchestratorHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Agents: upstreamAgents,
 	})
 	if err != nil {
-		log.Printf("[core-service][orchestrator-create] upstream error url=%s error=%v", h.createURL, err)
+		slog.ErrorContext(r.Context(), "orchestrators: create upstream failed", "url", h.createURL, "error", err)
 		lib.ResponseJSONError(w, http.StatusBadGateway, "failed to create orchestrator upstream")
 		return
 	}
@@ -169,7 +169,7 @@ func (h *OrchestratorHandler) Create(w http.ResponseWriter, r *http.Request) {
 		WebhookUri:          "https://103.67.43.198:8443/agents/orchestrator/ask",
 	})
 	if err != nil {
-		log.Printf("[core-service][orchestrator-create] db insert error error=%v", err)
+		slog.ErrorContext(r.Context(), "orchestrators: create db insert failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to create orchestrator")
 		return
 	}
@@ -194,7 +194,7 @@ func (h *OrchestratorHandler) Create(w http.ResponseWriter, r *http.Request) {
 			ToolName:       ua.ToolName,
 			Description:    ua.Description,
 		}); err != nil {
-			log.Printf("[core-service][orchestrator-create] db insert agent mapping error orchestrator_id=%s agent_id=%s error=%v", orch.ID, id, err)
+			slog.ErrorContext(r.Context(), "orchestrators: create db insert agent mapping failed", "orchestrator_id", orch.ID, "agent_id", id, "error", err)
 			lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to link orchestrator agents")
 			return
 		}
@@ -202,12 +202,12 @@ func (h *OrchestratorHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	full, err := h.buildDetail(r.Context(), orch.ID)
 	if err != nil {
-		log.Printf("[core-service][orchestrator-create] reload error orchestrator_id=%s error=%v", orch.ID, err)
+		slog.ErrorContext(r.Context(), "orchestrators: create reload failed", "orchestrator_id", orch.ID, "error", err)
 		lib.ResponseJSONTemplate(w, http.StatusOK, nil, orch, nil)
 		return
 	}
 
-	log.Printf("[core-service][orchestrator-create] api success status=%d response=%s", http.StatusOK, jsonForLog(full))
+	slog.InfoContext(r.Context(), "orchestrators: create success", "status", http.StatusOK, "response", jsonForLog(full))
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, full, nil)
 }
 
@@ -216,7 +216,7 @@ func (h *OrchestratorHandler) callUpstreamCreate(ctx context.Context, body orche
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("[core-service][orchestrator-create] upstream fetch start url=%s payload=%s", h.createURL, string(payload))
+	slog.InfoContext(ctx, "orchestrators: create upstream fetch start", "url", h.createURL, "payload", string(payload))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.createURL, bytes.NewReader(payload))
 	if err != nil {
@@ -231,7 +231,7 @@ func (h *OrchestratorHandler) callUpstreamCreate(ctx context.Context, body orche
 	defer resp.Body.Close()
 
 	respBytes, _ := io.ReadAll(resp.Body)
-	log.Printf("[core-service][orchestrator-create] upstream returned status=%d body=%q", resp.StatusCode, truncateForLog(string(respBytes), 4096))
+	slog.InfoContext(ctx, "orchestrators: create upstream returned", "status", resp.StatusCode, "body", truncateForLog(string(respBytes), 4096))
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, errors.New("upstream non-2xx")
 	}
@@ -287,7 +287,7 @@ func (h *OrchestratorHandler) buildDetail(ctx context.Context, id uuid.UUID) (*o
 }
 
 func (h *OrchestratorHandler) Read(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[core-service][orchestrator-read] api hit method=%s path=%s query=%s", r.Method, r.URL.Path, r.URL.RawQuery)
+	slog.InfoContext(r.Context(), "orchestrators: read api hit", "method", r.Method, "path", r.URL.Path, "query", r.URL.RawQuery)
 	params := r.URL.Query()
 
 	pagination := lib.ParsePaginationParams(params)
@@ -302,7 +302,7 @@ func (h *OrchestratorHandler) Read(w http.ResponseWriter, r *http.Request) {
 		Offset:   pagination.Offset * pagination.Limit,
 	})
 	if err != nil {
-		log.Printf("[core-service][orchestrator-read] db select error error=%v", err)
+		slog.ErrorContext(r.Context(), "orchestrators: read db select failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get orchestrators")
 		return
 	}
@@ -312,17 +312,17 @@ func (h *OrchestratorHandler) Read(w http.ResponseWriter, r *http.Request) {
 		IsActive: isActive,
 	})
 	if err != nil {
-		log.Printf("[core-service][orchestrator-read] db count error error=%v", err)
+		slog.ErrorContext(r.Context(), "orchestrators: read db count failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get orchestrators")
 		return
 	}
 
-	log.Printf("[core-service][orchestrator-read] api success status=%d count=%d total=%d", http.StatusOK, len(orchestrators), totalRow)
+	slog.InfoContext(r.Context(), "orchestrators: read success", "status", http.StatusOK, "count", len(orchestrators), "total", totalRow)
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, orchestrators, lib.ResponsePagination(int(pagination.Limit), int(pagination.Offset), len(orchestrators), int(totalRow)))
 }
 
 func (h *OrchestratorHandler) ReadById(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[core-service][orchestrator-read-by-id] api hit method=%s path=%s", r.Method, r.URL.Path)
+	slog.InfoContext(r.Context(), "orchestrators: read by id api hit", "method", r.Method, "path", r.URL.Path)
 	id, ok := lib.ParseID(w, r, "id")
 	if !ok {
 		return
@@ -334,12 +334,12 @@ func (h *OrchestratorHandler) ReadById(w http.ResponseWriter, r *http.Request) {
 			lib.ResponseJSONError(w, http.StatusNotFound, "orchestrator not found")
 			return
 		}
-		log.Printf("[core-service][orchestrator-read-by-id] db error id=%s error=%v", id, err)
+		slog.ErrorContext(r.Context(), "orchestrators: read by id db failed", "orchestrator_id", id, "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get orchestrator")
 		return
 	}
 
-	log.Printf("[core-service][orchestrator-read-by-id] api success status=%d response=%s", http.StatusOK, jsonForLog(full))
+	slog.InfoContext(r.Context(), "orchestrators: read by id success", "status", http.StatusOK, "response", jsonForLog(full))
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, full, nil)
 }
 
@@ -360,7 +360,7 @@ type updateOrchestratorRequest struct {
 }
 
 func (h *OrchestratorHandler) Update(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[core-service][orchestrator-update] api hit method=%s path=%s", r.Method, r.URL.Path)
+	slog.InfoContext(r.Context(), "orchestrators: update api hit", "method", r.Method, "path", r.URL.Path)
 	id, ok := lib.ParseID(w, r, "id")
 	if !ok {
 		return
@@ -370,7 +370,7 @@ func (h *OrchestratorHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if !lib.ParseJSONBody(w, r, &req) {
 		return
 	}
-	log.Printf("[core-service][orchestrator-update] request params={id:%s body:%s}", id, jsonForLog(req))
+	slog.InfoContext(r.Context(), "orchestrators: update request", "orchestrator_id", id, "body", jsonForLog(req))
 
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
@@ -393,24 +393,24 @@ func (h *OrchestratorHandler) Update(w http.ResponseWriter, r *http.Request) {
 			lib.ResponseJSONError(w, http.StatusNotFound, "orchestrator not found")
 			return
 		}
-		log.Printf("[core-service][orchestrator-update] db update error id=%s error=%v", id, err)
+		slog.ErrorContext(r.Context(), "orchestrators: update db update failed", "orchestrator_id", id, "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to update orchestrator")
 		return
 	}
 
 	full, err := h.buildDetail(r.Context(), id)
 	if err != nil {
-		log.Printf("[core-service][orchestrator-update] reload error id=%s error=%v", id, err)
+		slog.ErrorContext(r.Context(), "orchestrators: update reload failed", "orchestrator_id", id, "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to update orchestrator")
 		return
 	}
 
-	log.Printf("[core-service][orchestrator-update] api success status=%d response=%s", http.StatusOK, jsonForLog(full))
+	slog.InfoContext(r.Context(), "orchestrators: update success", "status", http.StatusOK, "response", jsonForLog(full))
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, full, nil)
 }
 
 func (h *OrchestratorHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[core-service][orchestrator-delete] api hit method=%s path=%s", r.Method, r.URL.Path)
+	slog.InfoContext(r.Context(), "orchestrators: delete api hit", "method", r.Method, "path", r.URL.Path)
 	id, ok := lib.ParseID(w, r, "id")
 	if !ok {
 		return
@@ -418,7 +418,7 @@ func (h *OrchestratorHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	rowsAffected, err := h.Queries.SoftDeleteOrchestrator(r.Context(), id)
 	if err != nil {
-		log.Printf("[core-service][orchestrator-delete] db soft-delete error id=%s error=%v", id, err)
+		slog.ErrorContext(r.Context(), "orchestrators: delete db soft-delete failed", "orchestrator_id", id, "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to delete orchestrator")
 		return
 	}
@@ -427,6 +427,6 @@ func (h *OrchestratorHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[core-service][orchestrator-delete] api success status=%d rows_affected=%d", http.StatusNoContent, rowsAffected)
+	slog.InfoContext(r.Context(), "orchestrators: delete success", "status", http.StatusNoContent, "rows_affected", rowsAffected)
 	lib.ResponseJSONTemplate(w, http.StatusNoContent, nil, nil, nil)
 }

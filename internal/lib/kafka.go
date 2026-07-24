@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -42,7 +42,7 @@ func (p *KafkaProducer) Publish(ctx context.Context, topic string, value any) er
 
 	p.client.Produce(ctx, rec, func(_ *kgo.Record, err error) {
 		if err != nil {
-			log.Printf("kafka produce error topic=%s: %v", rec.Topic, err)
+			slog.Error("kafka produce error", "topic", rec.Topic, "error", err)
 		}
 	})
 

@@ -124,3 +124,11 @@ func (w *statusWriter) Write(b []byte) (int, error) {
 	w.wroteHeader = true // implicit 200 on first write with no explicit header
 	return w.ResponseWriter.Write(b)
 }
+
+// Flush forwards to the underlying writer so SSE/streaming handlers can still
+// assert http.Flusher through this wrapper. No-op if the base doesn't flush.
+func (w *statusWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}

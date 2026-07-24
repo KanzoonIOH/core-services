@@ -3,7 +3,7 @@ package handler
 import (
 	db "aic3-service/db/postgres/sqlc"
 	"aic3-service/internal/lib"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -24,7 +24,7 @@ func NewGlobalConfigHandler(conn *pgxpool.Pool) *GlobalConfigHandler {
 func (h *GlobalConfigHandler) Read(w http.ResponseWriter, r *http.Request) {
 	cfg, err := h.Queries.GetGlobalConfig(r.Context())
 	if err != nil {
-		log.Printf("[core-service][global-config-read] db select error error=%v", err)
+		slog.ErrorContext(r.Context(), "global config: read db select failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get global config")
 		return
 	}
@@ -49,7 +49,7 @@ func (h *GlobalConfigHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Guardrail:           strings.TrimSpace(req.Guardrail),
 	})
 	if err != nil {
-		log.Printf("[core-service][global-config-update] db update error error=%v", err)
+		slog.ErrorContext(r.Context(), "global config: update db update failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to update global config")
 		return
 	}

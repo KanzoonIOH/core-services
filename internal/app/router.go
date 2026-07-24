@@ -20,9 +20,9 @@ import (
 func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseClient) http.Handler {
 	r := chi.NewRouter()
 
-	r.Use(chimiddleware.Logger)
-	r.Use(chimiddleware.Recoverer)
 	r.Use(chimiddleware.RequestID)
+	r.Use(middleware.RequestLog)
+	r.Use(chimiddleware.Recoverer)
 	r.Use(middleware.Cors)
 
 	signer := newJWTSigner()
@@ -37,7 +37,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 	agentKnowledgeHandler := handler.NewAgentKnowledgeHandler(conn)
 	connectHandler := handler.NewConnectHandler(conn)
 	callbackHandler := handler.NewCallbackHandler(conn)
-	authHandler := handler.NewAuthHandler(conn, signer, mailer, inviteTTL(), kafka)
+	authHandler := handler.NewAuthHandler(conn, signer, mailer, inviteTTL(), refreshTTL(), kafka)
 	meHandler := handler.NewMeHandler(conn, mailer, objectStorage)
 	confirmHandler := handler.NewConfirmHandler(conn)
 	apiKeyHandler := handler.NewApiKeyHandler(conn)
@@ -61,6 +61,9 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 			r.Post("/password/forgot", authHandler.ForgotPassword)
 			r.Post("/password/reset", authHandler.ResetPassword)
 			r.Post("/accept-invite", authHandler.AcceptInvite)
+			// Refresh trades a valid refresh token for a new access+refresh pair.
+			// Unauthenticated: the access token is expected to be expired here.
+			r.Post("/refresh", authHandler.Refresh)
 		})
 		r.Get("/confirm", confirmHandler.UpdateEmailConfirm)
 		// Internal service-to-service routes: no login, guarded by a static
@@ -225,16 +228,28 @@ func newJWTSigner() *lib.JWTSigner {
 	if issuer == "" {
 		log.Fatal("SECRET_ISSUER is required")
 	}
-	ttlDaysStr := os.Getenv("ACCESS_TOKEN_TTL_DAYS")
-	if ttlDaysStr == "" {
-		log.Fatal("ACCESS_TOKEN_TTL_DAYS is required")
+	minStr := os.Getenv("ACCESS_TOKEN_TTL_MINUTES")
+	if minStr == "" {
+		log.Fatal("ACCESS_TOKEN_TTL_MINUTES is required")
 	}
-	ttlDays, err := strconv.Atoi(ttlDaysStr)
+	minutes, err := strconv.Atoi(minStr)
 	if err != nil {
-		log.Fatalf("invalid ACCESS_TOKEN_TTL_DAYS: %v", err)
+		log.Fatalf("invalid ACCESS_TOKEN_TTL_MINUTES: %v", err)
 	}
 
-	return lib.NewJWTSigner(secret, issuer, time.Duration(ttlDays)*24*time.Hour)
+	return lib.NewJWTSigner(secret, issuer, time.Duration(minutes)*time.Minute)
+}
+
+func refreshTTL() time.Duration {
+	daysStr := os.Getenv("REFRESH_TOKEN_TTL_DAYS")
+	if daysStr == "" {
+		log.Fatal("REFRESH_TOKEN_TTL_DAYS is required")
+	}
+	days, err := strconv.Atoi(daysStr)
+	if err != nil {
+		log.Fatalf("invalid REFRESH_TOKEN_TTL_DAYS: %v", err)
+	}
+	return time.Duration(days) * 24 * time.Hour
 }
 
 func inviteTTL() time.Duration {

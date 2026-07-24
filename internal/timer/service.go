@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"os"
 	"sync/atomic"
 	"time"
@@ -128,12 +128,12 @@ func (s *Service) Run(ctx context.Context, brokers []string) error {
 		kgo.WithLogger(kgo.BasicLogger(os.Stderr, kgo.LogLevelDebug, func() string { return "kgo " })),
 		kgo.OnPartitionsAssigned(func(_ context.Context, _ *kgo.Client, m map[string][]int32) {
 			for topic, parts := range m {
-				log.Printf("timer service assigned topic=%s partitions=%v", topic, parts)
+				slog.Info("timer service partitions assigned", "topic", topic, "partitions", parts)
 			}
 		}),
 		kgo.OnPartitionsRevoked(func(_ context.Context, _ *kgo.Client, m map[string][]int32) {
 			for topic, parts := range m {
-				log.Printf("timer service revoked topic=%s partitions=%v", topic, parts)
+				slog.Info("timer service partitions revoked", "topic", topic, "partitions", parts)
 			}
 		}),
 	)
@@ -235,10 +235,10 @@ func (s *Service) consume(ctx context.Context, client *kgo.Client, batches chan<
 
 		// ponytail: diagnostic — log every non-empty fetch or any error; remove once stable
 		if n := len(fetches); n > 0 {
-			log.Printf("timer service polled %d fetches", n)
+			slog.InfoContext(ctx, "timer service polled fetches", "count", n)
 		}
 		fetches.EachError(func(topic string, partition int32, err error) {
-			log.Printf("timer service fetch error topic=%s partition=%d: %v", topic, partition, err)
+			slog.ErrorContext(ctx, "timer service fetch error", "topic", topic, "partition", partition, "error", err)
 		})
 
 		events := make([]timerEvent, 0, s.cfg.PollBatch)
@@ -254,7 +254,7 @@ func (s *Service) consume(ctx context.Context, client *kgo.Client, batches chan<
 			case handler.TopicConversationActivity:
 				var evt activityEvent
 				if err := json.Unmarshal(rec.Value, &evt); err != nil {
-					log.Printf("timer service unmarshal activity: %v", err)
+					slog.ErrorContext(ctx, "timer service unmarshal activity", "error", err)
 					return
 				}
 				if evt.AgentID == "" || evt.ConversationID == "" || evt.OccurredAt.IsZero() {
@@ -264,7 +264,7 @@ func (s *Service) consume(ctx context.Context, client *kgo.Client, batches chan<
 			case handler.TopicConversationEnd:
 				var evt conversationEndEvent
 				if err := json.Unmarshal(rec.Value, &evt); err != nil {
-					log.Printf("timer service unmarshal conversation end: %v", err)
+					slog.ErrorContext(ctx, "timer service unmarshal conversation end", "error", err)
 					return
 				}
 				if evt.ConversationID != "" {
@@ -299,7 +299,7 @@ func (s *Service) consume(ctx context.Context, client *kgo.Client, batches chan<
 			}
 			if err := client.CommitRecords(ctx, recs...); err != nil &&
 				!errors.Is(err, context.Canceled) {
-				log.Printf("timer service commit offsets: %v", err)
+				slog.ErrorContext(ctx, "timer service commit offsets", "error", err)
 			}
 		}
 
@@ -385,7 +385,7 @@ func (s *Service) fireDue(ctx context.Context, entries map[string]*entry, timers
 		// silently dropping a timeout.
 		if err := s.publishTimeout(ctx, e); err != nil {
 			s.metrics.publishErrors.Add(1)
-			log.Printf("timer service publish timeout (will retry) session=%s: %v", e.conversationID, err)
+			slog.ErrorContext(ctx, "timer service publish timeout (will retry)", "session", e.conversationID, "error", err)
 			return
 		}
 
@@ -420,7 +420,7 @@ func (s *Service) publishTimeout(ctx context.Context, e *entry) error {
 	if err := s.producer.PublishSync(ctx, handler.TopicConversationEnd, event); err != nil {
 		return err
 	}
-	log.Printf("timer service: timed out conversation session=%s agent=%s", e.conversationID, e.agentID)
+	slog.InfoContext(ctx, "timer service: timed out conversation", "session", e.conversationID, "agent", e.agentID)
 	return nil
 }
 
@@ -447,14 +447,14 @@ func pruneEnded(ended map[string]time.Time, ttl time.Duration) {
 }
 
 func (s *Service) report(activeTimers, dedupeTracked int) {
-	log.Printf(
-		"timer metrics: active=%d dedupe=%d activity=%d ends=%d fired=%d publish_errors=%d dropped=%d",
-		activeTimers,
-		dedupeTracked,
-		s.metrics.activityEvents.Load(),
-		s.metrics.endEvents.Load(),
-		s.metrics.firedTimeouts.Load(),
-		s.metrics.publishErrors.Load(),
-		s.metrics.dropped.Load(),
+	slog.Info(
+		"timer metrics",
+		"active", activeTimers,
+		"dedupe", dedupeTracked,
+		"activity", s.metrics.activityEvents.Load(),
+		"ends", s.metrics.endEvents.Load(),
+		"fired", s.metrics.firedTimeouts.Load(),
+		"publish_errors", s.metrics.publishErrors.Load(),
+		"dropped", s.metrics.dropped.Load(),
 	)
 }

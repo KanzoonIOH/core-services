@@ -4,7 +4,7 @@ import (
 	db "aic3-service/db/postgres/sqlc"
 	"aic3-service/internal/lib"
 	"errors"
-	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -41,7 +41,7 @@ func (h *AgentKnowledgeHandler) CreateByAgentId(w http.ResponseWriter, r *http.R
 		KnowledgeID: req.KnowledgeId,
 	})
 	if err != nil {
-		fmt.Printf("%v\n", err)
+		slog.ErrorContext(r.Context(), "agent knowledge: create failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to assign knowledge to agent")
 		return
 	}

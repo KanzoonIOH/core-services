@@ -49,14 +49,23 @@ type Querier interface {
 	InsertMessage(ctx context.Context, arg InsertMessageParams) error
 	InsertOrchestrator(ctx context.Context, arg InsertOrchestratorParams) (InsertOrchestratorRow, error)
 	InsertOrchestratorAgent(ctx context.Context, arg InsertOrchestratorAgentParams) (InsertOrchestratorAgentRow, error)
+	InsertRefreshToken(ctx context.Context, arg InsertRefreshTokenParams) (InsertRefreshTokenRow, error)
 	InsertUpcomingChange(ctx context.Context, arg InsertUpcomingChangeParams) (UpcomingChange, error)
 	// Creates a passwordless PENDING user for the email-invite flow. Username/name
 	// default to the email until the invitee sets their own on accept.
 	InsertUserInvite(ctx context.Context, email string) (InsertUserInviteRow, error)
 	InsertUserRegister(ctx context.Context, arg InsertUserRegisterParams) (InsertUserRegisterRow, error)
 	ListMessagesByConversation(ctx context.Context, conversationID uuid.UUID) ([]Message, error)
+	// Kill every active session for a user (logout-all / on status change).
+	RevokeAllUserRefreshTokens(ctx context.Context, userID uuid.UUID) error
 	RevokeApiKey(ctx context.Context, id uuid.UUID) (int64, error)
+	RevokeRefreshTokenByHash(ctx context.Context, tokenHash string) error
+	RevokeRefreshTokenByID(ctx context.Context, id uuid.UUID) error
 	RevokeUpcomingChangeByID(ctx context.Context, id uuid.UUID) error
+	// Returns the session together with the CURRENT user role/deleted state, so the
+	// refresh handler re-checks the live user on every refresh (a suspended or
+	// soft-deleted user's session stops refreshing immediately).
+	SelectActiveRefreshToken(ctx context.Context, tokenHash string) (SelectActiveRefreshTokenRow, error)
 	SelectAgentById(ctx context.Context, id uuid.UUID) (SelectAgentByIdRow, error)
 	SelectAgentKnowledgesByAgentId(ctx context.Context, arg SelectAgentKnowledgesByAgentIdParams) ([]SelectAgentKnowledgesByAgentIdRow, error)
 	SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]SelectAgentsRow, error)
@@ -102,6 +111,7 @@ type Querier interface {
 	SoftDeleteMember(ctx context.Context, id uuid.UUID) (int64, error)
 	SoftDeleteOrchestrator(ctx context.Context, id uuid.UUID) (int64, error)
 	SoftDeleteTag(ctx context.Context, id uuid.UUID) (int64, error)
+	TouchRefreshToken(ctx context.Context, id uuid.UUID) error
 	UpdateAgent(ctx context.Context, arg UpdateAgentParams) (UpdateAgentRow, error)
 	UpdateAgentKnowledge(ctx context.Context, arg UpdateAgentKnowledgeParams) (UpdateAgentKnowledgeRow, error)
 	UpdateAgentKnowledgeStatus(ctx context.Context, arg UpdateAgentKnowledgeStatusParams) (int64, error)

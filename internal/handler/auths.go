@@ -5,30 +5,74 @@ import (
 	"aic3-service/internal/app/middleware"
 	"aic3-service/internal/lib"
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type AuthHandler struct {
-	Queries   db.Querier
-	Signer    *lib.JWTSigner
-	Mailer    *lib.Mailer
-	InviteTTL time.Duration
-	Kafka     *lib.KafkaProducer
+	Queries    db.Querier
+	Signer     *lib.JWTSigner
+	Mailer     *lib.Mailer
+	InviteTTL  time.Duration
+	RefreshTTL time.Duration
+	Kafka      *lib.KafkaProducer
 }
 
-func NewAuthHandler(conn *pgxpool.Pool, signer *lib.JWTSigner, mailer *lib.Mailer, inviteTTL time.Duration, kafka *lib.KafkaProducer) *AuthHandler {
+func NewAuthHandler(conn *pgxpool.Pool, signer *lib.JWTSigner, mailer *lib.Mailer, inviteTTL, refreshTTL time.Duration, kafka *lib.KafkaProducer) *AuthHandler {
 	return &AuthHandler{
-		Queries:   db.New(conn),
-		Signer:    signer,
-		Mailer:    mailer,
-		InviteTTL: inviteTTL,
-		Kafka:     kafka,
+		Queries:    db.New(conn),
+		Signer:     signer,
+		Mailer:     mailer,
+		InviteTTL:  inviteTTL,
+		RefreshTTL: refreshTTL,
+		Kafka:      kafka,
 	}
+}
+
+// issueSession mints a short-lived access JWT and a long-lived refresh token,
+// persisting the refresh token (hashed) as a DB-backed session row. Returns both
+// tokens for the response body. The access token stays stateless; the refresh
+// token is the revocable server-side session.
+func (h *AuthHandler) issueSession(r *http.Request, userID uuid.UUID, role string) (access, refresh string, err error) {
+	access, err = h.Signer.Issue(userID, role)
+	if err != nil {
+		return "", "", err
+	}
+	refresh, err = lib.GenerateSecureToken(32)
+	if err != nil {
+		return "", "", err
+	}
+	_, err = h.Queries.InsertRefreshToken(r.Context(), db.InsertRefreshTokenParams{
+		UserID:    userID,
+		TokenHash: lib.HashToken(refresh),
+		UserAgent: r.UserAgent(),
+		Ip:        sessionIP(r),
+		ExpiresAt: time.Now().UTC().Add(h.RefreshTTL),
+	})
+	if err != nil {
+		return "", "", err
+	}
+	return access, refresh, nil
+}
+
+// sessionIP is a best-effort remote address for session bookkeeping. ponytail:
+// trusts X-Forwarded-For's first hop; tighten only if the proxy chain is
+// untrusted.
+func sessionIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if i := strings.IndexByte(xff, ','); i >= 0 {
+			return strings.TrimSpace(xff[:i])
+		}
+		return strings.TrimSpace(xff)
+	}
+	return r.RemoteAddr
 }
 
 // auditAuth records a login/logout event via the same Kafka->ClickHouse audit
@@ -92,21 +136,24 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		HashedPassword: &hashedPassword,
 	})
 	if err != nil {
-		fmt.Printf("%v", err)
+		slog.ErrorContext(r.Context(), "register: insert user", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to register user")
 		return
 	}
 
-	token, err := h.Signer.Issue(user.ID, string(user.Role))
+	access, refresh, err := h.issueSession(r, user.ID, string(user.Role))
 	if err != nil {
-		fmt.Printf("%v", err)
+		slog.ErrorContext(r.Context(), "register: issue session", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to issue token")
 		return
 	}
 
+	h.auditAuth(r, user.ID.String(), string(user.Role), "REGISTER")
+
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, map[string]any{
-		"user":  user,
-		"token": token,
+		"user":          user,
+		"token":         access,
+		"refresh_token": refresh,
 	}, nil)
 }
 
@@ -133,21 +180,21 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Same 401 for "no such user" and "wrong password" — never reveal which.
 	user, err := h.Queries.SelectUserByLoginIdWithPassword(r.Context(), req.LoginID)
 	if err != nil {
-		fmt.Printf("%v", err)
-		lib.ResponseJSONError(w, http.StatusInternalServerError, "user not found")
+		lib.ResponseJSONError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
 
 	if user.HashedPassword == nil || !lib.ComparePassword(*user.HashedPassword, req.Password) {
-		lib.ResponseJSONError(w, http.StatusUnauthorized, "Password is incorrect")
+		lib.ResponseJSONError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
 
-	token, err := h.Signer.Issue(user.ID, string(user.Role))
+	access, refresh, err := h.issueSession(r, user.ID, string(user.Role))
 	if err != nil {
-		fmt.Printf("%v", err)
+		slog.ErrorContext(r.Context(), "login: issue session", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to issue token")
 		return
 	}
@@ -155,16 +202,81 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	h.auditAuth(r, user.ID.String(), string(user.Role), "LOGIN")
 
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, map[string]any{
-		"user":  lib.ToUserResponse(user),
-		"token": token,
+		"user":          lib.ToUserResponse(user),
+		"token":         access,
+		"refresh_token": refresh,
 	}, nil)
 }
 
-// Logout is stateless: the JWT is not revoked server-side (no token store).
-// This endpoint exists only to record a LOGOUT audit event; the client discards
-// the token itself. ponytail: no blacklist — add one only if revocation is
-// actually required.
+type refreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+// Refresh rotates a refresh token: it validates the presented token against the
+// DB-backed session, re-reads the CURRENT user role/deleted state, then revokes
+// the old token and issues a fresh access+refresh pair. A suspended/soft-deleted
+// user's session stops here — so status changes take effect within one access
+// TTL. Rotation (revoke-old, issue-new) also detects token theft/replay.
+func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	var req refreshRequest
+	if !lib.ParseJSONBody(w, r, &req) {
+		return
+	}
+	req.RefreshToken = strings.TrimSpace(req.RefreshToken)
+	if req.RefreshToken == "" {
+		lib.ResponseJSONError(w, http.StatusBadRequest, "refresh_token is required")
+		return
+	}
+
+	hash := lib.HashToken(req.RefreshToken)
+	sess, err := h.Queries.SelectActiveRefreshToken(r.Context(), hash)
+	if err != nil {
+		// Not found / expired / revoked — all indistinguishable to the caller.
+		lib.ResponseJSONError(w, http.StatusUnauthorized, "invalid or expired refresh token")
+		return
+	}
+
+	// Live user re-check: a soft-deleted user (deactivated) can no longer refresh.
+	if sess.DeletedAt != nil {
+		_ = h.Queries.RevokeAllUserRefreshTokens(r.Context(), sess.UserID)
+		lib.ResponseJSONError(w, http.StatusUnauthorized, "account is no longer active")
+		return
+	}
+
+	// Rotate: kill the presented token, mint a new session.
+	if err := h.Queries.RevokeRefreshTokenByHash(r.Context(), hash); err != nil {
+		slog.ErrorContext(r.Context(), "refresh: revoke old token", "error", err)
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to refresh")
+		return
+	}
+
+	access, refresh, err := h.issueSession(r, sess.UserID, string(sess.Role))
+	if err != nil {
+		slog.ErrorContext(r.Context(), "refresh: issue session", "error", err)
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to refresh")
+		return
+	}
+
+	h.auditAuth(r, sess.UserID.String(), string(sess.Role), "REFRESH")
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, map[string]any{
+		"token":         access,
+		"refresh_token": refresh,
+	}, nil)
+}
+
+// Logout revokes the caller's refresh-token session so it can no longer be
+// refreshed. The access JWT itself stays valid until it expires (bounded by the
+// short access TTL); the client discards it. ponytail: no access-token blacklist
+// — the short TTL is the ceiling, add a blacklist only if instant kill is needed.
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	// Decode directly (not ParseJSONBody) so an empty body doesn't 400 — logout
+	// must always succeed and clear whatever it can.
+	var req refreshRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	if rt := strings.TrimSpace(req.RefreshToken); rt != "" {
+		_ = h.Queries.RevokeRefreshTokenByHash(r.Context(), lib.HashToken(rt))
+	}
 	if claims, ok := middleware.ClaimsFromContext(r.Context()); ok {
 		h.auditAuth(r, claims.UserID.String(), claims.Role, "LOGOUT")
 	}
@@ -200,7 +312,7 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 
 	changeToken, err := lib.GenerateSecureToken(32)
 	if err != nil {
-		fmt.Printf("forgot-password: generate token: %v\n", err)
+		slog.ErrorContext(r.Context(), "forgot-password: generate token", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to request changes")
 		return
 	}
@@ -211,7 +323,7 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		UserID: user.ID,
 	})
 	if err != nil {
-		fmt.Printf("forgot-password: insert upcoming change: %v\n", err)
+		slog.ErrorContext(r.Context(), "forgot-password: insert upcoming change", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to request changes")
 		return
 	}
@@ -223,7 +335,7 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err := h.Mailer.Send(r.Context(), user.Email, "Confirm Your Forgot Password Request", body); err != nil {
-		fmt.Printf("forgot-password: send email: %v\n", err)
+		slog.ErrorContext(r.Context(), "forgot-password: send email", "error", err)
 	}
 
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, safeResponse, nil)
@@ -338,7 +450,7 @@ func (h *AuthHandler) Invite(w http.ResponseWriter, r *http.Request) {
 	if err := h.Mailer.Send(r.Context(), user.Email, "You're invited to AI Customer Care", body); err != nil {
 		// User + token already exist; the link is returned so an admin can
 		// still share it manually even if the email failed.
-		fmt.Printf("invite email send failed for %s: %v\n", user.Email, err)
+		slog.ErrorContext(r.Context(), "invite: send email", "email", user.Email, "error", err)
 	}
 
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, map[string]any{
@@ -397,14 +509,17 @@ func (h *AuthHandler) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.Signer.Issue(user.ID, string(user.Role))
+	access, refresh, err := h.issueSession(r, user.ID, string(user.Role))
 	if err != nil {
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to issue token")
 		return
 	}
 
+	h.auditAuth(r, user.ID.String(), string(user.Role), "ACCEPT_INVITE")
+
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, map[string]any{
-		"user":  user,
-		"token": token,
+		"user":          user,
+		"token":         access,
+		"refresh_token": refresh,
 	}, nil)
 }

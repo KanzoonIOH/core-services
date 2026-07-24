@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -10,12 +11,15 @@ import (
 
 	"aic3-service/internal/app"
 	"aic3-service/internal/handler"
+	"aic3-service/internal/lib"
 
 	"github.com/joho/godotenv"
 )
 
 func main() {
 	_ = godotenv.Load()
+
+	lib.InitLogger(os.Getenv("LOG_LEVEL"))
 
 	serverPort := os.Getenv("SERVER_PORT")
 	if serverPort == "" {
@@ -46,7 +50,7 @@ func main() {
 
 	r := app.AppRouter(conn, kafka, ch)
 
-	log.Printf("Starting server on :%v", serverPort)
+	slog.Info("starting server", "port", serverPort)
 	if err := http.ListenAndServe(":"+serverPort, r); err != nil {
 		log.Fatalf("server error: %v", err)
 	}

@@ -12,58 +12,107 @@ ifneq (,$(wildcard ./.env))
     export
 endif
 
-.PHONY: dev timer build build-timer run tidy test format
-
 # air with hot reload. ENV picks the env file: `make dev` -> .env,
 # `make dev ENV=local` -> .env.local, `make dev ENV=staging` -> .env.staging.
-ENV ?=
+# ENV ?=
 ENV_FILE = $(if $(ENV),.env.$(ENV),.env)
-dev:
+
+# Image build + push for k8s (registry must match k8s image: fields).
+# Override: make image-push REGISTRY=10.10.1.122/agent TAG=v1
+REGISTRY   ?= 10.10.1.122/agent
+TAG        ?= latest
+API_IMG    := $(REGISTRY)/aic3-api:$(TAG)
+TIMER_IMG  := $(REGISTRY)/aic3-timer:$(TAG)
+API_TAR    := aic3-api-$(TAG).tar.gz
+TIMER_TAR  := aic3-timer-$(TAG).tar.gz
+
+.PHONY: help dev timer build build-timer run tidy test format
+.PHONY: image image-timer image-push image-timer-push release-images
+.PHONY: image-save image-timer-save image-load image-timer-load
+
+##@ General
+help: ## Show this help
+	@awk 'BEGIN{FS=":.*?## "} /^##@ /{printf "\n%s\n", substr($$0,5)} /^[a-z][a-z0-9-]+:.*?## /{printf "  %-23s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+
+##@ Development
+dev: ## Run api with air hot reload (ENV=local -> .env.local)
 	air -env_files $(ENV_FILE)
 
-timer:
+timer: ## Run the timer service
 	go run $(TIMER_CMD_DIR)
 
-build:
+build: ## Build the api binary
 	go build -o $(BUILD_DIR)/$(APP_NAME) $(CMD_DIR)
 
-build-timer:
+build-timer: ## Build the timer binary
 	go build -o $(BUILD_DIR)/$(TIMER_APP_NAME) $(TIMER_CMD_DIR)
 
-run: build
+run: build ## Build then run the api binary
 	./$(BUILD_DIR)/$(APP_NAME)
 
-tidy:
+##@ Images (k8s: build then push to the registry k8s pulls from)
+image: ## Build the api image
+	docker build -f Dockerfile -t $(API_IMG) .
+
+image-timer: ## Build the timer image
+	docker build -f Dockerfile.timer -t $(TIMER_IMG) .
+
+image-push: image ## Build + push the api image
+	docker push $(API_IMG)
+
+image-timer-push: image-timer ## Build + push the timer image
+	docker push $(TIMER_IMG)
+
+release-images: image-push image-timer-push ## Build + push both images
+
+# Tar flow (when you can't push): save here, copy the .tar.gz to the server, load there.
+image-save: image ## Save the api image to a .tar.gz
+	docker save $(API_IMG) | gzip > $(API_TAR)
+	@echo "Wrote $(API_TAR) -- copy to server, then 'make image-load' there"
+
+image-timer-save: image-timer ## Save the timer image to a .tar.gz
+	docker save $(TIMER_IMG) | gzip > $(TIMER_TAR)
+	@echo "Wrote $(TIMER_TAR) -- copy to server, then 'make image-timer-load' there"
+
+image-load: ## Load the api image from its .tar.gz (run ON the server)
+	gunzip < $(API_TAR) | docker load
+
+image-timer-load: ## Load the timer image from its .tar.gz (run ON the server)
+	gunzip < $(TIMER_TAR) | docker load
+
+tidy: ## go mod tidy + verify
 	go mod tidy
 	go mod verify
 
-test:
+test: ## Run all tests
 	go test ./...
 
-format:
+format: ## go fmt + sqlfluff format
 	go fmt ./cmd/... ./internal/...
 	sqlfluff format ./db/postgres
 
 .PHONY: goose-pg-new goose-pg-up goose-pg-down goose-pg-status goose-pg-validate
 
-goose-pg-new:
+##@ Migrations — Postgres (local, DB_URL)
+goose-pg-new: ## Create a new postgres migration (name=...)
 	goose -dir $(MIGRATION_DIR) create $(name) sql
 
-goose-pg-up:
+goose-pg-up: ## Migrate postgres up
 	goose -dir $(MIGRATION_DIR) postgres "$(DB_URL)" up
 
-goose-pg-down:
+goose-pg-down: ## Migrate postgres down one step
 	goose -dir $(MIGRATION_DIR) postgres "$(DB_URL)" down
 
-goose-pg-status:
+goose-pg-status: ## Show postgres migration status
 	goose -dir $(MIGRATION_DIR) postgres "$(DB_URL)" status
 
-goose-pg-validate:
+goose-pg-validate: ## Validate postgres migrations
 	goose -dir $(MIGRATION_DIR) validate
 
 .PHONY: db-start db-stop db-reset
 
-db-start:
+##@ Local Postgres container
+db-start: ## Start (or create) the local postgres container
 	@echo "Starting PostgreSQL database..."
 	docker run -d \
 		--name $(DB_CONTAINER) \
@@ -77,11 +126,11 @@ db-start:
 	@sleep 3
 	@echo "Database is ready!"
 
-db-stop:
+db-stop: ## Stop the local postgres container
 	@echo "Stopping PostgreSQL database..."
 	docker stop $(DB_CONTAINER) || echo "Database container is not running"
 
-db-reset:
+db-reset: ## Recreate the local postgres container + run migrations
 	@echo "Resetting PostgreSQL database..."
 	docker stop $(DB_CONTAINER) || true
 	docker rm $(DB_CONTAINER) || true
@@ -102,22 +151,23 @@ db-reset:
 
 .PHONY: goose-ch-new goose-ch-up goose-ch-down goose-ch-status goose-ch-validate goose-ch-reset
 
-goose-ch-new:
+##@ Migrations — ClickHouse (local, CLICKHOUSE_URL)
+goose-ch-new: ## Create a new clickhouse migration (name=...)
 	goose -dir $(CH_MIGRATION_DIR) create $(name) sql
 
-goose-ch-up:
+goose-ch-up: ## Migrate clickhouse up
 	goose -dir $(CH_MIGRATION_DIR) clickhouse "$(CLICKHOUSE_URL)" up
 
-goose-ch-down:
+goose-ch-down: ## Migrate clickhouse down one step
 	goose -dir $(CH_MIGRATION_DIR) clickhouse "$(CLICKHOUSE_URL)" down
 
-goose-ch-status:
+goose-ch-status: ## Show clickhouse migration status
 	goose -dir $(CH_MIGRATION_DIR) clickhouse "$(CLICKHOUSE_URL)" status
 
-goose-ch-validate:
+goose-ch-validate: ## Validate clickhouse migrations
 	goose -dir $(CH_MIGRATION_DIR) validate
 
-goose-ch-reset:
+goose-ch-reset: ## Reset (drop all) clickhouse migrations
 	goose -dir $(CH_MIGRATION_DIR) clickhouse "$(CLICKHOUSE_URL)" reset
 
 # ─── Goose for docker-compose (internal hostnames, root .env creds) ────────────
@@ -164,32 +214,33 @@ endef
 .PHONY: compose-goose-ch-up compose-goose-ch-down compose-goose-ch-status compose-goose-ch-reset
 .PHONY: compose-migrate
 
+##@ Migrations — compose network (internal hostnames, root .env creds)
 # Postgres (internal: postgres:5432)
-compose-goose-pg-up:
+compose-goose-pg-up: ## Migrate postgres up (compose network)
 	$(call compose_goose,postgres,$(COMPOSE_DB_URL),$(MIGRATION_DIR),up)
 
-compose-goose-pg-down:
+compose-goose-pg-down: ## Migrate postgres down one step (compose network)
 	$(call compose_goose,postgres,$(COMPOSE_DB_URL),$(MIGRATION_DIR),down)
 
-compose-goose-pg-status:
+compose-goose-pg-status: ## Show postgres migration status (compose network)
 	$(call compose_goose,postgres,$(COMPOSE_DB_URL),$(MIGRATION_DIR),status)
 
-compose-goose-pg-reset:
+compose-goose-pg-reset: ## Reset postgres migrations (compose network)
 	$(call compose_goose,postgres,$(COMPOSE_DB_URL),$(MIGRATION_DIR),reset)
 
 # ClickHouse (internal: clickhouse:9000)
-compose-goose-ch-up:
+compose-goose-ch-up: ## Migrate clickhouse up (compose network)
 	$(call compose_goose,clickhouse,$(COMPOSE_CH_URL),$(CH_MIGRATION_DIR),up)
 
-compose-goose-ch-down:
+compose-goose-ch-down: ## Migrate clickhouse down one step (compose network)
 	$(call compose_goose,clickhouse,$(COMPOSE_CH_URL),$(CH_MIGRATION_DIR),down)
 
-compose-goose-ch-status:
+compose-goose-ch-status: ## Show clickhouse migration status (compose network)
 	$(call compose_goose,clickhouse,$(COMPOSE_CH_URL),$(CH_MIGRATION_DIR),status)
 
-compose-goose-ch-reset:
+compose-goose-ch-reset: ## Reset clickhouse migrations (compose network)
 	$(call compose_goose,clickhouse,$(COMPOSE_CH_URL),$(CH_MIGRATION_DIR),reset)
 
 # Run both Postgres + ClickHouse migrations up (typical post-`up` step).
-compose-migrate: compose-goose-pg-up compose-goose-ch-up
+compose-migrate: compose-goose-pg-up compose-goose-ch-up ## Run all migrations up (compose network)
 	@echo "All migrations applied."

@@ -9,6 +9,7 @@ import (
 
 func ClickHouse() *lib.ClickHouseClient {
 	host := os.Getenv("CLICKHOUSE_HOST")
+	// fmt.Printf("%v", host)
 	if host == "" {
 		log.Fatal("CLICKHOUSE_HOST is required")
 	}

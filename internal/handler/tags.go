@@ -4,7 +4,7 @@ import (
 	db "aic3-service/db/postgres/sqlc"
 	"aic3-service/internal/lib"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -24,7 +24,7 @@ func NewTagHandler(conn *pgxpool.Pool) *TagHandler {
 func (h *TagHandler) Read(w http.ResponseWriter, r *http.Request) {
 	tags, err := h.Queries.SelectTags(r.Context())
 	if err != nil {
-		log.Printf("[core-service][tag-read] db select error error=%v", err)
+		slog.ErrorContext(r.Context(), "tags: read db select failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get tags")
 		return
 	}
@@ -74,7 +74,7 @@ func (h *TagHandler) Update(w http.ResponseWriter, r *http.Request) {
 			lib.ResponseJSONError(w, http.StatusConflict, "a tag with that name already exists")
 			return
 		}
-		log.Printf("[core-service][tag-update] db update error id=%s error=%v", id, err)
+		slog.ErrorContext(r.Context(), "tags: update db update failed", "tag_id", id, "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to update tag")
 		return
 	}
@@ -92,7 +92,7 @@ func (h *TagHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.Queries.SoftDeleteTag(r.Context(), id)
 	if err != nil {
-		log.Printf("[core-service][tag-delete] db delete error id=%s error=%v", id, err)
+		slog.ErrorContext(r.Context(), "tags: delete db delete failed", "tag_id", id, "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to delete tag")
 		return
 	}

@@ -5,6 +5,7 @@ import (
 	"aic3-service/internal/app/middleware"
 	"aic3-service/internal/lib"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -31,7 +32,7 @@ func (h *MeHandler) Read(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.Queries.SelectUserById(r.Context(), userID)
 	if err != nil {
-		fmt.Printf("%v", err)
+		slog.ErrorContext(r.Context(), "me: read failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agents")
 		return
 	}
@@ -54,7 +55,7 @@ func (h *MeHandler) UpdatePassword(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.Queries.SelectUserByIdWithPassword(r.Context(), userID)
 	if err != nil {
-		fmt.Printf("%v", err)
+		slog.ErrorContext(r.Context(), "me: get user with password failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get user")
 		return
 	}
@@ -97,7 +98,7 @@ func (h *MeHandler) UpdatePassword(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if err != nil {
-		fmt.Printf("%v", err)
+		slog.ErrorContext(r.Context(), "me: update password failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get agents")
 		return
 	}
@@ -143,7 +144,7 @@ func (h *MeHandler) UpdateDetails(w http.ResponseWriter, r *http.Request) {
 		ID:       userID,
 	})
 	if err != nil {
-		fmt.Printf("%v", err)
+		slog.ErrorContext(r.Context(), "me: update details failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to update user")
 		return
 	}
@@ -175,7 +176,7 @@ func (h *MeHandler) UpdateAvatar(w http.ResponseWriter, r *http.Request) {
 	objectKey := "avatars/" + timestampedObjectFilename(fileHeader.Filename)
 	imageURL, err := h.ObjectStorage.Upload(r.Context(), objectKey, file, fileHeader.Header.Get("Content-Type"))
 	if err != nil {
-		fmt.Printf("%v", err)
+		slog.ErrorContext(r.Context(), "me: upload avatar failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to upload avatar")
 		return
 	}
@@ -185,7 +186,7 @@ func (h *MeHandler) UpdateAvatar(w http.ResponseWriter, r *http.Request) {
 		ID:    userID,
 	})
 	if err != nil {
-		fmt.Printf("%v", err)
+		slog.ErrorContext(r.Context(), "me: update user image failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to update user")
 		return
 	}
@@ -219,7 +220,7 @@ func (h *MeHandler) UpdateEmailRequest(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.Queries.SelectUserById(r.Context(), userID)
 	if err != nil {
-		fmt.Printf("%v", err)
+		slog.ErrorContext(r.Context(), "me: get user failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to get user")
 		return
 	}
@@ -231,7 +232,7 @@ func (h *MeHandler) UpdateEmailRequest(w http.ResponseWriter, r *http.Request) {
 
 	changeToken, err := lib.GenerateSecureToken(32)
 	if err != nil {
-		fmt.Printf("change email request: generate token: %v\n", err)
+		slog.ErrorContext(r.Context(), "me: change email request generate token failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to request changes")
 		return
 	}
@@ -243,7 +244,7 @@ func (h *MeHandler) UpdateEmailRequest(w http.ResponseWriter, r *http.Request) {
 		UserID:        user.ID,
 	})
 	if err != nil {
-		fmt.Printf("change email request: insert upcoming change: %v\n", err)
+		slog.ErrorContext(r.Context(), "me: change email request insert upcoming change failed", "error", err)
 		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to request changes")
 		return
 	}
@@ -255,7 +256,7 @@ func (h *MeHandler) UpdateEmailRequest(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err := h.Mailer.Send(r.Context(), user.Email, "Confirm Your Email Change", body); err != nil {
-		fmt.Printf("change-email: send email: %v\n", err)
+		slog.ErrorContext(r.Context(), "me: change email send email failed", "error", err)
 	}
 
 	lib.ResponseJSONTemplate(w, http.StatusOK, nil, "email change confirmation has been sent to your email", nil)

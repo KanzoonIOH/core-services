@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"log/slog"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
@@ -77,13 +78,13 @@ func StartAuditConsumer(ctx context.Context, brokers []string, ch *lib.ClickHous
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 					return
 				}
-				log.Printf("audit consumer fetch error: %v", err)
+				slog.ErrorContext(ctx, "audit consumer fetch error", "error", err)
 			})
 
 			fetches.EachRecord(func(rec *kgo.Record) {
 				var evt middleware.AuditEvent
 				if err := json.Unmarshal(rec.Value, &evt); err != nil {
-					log.Printf("audit consumer unmarshal: %v", err)
+					slog.ErrorContext(ctx, "audit consumer unmarshal", "error", err)
 					return
 				}
 				occurredAt := evt.Time
@@ -124,7 +125,7 @@ func flushAuditLogs(ctx context.Context, ch *lib.ClickHouseClient, rows []AuditL
 		"INSERT INTO audit_logs (occurred_at, user_id, role, auth_method, action, menu, method, path, status)",
 	)
 	if err != nil {
-		log.Printf("clickhouse prepare batch (audit_logs): %v", err)
+		slog.ErrorContext(ctx, "clickhouse prepare batch (audit_logs)", "error", err)
 		return
 	}
 
@@ -133,14 +134,14 @@ func flushAuditLogs(ctx context.Context, ch *lib.ClickHouseClient, rows []AuditL
 			r.OccurredAt, r.UserID, r.Role, r.AuthMethod,
 			r.Action, r.Menu, r.Method, r.Path, r.Status,
 		); err != nil {
-			log.Printf("clickhouse append audit_logs: %v", err)
+			slog.ErrorContext(ctx, "clickhouse append audit_logs", "error", err)
 		}
 	}
 
 	if err := b.Send(); err != nil {
-		log.Printf("clickhouse batch send (audit_logs): %v", err)
+		slog.ErrorContext(ctx, "clickhouse batch send (audit_logs)", "error", err)
 		return
 	}
 
-	log.Printf("clickhouse: flushed %d audit logs", len(rows))
+	slog.InfoContext(ctx, "clickhouse: flushed audit logs", "count", len(rows))
 }

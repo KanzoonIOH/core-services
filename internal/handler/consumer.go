@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -173,7 +174,7 @@ func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouse
 				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 					return
 				}
-				log.Printf("chat consumer fetch error: %v", err)
+				slog.ErrorContext(ctx, "chat consumer fetch error", "error", err)
 			})
 
 			fetches.EachRecord(func(rec *kgo.Record) {
@@ -181,11 +182,11 @@ func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouse
 				case TopicChatMessage:
 					var evt ChatMessageEvent
 					if err := json.Unmarshal(rec.Value, &evt); err != nil {
-						log.Printf("chat consumer unmarshal message: %v", err)
+						slog.ErrorContext(ctx, "chat consumer unmarshal message", "error", err)
 						return
 					}
 					if _, err := uuid.Parse(evt.AgentID); err != nil {
-						log.Printf("chat consumer skip message with invalid agent_id=%q", evt.AgentID)
+						slog.WarnContext(ctx, "chat consumer skip message with invalid agent_id", "agent_id", evt.AgentID)
 						return
 					}
 					occurredAt := evt.OccurredAt
@@ -208,11 +209,11 @@ func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouse
 				case TopicConversationAnalytics:
 					var evt ConversationAnalyticsEvent
 					if err := json.Unmarshal(rec.Value, &evt); err != nil {
-						log.Printf("chat consumer unmarshal analytics: %v", err)
+						slog.ErrorContext(ctx, "chat consumer unmarshal analytics", "error", err)
 						return
 					}
 					if _, err := uuid.Parse(evt.AgentID); err != nil {
-						log.Printf("chat consumer skip analytics with invalid agent_id=%q", evt.AgentID)
+						slog.WarnContext(ctx, "chat consumer skip analytics with invalid agent_id", "agent_id", evt.AgentID)
 						return
 					}
 					occurredAt := evt.OccurredAt
@@ -258,10 +259,10 @@ func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouse
 				case TopicConversationEnd:
 					var evt ConversationEndEvent
 					if err := json.Unmarshal(rec.Value, &evt); err != nil {
-						log.Printf("chat consumer unmarshal conversation end: %v", err)
+						slog.ErrorContext(ctx, "chat consumer unmarshal conversation end", "error", err)
 						return
 					}
-					log.Printf("chat consumer received conversation end (conversation=%s reason=%s)", evt.ConversationID, evt.EndReason)
+					slog.InfoContext(ctx, "chat consumer received conversation end", "conversation", evt.ConversationID, "reason", evt.EndReason)
 					// Persist the end to Postgres for every reason (not just
 					// timeouts): flip is_active=false and record end metadata.
 					closeConversation(ctx, queries, evt)
@@ -302,11 +303,11 @@ func StartChatConsumer(ctx context.Context, brokers []string, ch *lib.ClickHouse
 func closeConversation(ctx context.Context, queries db.Querier, evt ConversationEndEvent) {
 	id, err := uuid.Parse(evt.ConversationID)
 	if err != nil {
-		log.Printf("chat consumer skip close with invalid conversation_id=%q", evt.ConversationID)
+		slog.WarnContext(ctx, "chat consumer skip close with invalid conversation_id", "conversation_id", evt.ConversationID)
 		return
 	}
 	if evt.EndReason == "" {
-		log.Printf("chat consumer skip close with empty end_reason for conversation_id=%q", evt.ConversationID)
+		slog.WarnContext(ctx, "chat consumer skip close with empty end_reason", "conversation_id", evt.ConversationID)
 		return
 	}
 
@@ -336,19 +337,19 @@ func closeConversation(ctx context.Context, queries db.Querier, evt Conversation
 		EndReason:    evt.EndReason,
 		ResolutionMs: resolutionMs,
 	}); err != nil {
-		log.Printf("chat consumer close conversation %s: %v", evt.ConversationID, err)
+		slog.ErrorContext(ctx, "chat consumer close conversation", "conversation", evt.ConversationID, "error", err)
 		return
 	}
-	log.Printf("postgres: closed conversation %s (reason=%s)", evt.ConversationID, evt.EndReason)
+	slog.InfoContext(ctx, "postgres: closed conversation", "conversation", evt.ConversationID, "reason", evt.EndReason)
 }
 
 func timedOutAnalyticsRow(evt ConversationEndEvent) (ConversationAnalyticsRow, bool) {
 	if _, err := uuid.Parse(evt.AgentID); err != nil {
-		log.Printf("chat consumer skip conversation end with invalid agent_id=%q", evt.AgentID)
+		slog.Warn("chat consumer skip conversation end with invalid agent_id", "agent_id", evt.AgentID)
 		return ConversationAnalyticsRow{}, false
 	}
 	if evt.ConversationID == "" {
-		log.Printf("chat consumer skip conversation end with empty conversation_id")
+		slog.Warn("chat consumer skip conversation end with empty conversation_id")
 		return ConversationAnalyticsRow{}, false
 	}
 
@@ -419,22 +420,22 @@ func flushMessages(ctx context.Context, ch *lib.ClickHouseClient, rows []ChatMes
 		"INSERT INTO webhook_messages (agent_id, conversation_id, status_code, response_time_ms, is_success, error, occurred_at)",
 	)
 	if err != nil {
-		log.Printf("clickhouse prepare batch (webhook_messages): %v", err)
+		slog.ErrorContext(ctx, "clickhouse prepare batch (webhook_messages)", "error", err)
 		return
 	}
 
 	for _, r := range rows {
 		if err := b.Append(r.AgentID, r.ConversationID, r.StatusCode, r.ResponseTimeMs, r.IsSuccess, r.Error, r.OccurredAt); err != nil {
-			log.Printf("clickhouse append webhook_messages: %v", err)
+			slog.ErrorContext(ctx, "clickhouse append webhook_messages", "error", err)
 		}
 	}
 
 	if err := b.Send(); err != nil {
-		log.Printf("clickhouse batch send (webhook_messages): %v", err)
+		slog.ErrorContext(ctx, "clickhouse batch send (webhook_messages)", "error", err)
 		return
 	}
 
-	log.Printf("clickhouse: flushed %d webhook messages", len(rows))
+	slog.InfoContext(ctx, "clickhouse: flushed webhook messages", "count", len(rows))
 }
 
 func flushAnalytics(ctx context.Context, ch *lib.ClickHouseClient, rows []ConversationAnalyticsRow) {
@@ -451,7 +452,7 @@ func flushAnalytics(ctx context.Context, ch *lib.ClickHouseClient, rows []Conver
 		)`,
 	)
 	if err != nil {
-		log.Printf("clickhouse prepare batch (conversation_analytics): %v", err)
+		slog.ErrorContext(ctx, "clickhouse prepare batch (conversation_analytics)", "error", err)
 		return
 	}
 
@@ -466,14 +467,14 @@ func flushAnalytics(ctx context.Context, ch *lib.ClickHouseClient, rows []Conver
 			r.Summary, r.Keywords, r.ExternalUserID, r.Tags, r.ModelVersion,
 			r.OccurredAt,
 		); err != nil {
-			log.Printf("clickhouse append conversation_analytics: %v", err)
+			slog.ErrorContext(ctx, "clickhouse append conversation_analytics", "error", err)
 		}
 	}
 
 	if err := b.Send(); err != nil {
-		log.Printf("clickhouse batch send (conversation_analytics): %v", err)
+		slog.ErrorContext(ctx, "clickhouse batch send (conversation_analytics)", "error", err)
 		return
 	}
 
-	log.Printf("clickhouse: flushed %d conversation analytics rows", len(rows))
+	slog.InfoContext(ctx, "clickhouse: flushed conversation analytics rows", "count", len(rows))
 }

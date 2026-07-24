@@ -219,7 +219,7 @@ func (q *Queries) SelectOrchestratorAgents(ctx context.Context, orchestratorID u
 }
 
 const selectOrchestratorById = `-- name: SelectOrchestratorById :one
-SELECT ov.id, ov.name, ov.description, ov.is_active, ov.orchestrator_agent_id, ov.routing_guide, ov.persona, ov.guardrail, ov.image, ov.webhook_uri, ov.created_at, ov.updated_at FROM orchestrators_view ov
+SELECT ov.id, ov.name, ov.description, ov.is_active, ov.orchestrator_agent_id, ov.routing_guide, ov.persona, ov.guardrail, ov.created_at, ov.updated_at, ov.image, ov.webhook_uri FROM orchestrators_view ov
 WHERE ov.id = $1
 LIMIT 1
 `
@@ -236,17 +236,17 @@ func (q *Queries) SelectOrchestratorById(ctx context.Context, id uuid.UUID) (Orc
 		&i.RoutingGuide,
 		&i.Persona,
 		&i.Guardrail,
-		&i.Image,
-		&i.WebhookUri,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Image,
+		&i.WebhookUri,
 	)
 	return i, err
 }
 
 const selectOrchestrators = `-- name: SelectOrchestrators :many
 SELECT
-    ov.id, ov.name, ov.description, ov.is_active, ov.orchestrator_agent_id, ov.routing_guide, ov.persona, ov.guardrail, ov.image, ov.webhook_uri, ov.created_at, ov.updated_at,
+    ov.id, ov.name, ov.description, ov.is_active, ov.orchestrator_agent_id, ov.routing_guide, ov.persona, ov.guardrail, ov.created_at, ov.updated_at, ov.image, ov.webhook_uri,
     COALESCE(oa.agents_count, 0) AS agents_count
 FROM orchestrators_view ov
 LEFT JOIN (
@@ -307,10 +307,10 @@ type SelectOrchestratorsRow struct {
 	RoutingGuide        string    `json:"routing_guide"`
 	Persona             string    `json:"persona"`
 	Guardrail           string    `json:"guardrail"`
-	Image               *string   `json:"image"`
-	WebhookUri          string    `json:"webhook_uri"`
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
+	Image               *string   `json:"image"`
+	WebhookUri          string    `json:"webhook_uri"`
 	AgentsCount         int64     `json:"agents_count"`
 }
 
@@ -338,10 +338,10 @@ func (q *Queries) SelectOrchestrators(ctx context.Context, arg SelectOrchestrato
 			&i.RoutingGuide,
 			&i.Persona,
 			&i.Guardrail,
-			&i.Image,
-			&i.WebhookUri,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Image,
+			&i.WebhookUri,
 			&i.AgentsCount,
 		); err != nil {
 			return nil, err

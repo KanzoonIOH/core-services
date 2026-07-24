@@ -37,6 +37,7 @@ func Auth(signer *lib.JWTSigner) func(http.Handler) http.Handler {
 
 			ctx := context.WithValue(r.Context(), ClaimsCtxKey, claims)
 			ctx = context.WithValue(ctx, AuthMethodCtxKey, AuthMethodJWT)
+			ctx = lib.WithLogUserID(ctx, claims.UserID.String())
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -54,6 +55,7 @@ func AuthOrApiKey(signer *lib.JWTSigner, queries db.Querier) func(http.Handler) 
 			if err == nil {
 				ctx := context.WithValue(r.Context(), ClaimsCtxKey, claims)
 				ctx = context.WithValue(ctx, AuthMethodCtxKey, AuthMethodJWT)
+				ctx = lib.WithLogUserID(ctx, claims.UserID.String())
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}

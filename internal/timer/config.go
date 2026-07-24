@@ -1,7 +1,7 @@
 package timer
 
 import (
-	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"time"
@@ -49,7 +49,7 @@ func envDuration(key string, def time.Duration) time.Duration {
 	}
 	d, err := time.ParseDuration(v)
 	if err != nil || d <= 0 {
-		log.Printf("timer config: invalid %s=%q, using default %s", key, v, def)
+		slog.Warn("timer config: invalid value, using default", "key", key, "value", v, "default", def)
 		return def
 	}
 	return d
@@ -62,7 +62,7 @@ func envInt(key string, def int) int {
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil || n <= 0 {
-		log.Printf("timer config: invalid %s=%q, using default %d", key, v, def)
+		slog.Warn("timer config: invalid value, using default", "key", key, "value", v, "default", def)
 		return def
 	}
 	return n

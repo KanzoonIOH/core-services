@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"log/slog"
 	"os/signal"
 	"syscall"
 
@@ -24,7 +25,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	log.Printf("Starting timer service (timeout=%s, poll=%s)", cfg.ConversationTimeout, cfg.PollEvery)
+	slog.Info("starting timer service", "timeout", cfg.ConversationTimeout, "poll", cfg.PollEvery)
 	if err := timer.NewService(producer, cfg).Run(ctx, brokers); err != nil && !errors.Is(err, context.Canceled) {
 		log.Fatalf("timer service: %v", err)
 	}
