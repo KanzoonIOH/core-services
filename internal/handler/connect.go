@@ -243,6 +243,69 @@ func (h *ConnectHandler) markKnowledgeConversionFailed(agentKnowledgeID uuid.UUI
 	}
 }
 
+// RetryAgentKnowledge re-triggers RAG ingestion for a knowledge whose previous
+// insertion failed. Keyed on the agent_id + knowledge_id pair (same body as
+// connect) so the frontend needs no extra id. Flips status back to 'pending'
+// and reuses triggerKnowledgeConversion; the rag-service owns the final status.
+func (h *ConnectHandler) RetryAgentKnowledge(w http.ResponseWriter, r *http.Request) {
+	slog.InfoContext(r.Context(), "connect: retry agent-knowledge api hit", "method", r.Method, "path", r.URL.Path)
+	var req connectAgentKnowledgeRequest
+
+	if !lib.ParseJSONBody(w, r, &req) {
+		slog.ErrorContext(r.Context(), "connect: retry agent-knowledge invalid JSON body")
+		return
+	}
+	slog.InfoContext(r.Context(), "connect: retry agent-knowledge request", "params", jsonForLog(req))
+
+	ak, err := h.Queries.SelectAgentKnowledgeByPair(r.Context(), db.SelectAgentKnowledgeByPairParams{
+		AgentID:     req.AgentId,
+		KnowledgeID: req.KnowledgeId,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			lib.ResponseJSONError(w, http.StatusNotFound, "agent knowledge not found")
+			return
+		}
+		slog.ErrorContext(r.Context(), "connect: retry agent-knowledge lookup failed", "agent_id", req.AgentId, "knowledge_id", req.KnowledgeId, "error", err)
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to retry knowledge insertion")
+		return
+	}
+	// Only failed insertions are retryable; pending/completed are no-ops.
+	if ak.Status != "failed" {
+		lib.ResponseJSONError(w, http.StatusConflict, "knowledge insertion is not in a failed state")
+		return
+	}
+
+	knowledge, err := h.Queries.SelectKnowledgeById(r.Context(), req.KnowledgeId)
+	if err != nil {
+		slog.ErrorContext(r.Context(), "connect: retry agent-knowledge knowledge lookup failed", "knowledge_id", req.KnowledgeId, "error", err)
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to retry knowledge insertion")
+		return
+	}
+
+	// Flip back to pending so the UI shows in-flight; conversion drives it on.
+	if _, err := h.Queries.UpdateAgentKnowledgeStatus(r.Context(), db.UpdateAgentKnowledgeStatusParams{
+		Status: "pending",
+		ID:     ak.ID,
+	}); err != nil {
+		slog.ErrorContext(r.Context(), "connect: retry agent-knowledge status reset failed", "agent_knowledge_id", ak.ID, "error", err)
+		lib.ResponseJSONError(w, http.StatusInternalServerError, "failed to retry knowledge insertion")
+		return
+	}
+
+	var milvusCollection string
+	if agent, err := h.Queries.SelectAgentById(r.Context(), req.AgentId); err != nil {
+		slog.ErrorContext(r.Context(), "connect: retry agent-knowledge agent lookup for milvus collection failed", "agent_id", req.AgentId, "error", err)
+	} else {
+		milvusCollection = agent.MilvusCollection
+	}
+
+	go h.triggerKnowledgeConversion(ak.ID, req.AgentId, req.KnowledgeId, knowledge.SourceUri, knowledge.SourceType, knowledge.IsCrawl, milvusCollection)
+	slog.InfoContext(r.Context(), "connect: retry agent-knowledge rag conversion trigger queued", "agent_knowledge_id", ak.ID, "agent_id", req.AgentId, "knowledge_id", req.KnowledgeId, "collection", milvusCollection)
+
+	lib.ResponseJSONTemplate(w, http.StatusOK, nil, map[string]any{"status": "pending"}, nil)
+}
+
 func (h *ConnectHandler) DisconnectAgentKnowledge(w http.ResponseWriter, r *http.Request) {
 	slog.InfoContext(r.Context(), "connect: disconnect agent-knowledge api hit", "method", r.Method, "path", r.URL.Path)
 	var req connectAgentKnowledgeRequest

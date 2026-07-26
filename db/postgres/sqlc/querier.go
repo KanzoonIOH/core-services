@@ -67,6 +67,7 @@ type Querier interface {
 	// soft-deleted user's session stops refreshing immediately).
 	SelectActiveRefreshToken(ctx context.Context, tokenHash string) (SelectActiveRefreshTokenRow, error)
 	SelectAgentById(ctx context.Context, id uuid.UUID) (SelectAgentByIdRow, error)
+	SelectAgentKnowledgeByPair(ctx context.Context, arg SelectAgentKnowledgeByPairParams) (SelectAgentKnowledgeByPairRow, error)
 	SelectAgentKnowledgesByAgentId(ctx context.Context, arg SelectAgentKnowledgesByAgentIdParams) ([]SelectAgentKnowledgesByAgentIdRow, error)
 	SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]SelectAgentsRow, error)
 	SelectAgentsByKnowledgeId(ctx context.Context, arg SelectAgentsByKnowledgeIdParams) ([]SelectAgentsByKnowledgeIdRow, error)

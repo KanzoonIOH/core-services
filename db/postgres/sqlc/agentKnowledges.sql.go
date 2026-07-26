@@ -69,6 +69,32 @@ func (q *Queries) InsertAgentKnowledge(ctx context.Context, arg InsertAgentKnowl
 	return i, err
 }
 
+const selectAgentKnowledgeByPair = `-- name: SelectAgentKnowledgeByPair :one
+SELECT id, status
+FROM agent_knowledges
+WHERE
+    deleted_at IS NULL
+    AND agent_id = $1
+    AND knowledge_id = $2
+`
+
+type SelectAgentKnowledgeByPairParams struct {
+	AgentID     uuid.UUID `json:"agent_id"`
+	KnowledgeID uuid.UUID `json:"knowledge_id"`
+}
+
+type SelectAgentKnowledgeByPairRow struct {
+	ID     uuid.UUID `json:"id"`
+	Status string    `json:"status"`
+}
+
+func (q *Queries) SelectAgentKnowledgeByPair(ctx context.Context, arg SelectAgentKnowledgeByPairParams) (SelectAgentKnowledgeByPairRow, error) {
+	row := q.db.QueryRow(ctx, selectAgentKnowledgeByPair, arg.AgentID, arg.KnowledgeID)
+	var i SelectAgentKnowledgeByPairRow
+	err := row.Scan(&i.ID, &i.Status)
+	return i, err
+}
+
 const selectAgentKnowledgesByAgentId = `-- name: SelectAgentKnowledgesByAgentId :many
 SELECT
     akv.id, akv.agent_id, akv.knowledge_id, akv.is_active_prod, akv.is_active_dev, akv.created_at, akv.updated_at, akv.status,

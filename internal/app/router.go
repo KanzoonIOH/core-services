@@ -169,6 +169,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 				r.Post("/agent-mcp", connectHandler.ConnectAgentMcp)
 				r.Delete("/agent-mcp", connectHandler.DisconnectAgentMcp)
 				r.Post("/agent-knowledge", connectHandler.ConnectAgentKnowledge)
+				r.Post("/agent-knowledge/retry", connectHandler.RetryAgentKnowledge)
 				r.Delete("/agent-knowledge", connectHandler.DisconnectAgentKnowledge)
 			})
 			r.Route("/dropdown", func(r chi.Router) {
