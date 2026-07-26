@@ -75,12 +75,13 @@ const selectConversationById = `-- name: SelectConversationById :one
 SELECT
     c.id,
     c.agent_id,
-    a.name AS agent_name,
+    coalesce(a.name, o.name, '') AS agent_name,
     c.started_at,
     c.ended_at,
     c.is_active
 FROM conversations_view AS c
-INNER JOIN agents AS a ON c.agent_id = a.id
+LEFT JOIN agents AS a ON c.agent_id = a.id
+LEFT JOIN orchestrators AS o ON c.agent_id = o.id
 WHERE c.id = $1
 `
 
@@ -111,7 +112,7 @@ const selectConversations = `-- name: SelectConversations :many
 SELECT
     c.id,
     c.agent_id,
-    a.name AS agent_name,
+    coalesce(a.name, o.name, '') AS agent_name,
     c.started_at,
     c.ended_at,
     c.is_active,
@@ -122,7 +123,8 @@ SELECT
         WHERE m.conversation_id = c.id
     ) AS message_count
 FROM conversations_view AS c
-INNER JOIN agents AS a ON c.agent_id = a.id
+LEFT JOIN agents AS a ON c.agent_id = a.id
+LEFT JOIN orchestrators AS o ON c.agent_id = o.id
 LEFT JOIN LATERAL (
     SELECT
         m.content,
