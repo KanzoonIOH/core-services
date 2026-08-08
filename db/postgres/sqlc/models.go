@@ -503,6 +503,40 @@ type ConversationsView struct {
 	ResolutionMs *int64                 `json:"resolution_ms"`
 }
 
+type Dashboard struct {
+	ID          uuid.UUID       `json:"id"`
+	OwnerID     uuid.UUID       `json:"owner_id"`
+	Name        string          `json:"name"`
+	Description *string         `json:"description"`
+	Config      json.RawMessage `json:"config"`
+	Visibility  string          `json:"visibility"`
+	PublishedAt *time.Time      `json:"published_at"`
+	PublishedBy *uuid.UUID      `json:"published_by"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+	DeletedAt   *time.Time      `json:"deleted_at"`
+}
+
+type DashboardImport struct {
+	ID          uuid.UUID `json:"id"`
+	DashboardID uuid.UUID `json:"dashboard_id"`
+	UserID      uuid.UUID `json:"user_id"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type DashboardsView struct {
+	ID          uuid.UUID       `json:"id"`
+	OwnerID     uuid.UUID       `json:"owner_id"`
+	Name        string          `json:"name"`
+	Description *string         `json:"description"`
+	Config      json.RawMessage `json:"config"`
+	Visibility  string          `json:"visibility"`
+	PublishedAt *time.Time      `json:"published_at"`
+	PublishedBy *uuid.UUID      `json:"published_by"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+}
+
 type GlobalConfig struct {
 	ID                  bool      `json:"id"`
 	AgentName           string    `json:"agent_name"`

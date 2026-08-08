@@ -49,6 +49,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 	dropdownHandler := handler.NewDropdownHandler(conn)
 	globalConfigHandler := handler.NewGlobalConfigHandler(conn)
 	uploadHandler := handler.NewUploadHandler(conn, objectStorage)
+	dashboardHandler := handler.NewDashboardHandler(conn)
 
 	r.Get("/health", handler.Health)
 	r.Get("/all-functions", handler.AllFunctions(r))
@@ -185,6 +186,26 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 				r.Get("/", apiKeyHandler.Read)
 				r.Patch("/{id}", apiKeyHandler.Update)
 				r.Delete("/{id}", apiKeyHandler.Delete)
+			})
+			r.Route("/dashboards", func(r chi.Router) {
+				r.Post("/", dashboardHandler.Create)
+				r.Get("/", dashboardHandler.Read)
+				r.Get("/published", dashboardHandler.ReadPublished)
+				r.Get("/{id}", dashboardHandler.ReadById)
+				r.Patch("/{id}", dashboardHandler.Update)
+				r.Delete("/{id}", dashboardHandler.Delete)
+				// Import/unimport a published dashboard (any user).
+				r.Post("/{id}/import", dashboardHandler.Import)
+				r.Delete("/{id}/import", dashboardHandler.Unimport)
+				// Owner or admin can unpublish; publishing is admin-only.
+				r.Delete("/{id}/publish", dashboardHandler.Unpublish)
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RequireRole(
+						string(db.UserRoleADMIN),
+						string(db.UserRoleSUPERADMIN),
+					))
+					r.Post("/{id}/publish", dashboardHandler.Publish)
+				})
 			})
 			r.Route("/logs", func(r chi.Router) {
 				// audit trail (write/delete actions)

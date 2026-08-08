@@ -32,6 +32,7 @@ type Querier interface {
 	CountOrchestrators(ctx context.Context, arg CountOrchestratorsParams) (int64, error)
 	DeleteAgentTags(ctx context.Context, agentID uuid.UUID) error
 	DeleteConversation(ctx context.Context, id uuid.UUID) error
+	DeleteDashboardImport(ctx context.Context, arg DeleteDashboardImportParams) (int64, error)
 	DeleteKnowledgeTags(ctx context.Context, knowledgeID uuid.UUID) error
 	DeleteMcpTags(ctx context.Context, mcpID uuid.UUID) error
 	DeleteMessagesByConversation(ctx context.Context, conversationID uuid.UUID) error
@@ -41,6 +42,9 @@ type Querier interface {
 	InsertAgentMcp(ctx context.Context, arg InsertAgentMcpParams) (InsertAgentMcpRow, error)
 	InsertAgentTag(ctx context.Context, arg InsertAgentTagParams) error
 	InsertApiKey(ctx context.Context, arg InsertApiKeyParams) (InsertApiKeyRow, error)
+	InsertDashboard(ctx context.Context, arg InsertDashboardParams) (InsertDashboardRow, error)
+	// Idempotent import: ON CONFLICT means re-importing is a no-op.
+	InsertDashboardImport(ctx context.Context, arg InsertDashboardImportParams) (int64, error)
 	InsertKnowledge(ctx context.Context, arg InsertKnowledgeParams) (InsertKnowledgeRow, error)
 	InsertKnowledgeTag(ctx context.Context, arg InsertKnowledgeTagParams) error
 	InsertMcp(ctx context.Context, arg InsertMcpParams) (InsertMcpRow, error)
@@ -56,6 +60,8 @@ type Querier interface {
 	InsertUserInvite(ctx context.Context, email string) (InsertUserInviteRow, error)
 	InsertUserRegister(ctx context.Context, arg InsertUserRegisterParams) (InsertUserRegisterRow, error)
 	ListMessagesByConversation(ctx context.Context, conversationID uuid.UUID) ([]Message, error)
+	// Admin-gated at the handler; records who published and when.
+	PublishDashboard(ctx context.Context, arg PublishDashboardParams) (PublishDashboardRow, error)
 	// Kill every active session for a user (logout-all / on status change).
 	RevokeAllUserRefreshTokens(ctx context.Context, userID uuid.UUID) error
 	RevokeApiKey(ctx context.Context, id uuid.UUID) (int64, error)
@@ -77,6 +83,8 @@ type Querier interface {
 	SelectApiKeys(ctx context.Context, arg SelectApiKeysParams) ([]ApiKeysView, error)
 	SelectConversationById(ctx context.Context, id uuid.UUID) (SelectConversationByIdRow, error)
 	SelectConversations(ctx context.Context, arg SelectConversationsParams) ([]SelectConversationsRow, error)
+	SelectDashboardById(ctx context.Context, id uuid.UUID) (DashboardsView, error)
+	SelectDashboardImport(ctx context.Context, arg SelectDashboardImportParams) (DashboardImport, error)
 	SelectDropdownAgents(ctx context.Context, arg SelectDropdownAgentsParams) ([]SelectDropdownAgentsRow, error)
 	SelectKnowledgeById(ctx context.Context, id uuid.UUID) (SelectKnowledgeByIdRow, error)
 	SelectKnowledges(ctx context.Context, arg SelectKnowledgesParams) ([]SelectKnowledgesRow, error)
@@ -90,11 +98,18 @@ type Querier interface {
 	// invited_token: the active (non-revoked, non-expired) INVITE token, if any,
 	// so the UI can surface the accept link for pending invites.
 	SelectMembers(ctx context.Context, arg SelectMembersParams) ([]SelectMembersRow, error)
+	// Everything the caller can see in their sidebar: dashboards they own PLUS
+	// published dashboards they've imported. `is_owner` distinguishes edit rights;
+	// `imported` flags the ones that came from someone else.
+	SelectMyDashboards(ctx context.Context, userID uuid.UUID) ([]SelectMyDashboardsRow, error)
 	// Per-agent mapping joined to the agent row so callers get the derived fields
 	// (endpoint == agent.template_id, can_act) without us storing them redundantly.
 	SelectOrchestratorAgents(ctx context.Context, orchestratorID uuid.UUID) ([]SelectOrchestratorAgentsRow, error)
 	SelectOrchestratorById(ctx context.Context, id uuid.UUID) (OrchestratorsView, error)
 	SelectOrchestrators(ctx context.Context, arg SelectOrchestratorsParams) ([]SelectOrchestratorsRow, error)
+	// The team catalog: all published dashboards, with a flag telling the caller
+	// which ones they've already imported and whether they own it.
+	SelectPublishedDashboards(ctx context.Context, userID uuid.UUID) ([]SelectPublishedDashboardsRow, error)
 	SelectTags(ctx context.Context) ([]SelectTagsRow, error)
 	SelectUpcomingChangeByToken(ctx context.Context, token string) (UpcomingChange, error)
 	SelectUserById(ctx context.Context, id uuid.UUID) (UsersView, error)
@@ -106,6 +121,8 @@ type Querier interface {
 	SoftDeleteAgentKnowledge(ctx context.Context, id uuid.UUID) (int64, error)
 	SoftDeleteAgentKnowledgeByPair(ctx context.Context, arg SoftDeleteAgentKnowledgeByPairParams) (uuid.UUID, error)
 	SoftDeleteAgentMcp(ctx context.Context, arg SoftDeleteAgentMcpParams) (int64, error)
+	// Owner-scoped delete.
+	SoftDeleteDashboard(ctx context.Context, arg SoftDeleteDashboardParams) (int64, error)
 	SoftDeleteKnowledge(ctx context.Context, id uuid.UUID) (int64, error)
 	SoftDeleteMcp(ctx context.Context, id uuid.UUID) (int64, error)
 	SoftDeleteMcpToolsByMcpId(ctx context.Context, mcpID uuid.UUID) (int64, error)
@@ -113,11 +130,14 @@ type Querier interface {
 	SoftDeleteOrchestrator(ctx context.Context, id uuid.UUID) (int64, error)
 	SoftDeleteTag(ctx context.Context, id uuid.UUID) (int64, error)
 	TouchRefreshToken(ctx context.Context, id uuid.UUID) error
+	UnpublishDashboard(ctx context.Context, id uuid.UUID) (UnpublishDashboardRow, error)
 	UpdateAgent(ctx context.Context, arg UpdateAgentParams) (UpdateAgentRow, error)
 	UpdateAgentKnowledge(ctx context.Context, arg UpdateAgentKnowledgeParams) (UpdateAgentKnowledgeRow, error)
 	UpdateAgentKnowledgeStatus(ctx context.Context, arg UpdateAgentKnowledgeStatusParams) (int64, error)
 	UpdateAgentPersona(ctx context.Context, arg UpdateAgentPersonaParams) (UpdateAgentPersonaRow, error)
 	UpdateApiKeyName(ctx context.Context, arg UpdateApiKeyNameParams) (UpdateApiKeyNameRow, error)
+	// Owner-scoped: the WHERE clause enforces that only the owner's row is touched.
+	UpdateDashboard(ctx context.Context, arg UpdateDashboardParams) (UpdateDashboardRow, error)
 	UpdateGlobalConfig(ctx context.Context, arg UpdateGlobalConfigParams) (GlobalConfig, error)
 	UpdateKnowledge(ctx context.Context, arg UpdateKnowledgeParams) (UpdateKnowledgeRow, error)
 	UpdateMcp(ctx context.Context, arg UpdateMcpParams) (UpdateMcpRow, error)
