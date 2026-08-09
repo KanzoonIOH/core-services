@@ -689,6 +689,15 @@ type OrchestratorsView struct {
 	WebhookUri          string    `json:"webhook_uri"`
 }
 
+type Pin struct {
+	ID         uuid.UUID `json:"id"`
+	UserID     uuid.UUID `json:"user_id"`
+	EntityType string    `json:"entity_type"`
+	EntityID   uuid.UUID `json:"entity_id"`
+	Position   int32     `json:"position"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
 type RefreshToken struct {
 	ID         uuid.UUID  `json:"id"`
 	UserID     uuid.UUID  `json:"user_id"`

@@ -50,6 +50,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 	globalConfigHandler := handler.NewGlobalConfigHandler(conn)
 	uploadHandler := handler.NewUploadHandler(conn, objectStorage)
 	dashboardHandler := handler.NewDashboardHandler(conn)
+	pinHandler := handler.NewPinHandler(conn)
 
 	r.Get("/health", handler.Health)
 	r.Get("/all-functions", handler.AllFunctions(r))
@@ -206,6 +207,13 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 					))
 					r.Post("/{id}/publish", dashboardHandler.Publish)
 				})
+			})
+			r.Route("/pins", func(r chi.Router) {
+				r.Get("/", pinHandler.Read)
+				r.Get("/ids", pinHandler.ReadIds)
+				r.Post("/", pinHandler.Create)
+				r.Delete("/", pinHandler.Delete)
+				r.Patch("/reorder", pinHandler.Reorder)
 			})
 			r.Route("/logs", func(r chi.Router) {
 				// audit trail (write/delete actions)

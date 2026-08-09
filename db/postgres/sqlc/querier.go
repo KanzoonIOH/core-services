@@ -36,6 +36,8 @@ type Querier interface {
 	DeleteKnowledgeTags(ctx context.Context, knowledgeID uuid.UUID) error
 	DeleteMcpTags(ctx context.Context, mcpID uuid.UUID) error
 	DeleteMessagesByConversation(ctx context.Context, conversationID uuid.UUID) error
+	DeletePin(ctx context.Context, arg DeletePinParams) (int64, error)
+	DeletePinById(ctx context.Context, arg DeletePinByIdParams) (int64, error)
 	GetGlobalConfig(ctx context.Context) (GlobalConfig, error)
 	InsertAgent(ctx context.Context, arg InsertAgentParams) (InsertAgentRow, error)
 	InsertAgentKnowledge(ctx context.Context, arg InsertAgentKnowledgeParams) (InsertAgentKnowledgeRow, error)
@@ -53,6 +55,9 @@ type Querier interface {
 	InsertMessage(ctx context.Context, arg InsertMessageParams) error
 	InsertOrchestrator(ctx context.Context, arg InsertOrchestratorParams) (InsertOrchestratorRow, error)
 	InsertOrchestratorAgent(ctx context.Context, arg InsertOrchestratorAgentParams) (InsertOrchestratorAgentRow, error)
+	// Idempotent: re-pinning the same entity is a no-op that returns the existing
+	// pin. Position is appended at the end of the user's current list.
+	InsertPin(ctx context.Context, arg InsertPinParams) (Pin, error)
 	InsertRefreshToken(ctx context.Context, arg InsertRefreshTokenParams) (InsertRefreshTokenRow, error)
 	InsertUpcomingChange(ctx context.Context, arg InsertUpcomingChangeParams) (UpcomingChange, error)
 	// Creates a passwordless PENDING user for the email-invite flow. Username/name
@@ -107,9 +112,16 @@ type Querier interface {
 	SelectOrchestratorAgents(ctx context.Context, orchestratorID uuid.UUID) ([]SelectOrchestratorAgentsRow, error)
 	SelectOrchestratorById(ctx context.Context, id uuid.UUID) (OrchestratorsView, error)
 	SelectOrchestrators(ctx context.Context, arg SelectOrchestratorsParams) ([]SelectOrchestratorsRow, error)
+	// Lightweight lookup for the frontend to know which entities are pinned (used to
+	// toggle the pin button state) without resolving labels.
+	SelectPinnedEntityIds(ctx context.Context, userID uuid.UUID) ([]SelectPinnedEntityIdsRow, error)
 	// The team catalog: all published dashboards, with a flag telling the caller
 	// which ones they've already imported and whether they own it.
 	SelectPublishedDashboards(ctx context.Context, userID uuid.UUID) ([]SelectPublishedDashboardsRow, error)
+	// The sidebar payload: each pin resolved to its current label + image via a
+	// LEFT JOIN per entity type. Chat pins borrow the agent's name/image. Rows whose
+	// target was deleted resolve to a NULL label and are dropped by the handler.
+	SelectResolvedPins(ctx context.Context, userID uuid.UUID) ([]SelectResolvedPinsRow, error)
 	SelectTags(ctx context.Context) ([]SelectTagsRow, error)
 	SelectUpcomingChangeByToken(ctx context.Context, token string) (UpcomingChange, error)
 	SelectUserById(ctx context.Context, id uuid.UUID) (UsersView, error)
@@ -143,6 +155,7 @@ type Querier interface {
 	UpdateMcp(ctx context.Context, arg UpdateMcpParams) (UpdateMcpRow, error)
 	UpdateMemberStatus(ctx context.Context, arg UpdateMemberStatusParams) (UpdateMemberStatusRow, error)
 	UpdateOrchestrator(ctx context.Context, arg UpdateOrchestratorParams) (UpdateOrchestratorRow, error)
+	UpdatePinPosition(ctx context.Context, arg UpdatePinPositionParams) (int64, error)
 	UpdateTag(ctx context.Context, arg UpdateTagParams) (UpdateTagRow, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (UpdateUserRow, error)
 	UpsertConversation(ctx context.Context, arg UpsertConversationParams) error
