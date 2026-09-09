@@ -543,6 +543,14 @@ func copyForwardHeaders(dst http.Header, src http.Header) {
 		if isHopByHopHeader(key) || strings.EqualFold(key, "Host") || strings.EqualFold(key, "Authorization") {
 			continue
 		}
+		// Drop the caller's Accept-Encoding (browsers send "gzip, deflate, br,
+		// zstd"). Go's transport only decompresses gzip it asked for itself, so
+		// forwarding this hands us a br/zstd body we can't parse — the reply
+		// still reaches the browser, but the assistant turn silently fails to
+		// persist and the history is empty on reload.
+		if strings.EqualFold(key, "Accept-Encoding") {
+			continue
+		}
 		for _, value := range values {
 			dst.Add(key, value)
 		}
