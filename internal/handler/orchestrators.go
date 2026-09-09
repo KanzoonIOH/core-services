@@ -167,6 +167,16 @@ func (h *OrchestratorHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Persona:             upstreamResp.Persona,
 		Guardrail:           upstreamResp.Guardrail,
 		WebhookUri:          "https://103.67.43.198:8443/agents/orchestrator/ask",
+		WebhookInputField:   "chatInput",
+		WebhookOutputField:  "output",
+		WebhookBodyFields:   json.RawMessage("[]"),
+		WebhookHeaderFields: json.RawMessage("[]"),
+		// The upstream orchestrator serves /stream; the edit form can turn it off.
+		WebhookStreamEnabled: true,
+		// Persona/guardrail are forwarded by default; the Customization tab can
+		// switch either off.
+		PersonaEnabled:   true,
+		GuardrailEnabled: true,
 	})
 	if err != nil {
 		slog.ErrorContext(r.Context(), "orchestrators: create db insert failed", "error", err)
@@ -349,14 +359,25 @@ func (h *OrchestratorHandler) ReadById(w http.ResponseWriter, r *http.Request) {
 // edited here. persona is a free-text/JSON blob (the frontend serializes its
 // structured persona into it), guardrail + routing_guide are free text.
 type updateOrchestratorRequest struct {
-	Name         string  `json:"name"`
-	Description  *string `json:"description"`
-	IsActive     *bool   `json:"is_active"`
-	RoutingGuide string  `json:"routing_guide"`
-	Persona      string  `json:"persona"`
-	Guardrail    string  `json:"guardrail"`
-	Image        *string `json:"image"`
-	WebhookUri   string  `json:"webhook_uri"`
+	Name                string      `json:"name"`
+	Description         *string     `json:"description"`
+	IsActive            *bool       `json:"is_active"`
+	RoutingGuide        *string     `json:"routing_guide"`
+	Persona             *string     `json:"persona"`
+	Guardrail           *string     `json:"guardrail"`
+	Image               *string     `json:"image"`
+	WebhookUri          string      `json:"webhook_uri"`
+	WebhookInputField   string      `json:"webhook_input_field"`
+	WebhookOutputField  string      `json:"webhook_output_field"`
+	WebhookBodyFields   []BodyField `json:"webhook_body_fields"`
+	WebhookHeaderFields []BodyField `json:"webhook_header_fields"`
+	// Whether the upstream serves webhook_uri + "/stream". Omitted keeps the
+	// stored value.
+	WebhookStreamEnabled *bool `json:"webhook_stream_enabled"`
+	// Webhook payload switches. persona gates tone/length/style, guardrail
+	// gates the systemPrompt object. Omitted keeps the stored value.
+	PersonaEnabled   *bool `json:"persona_enabled"`
+	GuardrailEnabled *bool `json:"guardrail_enabled"`
 }
 
 func (h *OrchestratorHandler) Update(w http.ResponseWriter, r *http.Request) {
@@ -382,12 +403,22 @@ func (h *OrchestratorHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Name:         req.Name,
 		Description:  req.Description,
 		IsActive:     lib.NullBoolean(req.IsActive),
-		RoutingGuide: strings.TrimSpace(req.RoutingGuide),
+		RoutingGuide: trimStringOnUpdate(req.RoutingGuide),
 		Persona:      req.Persona,
-		Guardrail:    strings.TrimSpace(req.Guardrail),
+		Guardrail:    trimStringOnUpdate(req.Guardrail),
 		Image:        req.Image,
 		WebhookUri:   strings.TrimSpace(req.WebhookUri),
-		ID:           id,
+
+		WebhookInputField:   webhookFieldOrDefault(req.WebhookInputField, "chatInput"),
+		WebhookOutputField:  webhookFieldOrDefault(req.WebhookOutputField, "output"),
+		WebhookBodyFields:   marshalBodyFieldsOnUpdate(req.WebhookBodyFields),
+		WebhookHeaderFields: marshalBodyFieldsOnUpdate(req.WebhookHeaderFields),
+
+		WebhookStreamEnabled: req.WebhookStreamEnabled,
+		PersonaEnabled:       req.PersonaEnabled,
+		GuardrailEnabled:     req.GuardrailEnabled,
+
+		ID: id,
 	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			lib.ResponseJSONError(w, http.StatusNotFound, "orchestrator not found")

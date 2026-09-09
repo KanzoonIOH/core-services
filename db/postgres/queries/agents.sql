@@ -1,5 +1,5 @@
 -- name: InsertAgent :one
-INSERT INTO agents (name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image, can_act, template_id)
+INSERT INTO agents (name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image, can_act, template_id, webhook_stream_enabled, persona_enabled, guardrail_enabled)
 VALUES (
     sqlc.arg(name),
     sqlc.narg(description),
@@ -16,10 +16,13 @@ VALUES (
     sqlc.arg(guardrail),
     sqlc.narg(image),
     sqlc.arg(can_act),
-    sqlc.arg(template_id)
+    sqlc.arg(template_id),
+    sqlc.arg(webhook_stream_enabled),
+    sqlc.arg(persona_enabled),
+    sqlc.arg(guardrail_enabled)
 )
 RETURNING
-    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image, can_act, template_id;
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image, can_act, template_id, webhook_stream_enabled, persona_enabled, guardrail_enabled;
 
 -- name: SelectAgentById :one
 SELECT
@@ -49,20 +52,26 @@ SET
     description = sqlc.narg(description),
     is_active = sqlc.arg(is_active),
     webhook_uri = sqlc.arg(webhook_uri),
-    webhook_allowed_ips = sqlc.arg(webhook_allowed_ips),
-    webhook_allowed_origins = sqlc.arg(webhook_allowed_origins),
+    -- NULL means "field omitted by the caller": keep what is stored. An empty
+    -- array clears it. Stops partial clients (e.g. the Persona tab, which only
+    -- means to change the guardrail) from wiping stored auth and allowlists.
+    webhook_allowed_ips = COALESCE(sqlc.narg(webhook_allowed_ips), webhook_allowed_ips),
+    webhook_allowed_origins = COALESCE(sqlc.narg(webhook_allowed_origins), webhook_allowed_origins),
     webhook_input_field = sqlc.arg(webhook_input_field),
     webhook_output_field = sqlc.arg(webhook_output_field),
-    webhook_body_fields = sqlc.arg(webhook_body_fields),
-    webhook_header_fields = sqlc.arg(webhook_header_fields),
-    guardrail = sqlc.arg(guardrail),
+    webhook_body_fields = COALESCE(sqlc.narg(webhook_body_fields), webhook_body_fields),
+    webhook_header_fields = COALESCE(sqlc.narg(webhook_header_fields), webhook_header_fields),
+    guardrail = COALESCE(sqlc.narg(guardrail), guardrail),
     image = sqlc.narg(image),
+    webhook_stream_enabled = COALESCE(sqlc.narg(webhook_stream_enabled), webhook_stream_enabled),
+    persona_enabled = COALESCE(sqlc.narg(persona_enabled), persona_enabled),
+    guardrail_enabled = COALESCE(sqlc.narg(guardrail_enabled), guardrail_enabled),
     updated_at = NOW()
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id)
 RETURNING
-    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image, can_act, template_id;
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image, can_act, template_id, webhook_stream_enabled, persona_enabled, guardrail_enabled;
 
 -- name: UpdateAgentPersona :one
 UPDATE agents
@@ -75,7 +84,7 @@ WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id)
 RETURNING
-    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image, can_act, template_id;
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image, can_act, template_id, webhook_stream_enabled, persona_enabled, guardrail_enabled;
 
 -- name: SoftDeleteAgent :execrows
 UPDATE agents

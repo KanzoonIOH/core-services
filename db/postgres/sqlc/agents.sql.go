@@ -70,7 +70,7 @@ func (q *Queries) CountAgentsByMcpId(ctx context.Context) (int64, error) {
 }
 
 const insertAgent = `-- name: InsertAgent :one
-INSERT INTO agents (name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image, can_act, template_id)
+INSERT INTO agents (name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image, can_act, template_id, webhook_stream_enabled, persona_enabled, guardrail_enabled)
 VALUES (
     $1,
     $2,
@@ -87,10 +87,13 @@ VALUES (
     $13,
     $14,
     $15,
-    $16
+    $16,
+    $17,
+    $18,
+    $19
 )
 RETURNING
-    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image, can_act, template_id
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image, can_act, template_id, webhook_stream_enabled, persona_enabled, guardrail_enabled
 `
 
 type InsertAgentParams struct {
@@ -110,6 +113,9 @@ type InsertAgentParams struct {
 	Image                 *string         `json:"image"`
 	CanAct                bool            `json:"can_act"`
 	TemplateID            string          `json:"template_id"`
+	WebhookStreamEnabled  bool            `json:"webhook_stream_enabled"`
+	PersonaEnabled        bool            `json:"persona_enabled"`
+	GuardrailEnabled      bool            `json:"guardrail_enabled"`
 }
 
 type InsertAgentRow struct {
@@ -135,6 +141,9 @@ type InsertAgentRow struct {
 	Image                 *string                 `json:"image"`
 	CanAct                bool                    `json:"can_act"`
 	TemplateID            string                  `json:"template_id"`
+	WebhookStreamEnabled  bool                    `json:"webhook_stream_enabled"`
+	PersonaEnabled        bool                    `json:"persona_enabled"`
+	GuardrailEnabled      bool                    `json:"guardrail_enabled"`
 }
 
 func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (InsertAgentRow, error) {
@@ -155,6 +164,9 @@ func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (Inser
 		arg.Image,
 		arg.CanAct,
 		arg.TemplateID,
+		arg.WebhookStreamEnabled,
+		arg.PersonaEnabled,
+		arg.GuardrailEnabled,
 	)
 	var i InsertAgentRow
 	err := row.Scan(
@@ -180,13 +192,16 @@ func (q *Queries) InsertAgent(ctx context.Context, arg InsertAgentParams) (Inser
 		&i.Image,
 		&i.CanAct,
 		&i.TemplateID,
+		&i.WebhookStreamEnabled,
+		&i.PersonaEnabled,
+		&i.GuardrailEnabled,
 	)
 	return i, err
 }
 
 const selectAgentById = `-- name: SelectAgentById :one
 SELECT
-    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at, av.milvus_collection, av.webhook_input_field, av.webhook_output_field, av.webhook_body_fields, av.webhook_header_fields, av.guardrail, av.image, av.can_act, av.template_id,
+    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at, av.milvus_collection, av.webhook_input_field, av.webhook_output_field, av.webhook_body_fields, av.webhook_header_fields, av.guardrail, av.image, av.can_act, av.template_id, av.webhook_stream_enabled, av.persona_enabled, av.guardrail_enabled,
     (
         SELECT COUNT(*) FROM agent_knowledges_view akv
         WHERE akv.agent_id = av.id
@@ -229,6 +244,9 @@ type SelectAgentByIdRow struct {
 	Image                 *string                 `json:"image"`
 	CanAct                bool                    `json:"can_act"`
 	TemplateID            string                  `json:"template_id"`
+	WebhookStreamEnabled  bool                    `json:"webhook_stream_enabled"`
+	PersonaEnabled        bool                    `json:"persona_enabled"`
+	GuardrailEnabled      bool                    `json:"guardrail_enabled"`
 	KnowledgesCount       int64                   `json:"knowledges_count"`
 	McpsCount             int64                   `json:"mcps_count"`
 	Tags                  json.RawMessage         `json:"tags"`
@@ -260,6 +278,9 @@ func (q *Queries) SelectAgentById(ctx context.Context, id uuid.UUID) (SelectAgen
 		&i.Image,
 		&i.CanAct,
 		&i.TemplateID,
+		&i.WebhookStreamEnabled,
+		&i.PersonaEnabled,
+		&i.GuardrailEnabled,
 		&i.KnowledgesCount,
 		&i.McpsCount,
 		&i.Tags,
@@ -269,7 +290,7 @@ func (q *Queries) SelectAgentById(ctx context.Context, id uuid.UUID) (SelectAgen
 
 const selectAgents = `-- name: SelectAgents :many
 SELECT
-    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at, av.milvus_collection, av.webhook_input_field, av.webhook_output_field, av.webhook_body_fields, av.webhook_header_fields, av.guardrail, av.image, av.can_act, av.template_id,
+    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at, av.milvus_collection, av.webhook_input_field, av.webhook_output_field, av.webhook_body_fields, av.webhook_header_fields, av.guardrail, av.image, av.can_act, av.template_id, av.webhook_stream_enabled, av.persona_enabled, av.guardrail_enabled,
     COALESCE(ak.knowledges_count, 0) AS knowledges_count,
     COALESCE(m.mcps_count, 0) AS mcps_count,
     (
@@ -366,6 +387,9 @@ type SelectAgentsRow struct {
 	Image                 *string                 `json:"image"`
 	CanAct                bool                    `json:"can_act"`
 	TemplateID            string                  `json:"template_id"`
+	WebhookStreamEnabled  bool                    `json:"webhook_stream_enabled"`
+	PersonaEnabled        bool                    `json:"persona_enabled"`
+	GuardrailEnabled      bool                    `json:"guardrail_enabled"`
 	KnowledgesCount       int64                   `json:"knowledges_count"`
 	McpsCount             int64                   `json:"mcps_count"`
 	Tags                  json.RawMessage         `json:"tags"`
@@ -410,6 +434,9 @@ func (q *Queries) SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]S
 			&i.Image,
 			&i.CanAct,
 			&i.TemplateID,
+			&i.WebhookStreamEnabled,
+			&i.PersonaEnabled,
+			&i.GuardrailEnabled,
 			&i.KnowledgesCount,
 			&i.McpsCount,
 			&i.Tags,
@@ -426,7 +453,7 @@ func (q *Queries) SelectAgents(ctx context.Context, arg SelectAgentsParams) ([]S
 
 const selectAgentsByKnowledgeId = `-- name: SelectAgentsByKnowledgeId :many
 SELECT
-    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at, av.milvus_collection, av.webhook_input_field, av.webhook_output_field, av.webhook_body_fields, av.webhook_header_fields, av.guardrail, av.image, av.can_act, av.template_id,
+    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at, av.milvus_collection, av.webhook_input_field, av.webhook_output_field, av.webhook_body_fields, av.webhook_header_fields, av.guardrail, av.image, av.can_act, av.template_id, av.webhook_stream_enabled, av.persona_enabled, av.guardrail_enabled,
     (akv.id IS NOT NULL)::bool AS connected
 FROM agents_view av
 LEFT JOIN agent_knowledges_view akv
@@ -476,6 +503,9 @@ type SelectAgentsByKnowledgeIdRow struct {
 	Image                 *string                 `json:"image"`
 	CanAct                bool                    `json:"can_act"`
 	TemplateID            string                  `json:"template_id"`
+	WebhookStreamEnabled  bool                    `json:"webhook_stream_enabled"`
+	PersonaEnabled        bool                    `json:"persona_enabled"`
+	GuardrailEnabled      bool                    `json:"guardrail_enabled"`
 	Connected             bool                    `json:"connected"`
 }
 
@@ -516,6 +546,9 @@ func (q *Queries) SelectAgentsByKnowledgeId(ctx context.Context, arg SelectAgent
 			&i.Image,
 			&i.CanAct,
 			&i.TemplateID,
+			&i.WebhookStreamEnabled,
+			&i.PersonaEnabled,
+			&i.GuardrailEnabled,
 			&i.Connected,
 		); err != nil {
 			return nil, err
@@ -530,7 +563,7 @@ func (q *Queries) SelectAgentsByKnowledgeId(ctx context.Context, arg SelectAgent
 
 const selectAgentsByMcpId = `-- name: SelectAgentsByMcpId :many
 SELECT
-    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at, av.milvus_collection, av.webhook_input_field, av.webhook_output_field, av.webhook_body_fields, av.webhook_header_fields, av.guardrail, av.image, av.can_act, av.template_id,
+    av.id, av.name, av.description, av.type, av.is_active, av.webhook_uri, av.webhook_allowed_ips, av.webhook_allowed_origins, av.tone, av.response_length, av.communication_style, av.created_at, av.updated_at, av.milvus_collection, av.webhook_input_field, av.webhook_output_field, av.webhook_body_fields, av.webhook_header_fields, av.guardrail, av.image, av.can_act, av.template_id, av.webhook_stream_enabled, av.persona_enabled, av.guardrail_enabled,
     (amv.id IS NOT NULL)::bool AS connected
 FROM agents_view av
 LEFT JOIN agent_mcps_view amv
@@ -580,6 +613,9 @@ type SelectAgentsByMcpIdRow struct {
 	Image                 *string                 `json:"image"`
 	CanAct                bool                    `json:"can_act"`
 	TemplateID            string                  `json:"template_id"`
+	WebhookStreamEnabled  bool                    `json:"webhook_stream_enabled"`
+	PersonaEnabled        bool                    `json:"persona_enabled"`
+	GuardrailEnabled      bool                    `json:"guardrail_enabled"`
 	Connected             bool                    `json:"connected"`
 }
 
@@ -620,6 +656,9 @@ func (q *Queries) SelectAgentsByMcpId(ctx context.Context, arg SelectAgentsByMcp
 			&i.Image,
 			&i.CanAct,
 			&i.TemplateID,
+			&i.WebhookStreamEnabled,
+			&i.PersonaEnabled,
+			&i.GuardrailEnabled,
 			&i.Connected,
 		); err != nil {
 			return nil, err
@@ -655,20 +694,26 @@ SET
     description = $2,
     is_active = $3,
     webhook_uri = $4,
-    webhook_allowed_ips = $5,
-    webhook_allowed_origins = $6,
+    -- NULL means "field omitted by the caller": keep what is stored. An empty
+    -- array clears it. Stops partial clients (e.g. the Persona tab, which only
+    -- means to change the guardrail) from wiping stored auth and allowlists.
+    webhook_allowed_ips = COALESCE($5, webhook_allowed_ips),
+    webhook_allowed_origins = COALESCE($6, webhook_allowed_origins),
     webhook_input_field = $7,
     webhook_output_field = $8,
-    webhook_body_fields = $9,
-    webhook_header_fields = $10,
-    guardrail = $11,
+    webhook_body_fields = COALESCE($9, webhook_body_fields),
+    webhook_header_fields = COALESCE($10, webhook_header_fields),
+    guardrail = COALESCE($11, guardrail),
     image = $12,
+    webhook_stream_enabled = COALESCE($13, webhook_stream_enabled),
+    persona_enabled = COALESCE($14, persona_enabled),
+    guardrail_enabled = COALESCE($15, guardrail_enabled),
     updated_at = NOW()
 WHERE
     deleted_at IS NULL
-    AND id = $13
+    AND id = $16
 RETURNING
-    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image, can_act, template_id
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image, can_act, template_id, webhook_stream_enabled, persona_enabled, guardrail_enabled
 `
 
 type UpdateAgentParams struct {
@@ -682,8 +727,11 @@ type UpdateAgentParams struct {
 	WebhookOutputField    string          `json:"webhook_output_field"`
 	WebhookBodyFields     json.RawMessage `json:"webhook_body_fields"`
 	WebhookHeaderFields   json.RawMessage `json:"webhook_header_fields"`
-	Guardrail             string          `json:"guardrail"`
+	Guardrail             *string         `json:"guardrail"`
 	Image                 *string         `json:"image"`
+	WebhookStreamEnabled  *bool           `json:"webhook_stream_enabled"`
+	PersonaEnabled        *bool           `json:"persona_enabled"`
+	GuardrailEnabled      *bool           `json:"guardrail_enabled"`
 	ID                    uuid.UUID       `json:"id"`
 }
 
@@ -710,6 +758,9 @@ type UpdateAgentRow struct {
 	Image                 *string                 `json:"image"`
 	CanAct                bool                    `json:"can_act"`
 	TemplateID            string                  `json:"template_id"`
+	WebhookStreamEnabled  bool                    `json:"webhook_stream_enabled"`
+	PersonaEnabled        bool                    `json:"persona_enabled"`
+	GuardrailEnabled      bool                    `json:"guardrail_enabled"`
 }
 
 func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (UpdateAgentRow, error) {
@@ -726,6 +777,9 @@ func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Updat
 		arg.WebhookHeaderFields,
 		arg.Guardrail,
 		arg.Image,
+		arg.WebhookStreamEnabled,
+		arg.PersonaEnabled,
+		arg.GuardrailEnabled,
 		arg.ID,
 	)
 	var i UpdateAgentRow
@@ -752,6 +806,9 @@ func (q *Queries) UpdateAgent(ctx context.Context, arg UpdateAgentParams) (Updat
 		&i.Image,
 		&i.CanAct,
 		&i.TemplateID,
+		&i.WebhookStreamEnabled,
+		&i.PersonaEnabled,
+		&i.GuardrailEnabled,
 	)
 	return i, err
 }
@@ -767,7 +824,7 @@ WHERE
     deleted_at IS NULL
     AND id = $4
 RETURNING
-    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image, can_act, template_id
+    id, name, description, type, is_active, webhook_uri, webhook_allowed_ips, webhook_allowed_origins, tone, response_length, communication_style, created_at, updated_at, milvus_collection, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, guardrail, image, can_act, template_id, webhook_stream_enabled, persona_enabled, guardrail_enabled
 `
 
 type UpdateAgentPersonaParams struct {
@@ -800,6 +857,9 @@ type UpdateAgentPersonaRow struct {
 	Image                 *string                 `json:"image"`
 	CanAct                bool                    `json:"can_act"`
 	TemplateID            string                  `json:"template_id"`
+	WebhookStreamEnabled  bool                    `json:"webhook_stream_enabled"`
+	PersonaEnabled        bool                    `json:"persona_enabled"`
+	GuardrailEnabled      bool                    `json:"guardrail_enabled"`
 }
 
 func (q *Queries) UpdateAgentPersona(ctx context.Context, arg UpdateAgentPersonaParams) (UpdateAgentPersonaRow, error) {
@@ -833,6 +893,9 @@ func (q *Queries) UpdateAgentPersona(ctx context.Context, arg UpdateAgentPersona
 		&i.Image,
 		&i.CanAct,
 		&i.TemplateID,
+		&i.WebhookStreamEnabled,
+		&i.PersonaEnabled,
+		&i.GuardrailEnabled,
 	)
 	return i, err
 }

@@ -39,6 +39,80 @@ func parseWebhookFields(raw json.RawMessage) []BodyField {
 	return fields
 }
 
+// storedAttachments picks what to persist on the message row. Chat clients
+// send attachments twice: "attachments" as plain URL strings (what most agents
+// consume) and "attachments_details" as {name,url,content_type,size} objects.
+// Prefer the detailed form so the transcript can render names and sizes.
+func storedAttachments(bodyMap map[string]any) any {
+	if v, ok := bodyMap["attachments_details"]; ok && v != nil {
+		return v
+	}
+	return bodyMap["attachments"]
+}
+
+// popCallerHeaders pulls the reserved "headers" object out of an incoming chat
+// body. It carries per-request values for "dynamic" header fields and must not
+// be forwarded in the body.
+func popCallerHeaders(bodyMap map[string]any) map[string]string {
+	out := map[string]string{}
+	raw, ok := bodyMap["headers"]
+	if !ok {
+		return out
+	}
+	if m, ok := raw.(map[string]any); ok {
+		for k, v := range m {
+			if s, ok := v.(string); ok {
+				out[k] = s
+			}
+		}
+	}
+	delete(bodyMap, "headers")
+	return out
+}
+
+// applyWebhookBodyFields injects the configured body fields into bodyMap.
+// Static fields set a fixed value; dynamic fields must already be supplied by
+// the caller. Returns a non-empty message when a dynamic field is missing.
+func applyWebhookBodyFields(bodyMap map[string]any, raw json.RawMessage) string {
+	for _, f := range parseWebhookFields(raw) {
+		if f.Key == "" {
+			continue
+		}
+		if f.Type == "dynamic" {
+			v, ok := bodyMap[f.Key]
+			if !ok || v == nil || v == "" {
+				return fmt.Sprintf("missing required field %q", f.Key)
+			}
+			continue // keep the caller-supplied value as-is
+		}
+		bodyMap[f.Key] = f.Value
+	}
+	return ""
+}
+
+// resolveWebhookHeaders turns the configured header fields into outbound HTTP
+// headers. Static uses the fixed value; dynamic must be supplied by the caller
+// under body.headers. No fields = open target, no headers added. Returns a
+// non-empty message when a dynamic header is missing.
+func resolveWebhookHeaders(raw json.RawMessage, caller map[string]string) (map[string]string, string) {
+	out := map[string]string{}
+	for _, f := range parseWebhookFields(raw) {
+		if f.Key == "" {
+			continue
+		}
+		if f.Type == "dynamic" {
+			v := caller[f.Key]
+			if v == "" {
+				return nil, fmt.Sprintf("missing required header %q", f.Key)
+			}
+			out[f.Key] = v
+			continue
+		}
+		out[f.Key] = f.Value
+	}
+	return out, ""
+}
+
 // marshalBodyFields cleans the incoming field list (drops blank keys, defaults
 // type to static) and returns JSONB. Always a valid JSON array.
 func marshalBodyFields(fields []BodyField) json.RawMessage {
@@ -70,6 +144,40 @@ func trimNonEmpty(in []string) []string {
 		}
 	}
 	return out
+}
+
+// On PATCH, a JSON key the caller left out unmarshals to a nil slice while an
+// explicit [] unmarshals to an empty non-nil slice. The *OnUpdate helpers keep
+// that distinction: nil -> NULL -> the SQL COALESCE keeps the stored value,
+// empty -> clear. Create must never send NULL (columns are NOT NULL), so it
+// keeps using the plain helpers.
+func marshalBodyFieldsOnUpdate(fields []BodyField) json.RawMessage {
+	if fields == nil {
+		return nil
+	}
+	return marshalBodyFields(fields)
+}
+
+func trimNonEmptyOnUpdate(in []string) []string {
+	if in == nil {
+		return nil
+	}
+	return trimNonEmpty(in)
+}
+
+func parseAllowedIPsOnUpdate(in []string) ([]netip.Addr, error) {
+	if in == nil {
+		return nil, nil
+	}
+	return parseAllowedIPs(in)
+}
+
+func trimStringOnUpdate(in *string) *string {
+	if in == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*in)
+	return &trimmed
 }
 
 // tagPalette is the fixed set of default colors a newly typed tag can get.
@@ -159,9 +267,15 @@ type createAgentRequest struct {
 	WebhookHeaderFields   []BodyField `json:"webhook_header_fields"`
 	Guardrail             string      `json:"guardrail"`
 	Tags                  []string    `json:"tags"`
-	Image                 *string     `json:"image"`  // emoji string or object-storage URL
+	Image                 *string     `json:"image"` // emoji string or object-storage URL
 	CanAct                bool        `json:"can_act"`
 	TemplateID            string      `json:"template_id"` // static template id ("product", "booking", ...) or empty
+	// Whether the upstream serves webhook_uri + "/stream". Defaults true.
+	WebhookStreamEnabled *bool `json:"webhook_stream_enabled"`
+	// Webhook payload switches. persona gates tone/length/style,
+	// guardrail gates the systemPrompt object. Both default true.
+	PersonaEnabled   *bool `json:"persona_enabled"`
+	GuardrailEnabled *bool `json:"guardrail_enabled"`
 }
 
 // buildMilvusCollection sanitizes the user-supplied base name and appends a
@@ -262,6 +376,10 @@ func (h *AgentHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Image:                 req.Image,
 		CanAct:                req.CanAct,
 		TemplateID:            strings.TrimSpace(req.TemplateID),
+		// Omitted means "yes": today every upstream we ship serves /stream.
+		WebhookStreamEnabled: req.WebhookStreamEnabled == nil || *req.WebhookStreamEnabled,
+		PersonaEnabled:       req.PersonaEnabled == nil || *req.PersonaEnabled,
+		GuardrailEnabled:     req.GuardrailEnabled == nil || *req.GuardrailEnabled,
 	})
 	if err != nil {
 		slog.ErrorContext(r.Context(), "agents: create db insert failed", "params", jsonForLog(req), "error", err)
@@ -435,9 +553,13 @@ type updateAgentRequest struct {
 	WebhookOutputField    string      `json:"webhook_output_field"`
 	WebhookBodyFields     []BodyField `json:"webhook_body_fields"`
 	WebhookHeaderFields   []BodyField `json:"webhook_header_fields"`
-	Guardrail             string      `json:"guardrail"`
+	Guardrail             *string     `json:"guardrail"`
 	Tags                  []string    `json:"tags"`
 	Image                 *string     `json:"image"` // emoji string or object-storage URL
+	WebhookStreamEnabled  *bool       `json:"webhook_stream_enabled"`
+	// Omitted keeps the stored value (SQL COALESCE).
+	PersonaEnabled   *bool `json:"persona_enabled"`
+	GuardrailEnabled *bool `json:"guardrail_enabled"`
 	// milvus_collection is intentionally omitted: it is immutable after create.
 }
 
@@ -470,7 +592,7 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	allowedIPs, err := parseAllowedIPs(req.WebhookAllowedIps)
+	allowedIPs, err := parseAllowedIPsOnUpdate(req.WebhookAllowedIps)
 	if err != nil {
 		slog.WarnContext(r.Context(), "agents: update invalid allowed ips", "status", http.StatusBadRequest, "agent_id", id, "error", err)
 		lib.ResponseJSONError(w, http.StatusBadRequest, err.Error())
@@ -483,13 +605,16 @@ func (h *AgentHandler) Update(w http.ResponseWriter, r *http.Request) {
 		IsActive:              req.IsActive,
 		WebhookUri:            req.WebhookUri,
 		WebhookAllowedIps:     allowedIPs,
-		WebhookAllowedOrigins: trimNonEmpty(req.WebhookAllowedOrigins),
+		WebhookAllowedOrigins: trimNonEmptyOnUpdate(req.WebhookAllowedOrigins),
 		WebhookInputField:     webhookFieldOrDefault(req.WebhookInputField, "chatInput"),
 		WebhookOutputField:    webhookFieldOrDefault(req.WebhookOutputField, "output"),
-		WebhookBodyFields:     marshalBodyFields(req.WebhookBodyFields),
-		WebhookHeaderFields:   marshalBodyFields(req.WebhookHeaderFields),
-		Guardrail:             strings.TrimSpace(req.Guardrail),
+		WebhookBodyFields:     marshalBodyFieldsOnUpdate(req.WebhookBodyFields),
+		WebhookHeaderFields:   marshalBodyFieldsOnUpdate(req.WebhookHeaderFields),
+		Guardrail:             trimStringOnUpdate(req.Guardrail),
 		Image:                 req.Image,
+		WebhookStreamEnabled:  req.WebhookStreamEnabled,
+		PersonaEnabled:        req.PersonaEnabled,
+		GuardrailEnabled:      req.GuardrailEnabled,
 		ID:                    id,
 	})
 	if err != nil {

@@ -387,6 +387,9 @@ type Agent struct {
 	Image                 *string                 `json:"image"`
 	CanAct                bool                    `json:"can_act"`
 	TemplateID            string                  `json:"template_id"`
+	WebhookStreamEnabled  bool                    `json:"webhook_stream_enabled"`
+	PersonaEnabled        bool                    `json:"persona_enabled"`
+	GuardrailEnabled      bool                    `json:"guardrail_enabled"`
 }
 
 type AgentKnowledge struct {
@@ -459,6 +462,9 @@ type AgentsView struct {
 	Image                 *string                 `json:"image"`
 	CanAct                bool                    `json:"can_act"`
 	TemplateID            string                  `json:"template_id"`
+	WebhookStreamEnabled  bool                    `json:"webhook_stream_enabled"`
+	PersonaEnabled        bool                    `json:"persona_enabled"`
+	GuardrailEnabled      bool                    `json:"guardrail_enabled"`
 }
 
 type ApiKey struct {
@@ -489,6 +495,7 @@ type Conversation struct {
 	DeletedAt    *time.Time             `json:"deleted_at"`
 	MessageCount int32                  `json:"message_count"`
 	ResolutionMs *int64                 `json:"resolution_ms"`
+	UserID       *uuid.UUID             `json:"user_id"`
 }
 
 type ConversationsView struct {
@@ -501,6 +508,7 @@ type ConversationsView struct {
 	IsResolved   *bool                  `json:"is_resolved"`
 	MessageCount int32                  `json:"message_count"`
 	ResolutionMs *int64                 `json:"resolution_ms"`
+	UserID       *uuid.UUID             `json:"user_id"`
 }
 
 type Dashboard struct {
@@ -638,19 +646,26 @@ type Message struct {
 }
 
 type Orchestrator struct {
-	ID                  uuid.UUID  `json:"id"`
-	Name                string     `json:"name"`
-	Description         *string    `json:"description"`
-	IsActive            bool       `json:"is_active"`
-	OrchestratorAgentID string     `json:"orchestrator_agent_id"`
-	RoutingGuide        string     `json:"routing_guide"`
-	Persona             string     `json:"persona"`
-	Guardrail           string     `json:"guardrail"`
-	CreatedAt           time.Time  `json:"created_at"`
-	UpdatedAt           time.Time  `json:"updated_at"`
-	DeletedAt           *time.Time `json:"deleted_at"`
-	Image               *string    `json:"image"`
-	WebhookUri          string     `json:"webhook_uri"`
+	ID                   uuid.UUID       `json:"id"`
+	Name                 string          `json:"name"`
+	Description          *string         `json:"description"`
+	IsActive             bool            `json:"is_active"`
+	OrchestratorAgentID  string          `json:"orchestrator_agent_id"`
+	RoutingGuide         string          `json:"routing_guide"`
+	Persona              string          `json:"persona"`
+	Guardrail            string          `json:"guardrail"`
+	CreatedAt            time.Time       `json:"created_at"`
+	UpdatedAt            time.Time       `json:"updated_at"`
+	DeletedAt            *time.Time      `json:"deleted_at"`
+	Image                *string         `json:"image"`
+	WebhookUri           string          `json:"webhook_uri"`
+	WebhookInputField    string          `json:"webhook_input_field"`
+	WebhookOutputField   string          `json:"webhook_output_field"`
+	WebhookBodyFields    json.RawMessage `json:"webhook_body_fields"`
+	WebhookHeaderFields  json.RawMessage `json:"webhook_header_fields"`
+	WebhookStreamEnabled bool            `json:"webhook_stream_enabled"`
+	PersonaEnabled       bool            `json:"persona_enabled"`
+	GuardrailEnabled     bool            `json:"guardrail_enabled"`
 }
 
 type OrchestratorAgent struct {
@@ -675,18 +690,25 @@ type OrchestratorAgentsView struct {
 }
 
 type OrchestratorsView struct {
-	ID                  uuid.UUID `json:"id"`
-	Name                string    `json:"name"`
-	Description         *string   `json:"description"`
-	IsActive            bool      `json:"is_active"`
-	OrchestratorAgentID string    `json:"orchestrator_agent_id"`
-	RoutingGuide        string    `json:"routing_guide"`
-	Persona             string    `json:"persona"`
-	Guardrail           string    `json:"guardrail"`
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
-	Image               *string   `json:"image"`
-	WebhookUri          string    `json:"webhook_uri"`
+	ID                   uuid.UUID       `json:"id"`
+	Name                 string          `json:"name"`
+	Description          *string         `json:"description"`
+	IsActive             bool            `json:"is_active"`
+	OrchestratorAgentID  string          `json:"orchestrator_agent_id"`
+	RoutingGuide         string          `json:"routing_guide"`
+	Persona              string          `json:"persona"`
+	Guardrail            string          `json:"guardrail"`
+	CreatedAt            time.Time       `json:"created_at"`
+	UpdatedAt            time.Time       `json:"updated_at"`
+	Image                *string         `json:"image"`
+	WebhookUri           string          `json:"webhook_uri"`
+	WebhookInputField    string          `json:"webhook_input_field"`
+	WebhookOutputField   string          `json:"webhook_output_field"`
+	WebhookBodyFields    json.RawMessage `json:"webhook_body_fields"`
+	WebhookHeaderFields  json.RawMessage `json:"webhook_header_fields"`
+	WebhookStreamEnabled bool            `json:"webhook_stream_enabled"`
+	PersonaEnabled       bool            `json:"persona_enabled"`
+	GuardrailEnabled     bool            `json:"guardrail_enabled"`
 }
 
 type Pin struct {

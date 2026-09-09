@@ -75,6 +75,15 @@ func (h *WebhookHandler) ForwardChatWebhookStream(w http.ResponseWriter, r *http
 		w.Header().Set("Vary", "Origin")
 	}
 
+	// Not every upstream exposes a /stream sibling. When the agent is marked
+	// non-streaming, serve this turn from the plain endpoint instead of 502ing
+	// on a URL that doesn't exist — the client gets one final chunk.
+	if !agent.WebhookStreamEnabled {
+		slog.InfoContext(r.Context(), "chat webhook stream disabled, falling back", "agent", id, "session", conversationID)
+		h.ForwardChatWebhook(w, r)
+		return
+	}
+
 	// The streaming endpoint forwards to the upstream's /stream variant:
 	// webhook_uri + "/stream" (trailing slash on the configured URI is trimmed
 	// so we don't produce "//stream").
@@ -104,8 +113,8 @@ func (h *WebhookHandler) ForwardChatWebhookStream(w http.ResponseWriter, r *http
 		bodyMap = map[string]any{}
 	}
 
-	h.ensureConversation(id, conversationID)
-	h.storeMessage(conversationID, db.MessageRoleUser, bodyMap["chatInput"], bodyMap["attachments"], nil)
+	h.ensureConversation(r.Context(), id, conversationID)
+	h.storeMessage(conversationID, db.MessageRoleUser, bodyMap["chatInput"], storedAttachments(bodyMap), nil)
 
 	if agent.WebhookInputField != "" && agent.WebhookInputField != "chatInput" {
 		if v, ok := bodyMap["chatInput"]; ok {
@@ -116,18 +125,22 @@ func (h *WebhookHandler) ForwardChatWebhookStream(w http.ResponseWriter, r *http
 
 	bodyMap["sessionId"] = conversationID
 	bodyMap["agentId"] = id.String()
-	bodyMap["tone"] = string(agent.Tone)
-	bodyMap["length"] = string(agent.ResponseLength)
-	bodyMap["style"] = string(agent.CommunicationStyle)
-
-	cfg, cfgErr := h.Queries.GetGlobalConfig(r.Context())
-	if cfgErr != nil {
-		slog.ErrorContext(r.Context(), "global config read failed", "error", cfgErr)
+	if agent.PersonaEnabled {
+		bodyMap["tone"] = string(agent.Tone)
+		bodyMap["length"] = string(agent.ResponseLength)
+		bodyMap["style"] = string(agent.CommunicationStyle)
 	}
-	bodyMap["systemPrompt"] = map[string]any{
-		"agent_name":           cfg.AgentName,
-		"industry_description": cfg.IndustryDescription,
-		"guardrail":            cfg.Guardrail,
+
+	if agent.GuardrailEnabled {
+		cfg, cfgErr := h.Queries.GetGlobalConfig(r.Context())
+		if cfgErr != nil {
+			slog.ErrorContext(r.Context(), "global config read failed", "error", cfgErr)
+		}
+		bodyMap["systemPrompt"] = map[string]any{
+			"agent_name":           cfg.AgentName,
+			"industry_description": cfg.IndustryDescription,
+			"guardrail":            cfg.Guardrail,
+		}
 	}
 
 	callerHeaders := map[string]string{}
@@ -273,7 +286,7 @@ func (h *WebhookHandler) persistStreamedReply(conversationID, outputField string
 
 	var respMap map[string]any
 	if json.Unmarshal(bytes.TrimSpace(raw), &respMap) == nil {
-		h.storeMessage(conversationID, db.MessageRoleAssistant, respMap[outputField], respMap["attachments"], respMap["data"])
+		h.storeMessage(conversationID, db.MessageRoleAssistant, pluckField(respMap, outputField), respMap["attachments"], respMap["data"])
 		return
 	}
 

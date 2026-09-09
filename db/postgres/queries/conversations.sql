@@ -1,10 +1,13 @@
 -- name: UpsertConversation :exec
-INSERT INTO conversations (id, agent_id)
-VALUES (sqlc.arg(id), sqlc.arg(agent_id))
+INSERT INTO conversations (id, agent_id, user_id)
+VALUES (sqlc.arg(id), sqlc.arg(agent_id), sqlc.narg(user_id))
 ON CONFLICT (id) DO NOTHING;
 
 -- name: CountConversations :one
-SELECT count(*) FROM conversations_view;
+SELECT count(*) FROM conversations_view
+WHERE
+    sqlc.narg('user_id')::UUID IS null
+    OR user_id = sqlc.narg('user_id')::UUID;
 
 -- name: SelectConversations :many
 SELECT
@@ -32,6 +35,9 @@ LEFT JOIN LATERAL (
     ORDER BY m.created_at DESC
     LIMIT 1
 ) AS lm ON true
+WHERE
+    sqlc.narg('user_id')::UUID IS null
+    OR c.user_id = sqlc.narg('user_id')::UUID
 ORDER BY coalesce(lm.created_at, c.started_at) DESC
 LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
 
@@ -60,7 +66,8 @@ SELECT
     coalesce(a.name, o.name, '') AS agent_name,
     c.started_at,
     c.ended_at,
-    c.is_active
+    c.is_active,
+    c.user_id
 FROM conversations_view AS c
 LEFT JOIN agents AS a ON c.agent_id = a.id
 LEFT JOIN orchestrators AS o ON c.agent_id = o.id

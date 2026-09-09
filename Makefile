@@ -6,6 +6,13 @@ TIMER_CMD_DIR    := ./cmd/timer
 MIGRATION_DIR    := ./db/postgres/migrations
 CH_MIGRATION_DIR := ./db/clickhouse/migrations
 
+# Orchestrator .env supplies DB_USER/DB_PASSWORD_ENCODED/DB_NAME for the
+# compose-goose-* targets. Included FIRST so local .env wins on any overlap
+# (CLICKHOUSE_PORT differs: 6761 native here vs 6715 HTTP there).
+# ifneq (,$(wildcard ../compose-orchestrator/.env))
+#     include ../compose-orchestrator/.env
+# endif
+
 # Load environment variables from .env file if it exists
 ifneq (,$(wildcard ./.env))
     include .env
@@ -23,11 +30,12 @@ REGISTRY   ?= 10.10.1.122/agent
 TAG        ?= latest
 API_IMG    := $(REGISTRY)/aic3-api:$(TAG)
 TIMER_IMG  := $(REGISTRY)/aic3-timer:$(TAG)
+MIGRATE_IMG := $(REGISTRY)/aic3-migrations:$(TAG)
 API_TAR    := aic3-api-$(TAG).tar.gz
 TIMER_TAR  := aic3-timer-$(TAG).tar.gz
 
 .PHONY: help dev timer build build-timer run tidy test format
-.PHONY: image image-timer image-push image-timer-push release-images
+.PHONY: image image-timer image-migrations image-push image-timer-push image-migrations-push release-images
 .PHONY: image-save image-timer-save image-load image-timer-load
 
 ##@ General
@@ -63,7 +71,13 @@ image-push: image ## Build + push the api image
 image-timer-push: image-timer ## Build + push the timer image
 	docker push $(TIMER_IMG)
 
-release-images: image-push image-timer-push ## Build + push both images
+image-migrations: ## Build the goose migrations image (k8s migrate Job)
+	docker build -f Dockerfile.migrations -t $(MIGRATE_IMG) .
+
+image-migrations-push: image-migrations ## Build + push the migrations image
+	docker push $(MIGRATE_IMG)
+
+release-images: image-push image-timer-push image-migrations-push ## Build + push all three images
 
 # Tar flow (when you can't push): save here, copy the .tar.gz to the server, load there.
 image-save: image ## Save the api image to a .tar.gz
@@ -185,11 +199,11 @@ COMPOSE_PROJECT  ?= aic3
 COMPOSE_NETWORK  ?= $(COMPOSE_PROJECT)_aic3-net
 GOOSE_IMAGE      ?= ghcr.io/kukymbr/goose-docker:3.24.1
 
-# Load the orchestrator .env for DB creds.
-ifneq (,$(wildcard ../compose-orchestrator/.env))
-    include ../compose-orchestrator/.env
-    export
-endif
+# (orchestrator .env is included at the top of this file)
+# ifneq (,$(wildcard ../compose-orchestrator/.env))
+#     include ../compose-orchestrator/.env
+#     export
+# endif
 
 # Internal-hostname connection strings (NOT the host-published ports).
 COMPOSE_DB_URL := postgres://$(DB_USER):$(DB_PASSWORD_ENCODED)@postgres:5432/$(DB_NAME)?sslmode=disable
@@ -244,3 +258,6 @@ compose-goose-ch-reset: ## Reset clickhouse migrations (compose network)
 # Run both Postgres + ClickHouse migrations up (typical post-`up` step).
 compose-migrate: compose-goose-pg-up compose-goose-ch-up ## Run all migrations up (compose network)
 	@echo "All migrations applied."
+
+copy-api:
+	rsync -avPR $(API_TAR) root@aiplatform2:/home/ubuntu/aic3/builds

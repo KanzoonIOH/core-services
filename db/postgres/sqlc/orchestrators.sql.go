@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -38,7 +39,7 @@ func (q *Queries) CountOrchestrators(ctx context.Context, arg CountOrchestrators
 }
 
 const insertOrchestrator = `-- name: InsertOrchestrator :one
-INSERT INTO orchestrators (name, description, is_active, orchestrator_agent_id, routing_guide, persona, guardrail, webhook_uri)
+INSERT INTO orchestrators (name, description, is_active, orchestrator_agent_id, routing_guide, persona, guardrail, webhook_uri, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, webhook_stream_enabled, persona_enabled, guardrail_enabled)
 VALUES (
     $1,
     $2,
@@ -47,36 +48,57 @@ VALUES (
     $5,
     $6,
     $7,
-    $8
+    $8,
+    $9,
+    $10,
+    $11,
+    $12,
+    $13,
+    $14,
+    $15
 )
 RETURNING
-    id, name, description, is_active, orchestrator_agent_id, routing_guide, persona, guardrail, image, webhook_uri, created_at, updated_at
+    id, name, description, is_active, orchestrator_agent_id, routing_guide, persona, guardrail, image, webhook_uri, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, webhook_stream_enabled, persona_enabled, guardrail_enabled, created_at, updated_at
 `
 
 type InsertOrchestratorParams struct {
-	Name                string  `json:"name"`
-	Description         *string `json:"description"`
-	IsActive            bool    `json:"is_active"`
-	OrchestratorAgentID string  `json:"orchestrator_agent_id"`
-	RoutingGuide        string  `json:"routing_guide"`
-	Persona             string  `json:"persona"`
-	Guardrail           string  `json:"guardrail"`
-	WebhookUri          string  `json:"webhook_uri"`
+	Name                 string          `json:"name"`
+	Description          *string         `json:"description"`
+	IsActive             bool            `json:"is_active"`
+	OrchestratorAgentID  string          `json:"orchestrator_agent_id"`
+	RoutingGuide         string          `json:"routing_guide"`
+	Persona              string          `json:"persona"`
+	Guardrail            string          `json:"guardrail"`
+	WebhookUri           string          `json:"webhook_uri"`
+	WebhookInputField    string          `json:"webhook_input_field"`
+	WebhookOutputField   string          `json:"webhook_output_field"`
+	WebhookBodyFields    json.RawMessage `json:"webhook_body_fields"`
+	WebhookHeaderFields  json.RawMessage `json:"webhook_header_fields"`
+	WebhookStreamEnabled bool            `json:"webhook_stream_enabled"`
+	PersonaEnabled       bool            `json:"persona_enabled"`
+	GuardrailEnabled     bool            `json:"guardrail_enabled"`
 }
 
 type InsertOrchestratorRow struct {
-	ID                  uuid.UUID `json:"id"`
-	Name                string    `json:"name"`
-	Description         *string   `json:"description"`
-	IsActive            bool      `json:"is_active"`
-	OrchestratorAgentID string    `json:"orchestrator_agent_id"`
-	RoutingGuide        string    `json:"routing_guide"`
-	Persona             string    `json:"persona"`
-	Guardrail           string    `json:"guardrail"`
-	Image               *string   `json:"image"`
-	WebhookUri          string    `json:"webhook_uri"`
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	ID                   uuid.UUID       `json:"id"`
+	Name                 string          `json:"name"`
+	Description          *string         `json:"description"`
+	IsActive             bool            `json:"is_active"`
+	OrchestratorAgentID  string          `json:"orchestrator_agent_id"`
+	RoutingGuide         string          `json:"routing_guide"`
+	Persona              string          `json:"persona"`
+	Guardrail            string          `json:"guardrail"`
+	Image                *string         `json:"image"`
+	WebhookUri           string          `json:"webhook_uri"`
+	WebhookInputField    string          `json:"webhook_input_field"`
+	WebhookOutputField   string          `json:"webhook_output_field"`
+	WebhookBodyFields    json.RawMessage `json:"webhook_body_fields"`
+	WebhookHeaderFields  json.RawMessage `json:"webhook_header_fields"`
+	WebhookStreamEnabled bool            `json:"webhook_stream_enabled"`
+	PersonaEnabled       bool            `json:"persona_enabled"`
+	GuardrailEnabled     bool            `json:"guardrail_enabled"`
+	CreatedAt            time.Time       `json:"created_at"`
+	UpdatedAt            time.Time       `json:"updated_at"`
 }
 
 func (q *Queries) InsertOrchestrator(ctx context.Context, arg InsertOrchestratorParams) (InsertOrchestratorRow, error) {
@@ -89,6 +111,13 @@ func (q *Queries) InsertOrchestrator(ctx context.Context, arg InsertOrchestrator
 		arg.Persona,
 		arg.Guardrail,
 		arg.WebhookUri,
+		arg.WebhookInputField,
+		arg.WebhookOutputField,
+		arg.WebhookBodyFields,
+		arg.WebhookHeaderFields,
+		arg.WebhookStreamEnabled,
+		arg.PersonaEnabled,
+		arg.GuardrailEnabled,
 	)
 	var i InsertOrchestratorRow
 	err := row.Scan(
@@ -102,6 +131,13 @@ func (q *Queries) InsertOrchestrator(ctx context.Context, arg InsertOrchestrator
 		&i.Guardrail,
 		&i.Image,
 		&i.WebhookUri,
+		&i.WebhookInputField,
+		&i.WebhookOutputField,
+		&i.WebhookBodyFields,
+		&i.WebhookHeaderFields,
+		&i.WebhookStreamEnabled,
+		&i.PersonaEnabled,
+		&i.GuardrailEnabled,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -219,7 +255,7 @@ func (q *Queries) SelectOrchestratorAgents(ctx context.Context, orchestratorID u
 }
 
 const selectOrchestratorById = `-- name: SelectOrchestratorById :one
-SELECT ov.id, ov.name, ov.description, ov.is_active, ov.orchestrator_agent_id, ov.routing_guide, ov.persona, ov.guardrail, ov.created_at, ov.updated_at, ov.image, ov.webhook_uri FROM orchestrators_view ov
+SELECT ov.id, ov.name, ov.description, ov.is_active, ov.orchestrator_agent_id, ov.routing_guide, ov.persona, ov.guardrail, ov.created_at, ov.updated_at, ov.image, ov.webhook_uri, ov.webhook_input_field, ov.webhook_output_field, ov.webhook_body_fields, ov.webhook_header_fields, ov.webhook_stream_enabled, ov.persona_enabled, ov.guardrail_enabled FROM orchestrators_view ov
 WHERE ov.id = $1
 LIMIT 1
 `
@@ -240,13 +276,20 @@ func (q *Queries) SelectOrchestratorById(ctx context.Context, id uuid.UUID) (Orc
 		&i.UpdatedAt,
 		&i.Image,
 		&i.WebhookUri,
+		&i.WebhookInputField,
+		&i.WebhookOutputField,
+		&i.WebhookBodyFields,
+		&i.WebhookHeaderFields,
+		&i.WebhookStreamEnabled,
+		&i.PersonaEnabled,
+		&i.GuardrailEnabled,
 	)
 	return i, err
 }
 
 const selectOrchestrators = `-- name: SelectOrchestrators :many
 SELECT
-    ov.id, ov.name, ov.description, ov.is_active, ov.orchestrator_agent_id, ov.routing_guide, ov.persona, ov.guardrail, ov.created_at, ov.updated_at, ov.image, ov.webhook_uri,
+    ov.id, ov.name, ov.description, ov.is_active, ov.orchestrator_agent_id, ov.routing_guide, ov.persona, ov.guardrail, ov.created_at, ov.updated_at, ov.image, ov.webhook_uri, ov.webhook_input_field, ov.webhook_output_field, ov.webhook_body_fields, ov.webhook_header_fields, ov.webhook_stream_enabled, ov.persona_enabled, ov.guardrail_enabled,
     COALESCE(oa.agents_count, 0) AS agents_count
 FROM orchestrators_view ov
 LEFT JOIN (
@@ -299,19 +342,26 @@ type SelectOrchestratorsParams struct {
 }
 
 type SelectOrchestratorsRow struct {
-	ID                  uuid.UUID `json:"id"`
-	Name                string    `json:"name"`
-	Description         *string   `json:"description"`
-	IsActive            bool      `json:"is_active"`
-	OrchestratorAgentID string    `json:"orchestrator_agent_id"`
-	RoutingGuide        string    `json:"routing_guide"`
-	Persona             string    `json:"persona"`
-	Guardrail           string    `json:"guardrail"`
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
-	Image               *string   `json:"image"`
-	WebhookUri          string    `json:"webhook_uri"`
-	AgentsCount         int64     `json:"agents_count"`
+	ID                   uuid.UUID       `json:"id"`
+	Name                 string          `json:"name"`
+	Description          *string         `json:"description"`
+	IsActive             bool            `json:"is_active"`
+	OrchestratorAgentID  string          `json:"orchestrator_agent_id"`
+	RoutingGuide         string          `json:"routing_guide"`
+	Persona              string          `json:"persona"`
+	Guardrail            string          `json:"guardrail"`
+	CreatedAt            time.Time       `json:"created_at"`
+	UpdatedAt            time.Time       `json:"updated_at"`
+	Image                *string         `json:"image"`
+	WebhookUri           string          `json:"webhook_uri"`
+	WebhookInputField    string          `json:"webhook_input_field"`
+	WebhookOutputField   string          `json:"webhook_output_field"`
+	WebhookBodyFields    json.RawMessage `json:"webhook_body_fields"`
+	WebhookHeaderFields  json.RawMessage `json:"webhook_header_fields"`
+	WebhookStreamEnabled bool            `json:"webhook_stream_enabled"`
+	PersonaEnabled       bool            `json:"persona_enabled"`
+	GuardrailEnabled     bool            `json:"guardrail_enabled"`
+	AgentsCount          int64           `json:"agents_count"`
 }
 
 func (q *Queries) SelectOrchestrators(ctx context.Context, arg SelectOrchestratorsParams) ([]SelectOrchestratorsRow, error) {
@@ -342,6 +392,13 @@ func (q *Queries) SelectOrchestrators(ctx context.Context, arg SelectOrchestrato
 			&i.UpdatedAt,
 			&i.Image,
 			&i.WebhookUri,
+			&i.WebhookInputField,
+			&i.WebhookOutputField,
+			&i.WebhookBodyFields,
+			&i.WebhookHeaderFields,
+			&i.WebhookStreamEnabled,
+			&i.PersonaEnabled,
+			&i.GuardrailEnabled,
 			&i.AgentsCount,
 		); err != nil {
 			return nil, err
@@ -376,44 +433,69 @@ SET
     name = $1,
     description = $2,
     is_active = $3,
-    routing_guide = $4,
-    persona = $5,
-    guardrail = $6,
+    -- Omitted (NULL) keeps the stored text; an empty string clears it. These
+    -- are generated upstream at create time and are expensive to lose.
+    routing_guide = COALESCE($4, routing_guide),
+    persona = COALESCE($5, persona),
+    guardrail = COALESCE($6, guardrail),
     image = $7,
     webhook_uri = $8,
+    webhook_input_field = $9,
+    webhook_output_field = $10,
+    -- NULL means "field omitted by the caller": keep what is stored. An empty
+    -- JSON array clears it. Stops partial clients from wiping stored auth.
+    webhook_body_fields = COALESCE($11, webhook_body_fields),
+    webhook_header_fields = COALESCE($12, webhook_header_fields),
+    webhook_stream_enabled = COALESCE($13, webhook_stream_enabled),
+    persona_enabled = COALESCE($14, persona_enabled),
+    guardrail_enabled = COALESCE($15, guardrail_enabled),
     updated_at = NOW()
 WHERE
     deleted_at IS NULL
-    AND id = $9
+    AND id = $16
 RETURNING
-    id, name, description, is_active, orchestrator_agent_id, routing_guide, persona, guardrail, image, webhook_uri, created_at, updated_at
+    id, name, description, is_active, orchestrator_agent_id, routing_guide, persona, guardrail, image, webhook_uri, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, webhook_stream_enabled, persona_enabled, guardrail_enabled, created_at, updated_at
 `
 
 type UpdateOrchestratorParams struct {
-	Name         string    `json:"name"`
-	Description  *string   `json:"description"`
-	IsActive     bool      `json:"is_active"`
-	RoutingGuide string    `json:"routing_guide"`
-	Persona      string    `json:"persona"`
-	Guardrail    string    `json:"guardrail"`
-	Image        *string   `json:"image"`
-	WebhookUri   string    `json:"webhook_uri"`
-	ID           uuid.UUID `json:"id"`
+	Name                 string          `json:"name"`
+	Description          *string         `json:"description"`
+	IsActive             bool            `json:"is_active"`
+	RoutingGuide         *string         `json:"routing_guide"`
+	Persona              *string         `json:"persona"`
+	Guardrail            *string         `json:"guardrail"`
+	Image                *string         `json:"image"`
+	WebhookUri           string          `json:"webhook_uri"`
+	WebhookInputField    string          `json:"webhook_input_field"`
+	WebhookOutputField   string          `json:"webhook_output_field"`
+	WebhookBodyFields    json.RawMessage `json:"webhook_body_fields"`
+	WebhookHeaderFields  json.RawMessage `json:"webhook_header_fields"`
+	WebhookStreamEnabled *bool           `json:"webhook_stream_enabled"`
+	PersonaEnabled       *bool           `json:"persona_enabled"`
+	GuardrailEnabled     *bool           `json:"guardrail_enabled"`
+	ID                   uuid.UUID       `json:"id"`
 }
 
 type UpdateOrchestratorRow struct {
-	ID                  uuid.UUID `json:"id"`
-	Name                string    `json:"name"`
-	Description         *string   `json:"description"`
-	IsActive            bool      `json:"is_active"`
-	OrchestratorAgentID string    `json:"orchestrator_agent_id"`
-	RoutingGuide        string    `json:"routing_guide"`
-	Persona             string    `json:"persona"`
-	Guardrail           string    `json:"guardrail"`
-	Image               *string   `json:"image"`
-	WebhookUri          string    `json:"webhook_uri"`
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	ID                   uuid.UUID       `json:"id"`
+	Name                 string          `json:"name"`
+	Description          *string         `json:"description"`
+	IsActive             bool            `json:"is_active"`
+	OrchestratorAgentID  string          `json:"orchestrator_agent_id"`
+	RoutingGuide         string          `json:"routing_guide"`
+	Persona              string          `json:"persona"`
+	Guardrail            string          `json:"guardrail"`
+	Image                *string         `json:"image"`
+	WebhookUri           string          `json:"webhook_uri"`
+	WebhookInputField    string          `json:"webhook_input_field"`
+	WebhookOutputField   string          `json:"webhook_output_field"`
+	WebhookBodyFields    json.RawMessage `json:"webhook_body_fields"`
+	WebhookHeaderFields  json.RawMessage `json:"webhook_header_fields"`
+	WebhookStreamEnabled bool            `json:"webhook_stream_enabled"`
+	PersonaEnabled       bool            `json:"persona_enabled"`
+	GuardrailEnabled     bool            `json:"guardrail_enabled"`
+	CreatedAt            time.Time       `json:"created_at"`
+	UpdatedAt            time.Time       `json:"updated_at"`
 }
 
 func (q *Queries) UpdateOrchestrator(ctx context.Context, arg UpdateOrchestratorParams) (UpdateOrchestratorRow, error) {
@@ -426,6 +508,13 @@ func (q *Queries) UpdateOrchestrator(ctx context.Context, arg UpdateOrchestrator
 		arg.Guardrail,
 		arg.Image,
 		arg.WebhookUri,
+		arg.WebhookInputField,
+		arg.WebhookOutputField,
+		arg.WebhookBodyFields,
+		arg.WebhookHeaderFields,
+		arg.WebhookStreamEnabled,
+		arg.PersonaEnabled,
+		arg.GuardrailEnabled,
 		arg.ID,
 	)
 	var i UpdateOrchestratorRow
@@ -440,6 +529,13 @@ func (q *Queries) UpdateOrchestrator(ctx context.Context, arg UpdateOrchestrator
 		&i.Guardrail,
 		&i.Image,
 		&i.WebhookUri,
+		&i.WebhookInputField,
+		&i.WebhookOutputField,
+		&i.WebhookBodyFields,
+		&i.WebhookHeaderFields,
+		&i.WebhookStreamEnabled,
+		&i.PersonaEnabled,
+		&i.GuardrailEnabled,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

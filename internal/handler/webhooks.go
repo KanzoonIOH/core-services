@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,6 +42,42 @@ type WebhookHandler struct {
 	HTTPClient *http.Client
 	Queries    db.Querier
 	Kafka      *lib.KafkaProducer
+}
+
+// pluckField resolves an output-field path against a decoded JSON body.
+// A plain key ("output") is the common case and matches first, so keys that
+// happen to contain dots still work. Otherwise the path is walked segment by
+// segment with optional array indices: "choices[0].message.content".
+// Returns nil when any segment is missing or the wrong shape.
+func pluckField(v any, path string) any {
+	if m, ok := v.(map[string]any); ok {
+		if hit, ok := m[path]; ok {
+			return hit
+		}
+	}
+	for _, seg := range strings.Split(path, ".") {
+		key, idx, _ := strings.Cut(seg, "[")
+		if key != "" {
+			m, ok := v.(map[string]any)
+			if !ok {
+				return nil
+			}
+			v = m[key]
+		}
+		// idx holds the remaining "0]" / "0][1]" indices, if any.
+		for idx != "" {
+			var num string
+			num, idx, _ = strings.Cut(idx, "]")
+			i, err := strconv.Atoi(num)
+			arr, ok := v.([]any)
+			if err != nil || !ok || i < 0 || i >= len(arr) {
+				return nil
+			}
+			v = arr[i]
+			idx = strings.TrimPrefix(idx, "[")
+		}
+	}
+	return v
 }
 
 // clientIP returns the caller's source IP. It trusts X-Forwarded-For (first
@@ -195,8 +232,8 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 	// configured input field (e.g. "query") before forwarding, so the upstream
 	// agent receives the field name it expects. Persist before the rename so the
 	// stored value is the same either way.
-	h.ensureConversation(id, conversationID)
-	h.storeMessage(conversationID, db.MessageRoleUser, bodyMap["chatInput"], bodyMap["attachments"], nil)
+	h.ensureConversation(r.Context(), id, conversationID)
+	h.storeMessage(conversationID, db.MessageRoleUser, bodyMap["chatInput"], storedAttachments(bodyMap), nil)
 
 	if agent.WebhookInputField != "" && agent.WebhookInputField != "chatInput" {
 		if v, ok := bodyMap["chatInput"]; ok {
@@ -207,20 +244,24 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 
 	bodyMap["sessionId"] = conversationID
 	bodyMap["agentId"] = id.String()
-	bodyMap["tone"] = string(agent.Tone)
-	bodyMap["length"] = string(agent.ResponseLength)
-	bodyMap["style"] = string(agent.CommunicationStyle)
+	if agent.PersonaEnabled {
+		bodyMap["tone"] = string(agent.Tone)
+		bodyMap["length"] = string(agent.ResponseLength)
+		bodyMap["style"] = string(agent.CommunicationStyle)
+	}
 
 	// App-wide system prompt applied to every agent. Best-effort: a config read
 	// failure must not block the chat, so fall back to empty values.
-	cfg, cfgErr := h.Queries.GetGlobalConfig(r.Context())
-	if cfgErr != nil {
-		slog.ErrorContext(r.Context(), "global config read failed", "error", cfgErr)
-	}
-	bodyMap["systemPrompt"] = map[string]any{
-		"agent_name":           cfg.AgentName,
-		"industry_description": cfg.IndustryDescription,
-		"guardrail":            cfg.Guardrail,
+	if agent.GuardrailEnabled {
+		cfg, cfgErr := h.Queries.GetGlobalConfig(r.Context())
+		if cfgErr != nil {
+			slog.ErrorContext(r.Context(), "global config read failed", "error", cfgErr)
+		}
+		bodyMap["systemPrompt"] = map[string]any{
+			"agent_name":           cfg.AgentName,
+			"industry_description": cfg.IndustryDescription,
+			"guardrail":            cfg.Guardrail,
+		}
 	}
 
 	// Reserved "headers" object in the incoming body carries per-request
@@ -331,7 +372,7 @@ func (h *WebhookHandler) ForwardChatWebhook(w http.ResponseWriter, r *http.Reque
 			if outputField == "" {
 				outputField = "reply"
 			}
-			h.storeMessage(conversationID, db.MessageRoleAssistant, respMap[outputField], respMap["attachments"], respMap["data"])
+			h.storeMessage(conversationID, db.MessageRoleAssistant, pluckField(respMap, outputField), respMap["attachments"], respMap["data"])
 		}
 	}
 
@@ -366,10 +407,16 @@ func (h *WebhookHandler) PreflightChatWebhook(w http.ResponseWriter, r *http.Req
 // ensureConversation upserts the conversations row for this session so chat
 // history can be listed per conversation. Best-effort and off the request
 // path, same contract as storeMessage. Idempotent (ON CONFLICT DO NOTHING).
-func (h *WebhookHandler) ensureConversation(agentID uuid.UUID, conversationID string) {
+// The owner is taken from the JWT claims when present; API-key traffic has no
+// user behind it and stores a NULL user_id.
+func (h *WebhookHandler) ensureConversation(ctx context.Context, agentID uuid.UUID, conversationID string) {
 	convID, err := uuid.Parse(conversationID)
 	if err != nil {
 		return
+	}
+	var userID *uuid.UUID
+	if claims, ok := middleware.ClaimsFromContext(ctx); ok {
+		userID = &claims.UserID
 	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -377,6 +424,7 @@ func (h *WebhookHandler) ensureConversation(agentID uuid.UUID, conversationID st
 		if err := h.Queries.UpsertConversation(ctx, db.UpsertConversationParams{
 			ID:      convID,
 			AgentID: agentID,
+			UserID:  userID,
 		}); err != nil {
 			slog.ErrorContext(ctx, "upsert conversation", "conversation", conversationID, "error", err)
 		}
@@ -562,6 +610,11 @@ func (h *WebhookHandler) forwardOrchestratorChat(
 		return
 	}
 
+	// Same fallback as agents: an upstream without a /stream sibling is served
+	// from the plain endpoint, and the client's SSE reader handles the single
+	// JSON body it gets back.
+	stream = stream && orch.WebhookStreamEnabled
+
 	targetURL := orch.WebhookUri
 	if stream {
 		targetURL = strings.TrimRight(orch.WebhookUri, "/") + "/stream"
@@ -591,38 +644,67 @@ func (h *WebhookHandler) forwardOrchestratorChat(
 		bodyMap = map[string]any{}
 	}
 
-	h.ensureConversation(id, conversationID)
-	h.storeMessage(conversationID, db.MessageRoleUser, bodyMap["chatInput"], bodyMap["attachments"], nil)
+	h.ensureConversation(r.Context(), id, conversationID)
+	h.storeMessage(conversationID, db.MessageRoleUser, bodyMap["chatInput"], storedAttachments(bodyMap), nil)
 
-	// Strip the reserved "headers" object (orchestrators don't use it, but the
-	// frontend may send an empty one).
-	delete(bodyMap, "headers")
+	// Same input mapping as agents: callers always send "chatInput", the
+	// orchestrator may expect a different key upstream.
+	if orch.WebhookInputField != "" && orch.WebhookInputField != "chatInput" {
+		if v, ok := bodyMap["chatInput"]; ok {
+			bodyMap[orch.WebhookInputField] = v
+			delete(bodyMap, "chatInput")
+		}
+	}
+
+	// Reserved "headers" object carries per-request dynamic header values.
+	callerHeaders := popCallerHeaders(bodyMap)
 
 	bodyMap["sessionId"] = conversationID
 	bodyMap["agentId"] = id.String()
 
 	// Parse the orchestrator's persona blob for tone/length/style. Falls back
 	// to defaults if the blob is empty or not JSON.
-	tone, length, style := orchestratorPersonaFields(orch.Persona)
-	bodyMap["tone"] = tone
-	bodyMap["length"] = length
-	bodyMap["style"] = style
+	if orch.PersonaEnabled {
+		tone, length, style := orchestratorPersonaFields(orch.Persona)
+		bodyMap["tone"] = tone
+		bodyMap["length"] = length
+		bodyMap["style"] = style
+	}
 
-	cfg, cfgErr := h.Queries.GetGlobalConfig(r.Context())
-	if cfgErr != nil {
-		slog.ErrorContext(r.Context(), "global config read failed", "error", cfgErr)
-	}
-	bodyMap["systemPrompt"] = map[string]any{
-		"agent_name":           cfg.AgentName,
-		"industry_description": cfg.IndustryDescription,
-		"guardrail":            cfg.Guardrail,
-	}
-	// Merge the orchestrator's own guardrail on top of the global one.
-	if orch.Guardrail != "" {
-		bodyMap["guardrail"] = orch.Guardrail
+	if orch.GuardrailEnabled {
+		cfg, cfgErr := h.Queries.GetGlobalConfig(r.Context())
+		if cfgErr != nil {
+			slog.ErrorContext(r.Context(), "global config read failed", "error", cfgErr)
+		}
+		bodyMap["systemPrompt"] = map[string]any{
+			"agent_name":           cfg.AgentName,
+			"industry_description": cfg.IndustryDescription,
+			"guardrail":            cfg.Guardrail,
+		}
+		// Merge the orchestrator's own guardrail on top of the global one.
+		if orch.Guardrail != "" {
+			bodyMap["guardrail"] = orch.Guardrail
+		}
 	}
 	if orch.RoutingGuide != "" {
 		bodyMap["routingGuide"] = orch.RoutingGuide
+	}
+
+	if msg := applyWebhookBodyFields(bodyMap, orch.WebhookBodyFields); msg != "" {
+		h.publishWebhookMessage(id.String(), conversationID, http.StatusBadRequest, hitTime, msg)
+		lib.ResponseJSONError(w, http.StatusBadRequest, msg)
+		return
+	}
+	outHeaders, msg := resolveWebhookHeaders(orch.WebhookHeaderFields, callerHeaders)
+	if msg != "" {
+		h.publishWebhookMessage(id.String(), conversationID, http.StatusBadRequest, hitTime, msg)
+		lib.ResponseJSONError(w, http.StatusBadRequest, msg)
+		return
+	}
+
+	outputField := orch.WebhookOutputField
+	if outputField == "" {
+		outputField = "reply"
 	}
 
 	modifiedBody, err := json.Marshal(bodyMap)
@@ -642,6 +724,10 @@ func (h *WebhookHandler) forwardOrchestratorChat(
 	req.Header.Set("Content-Type", "application/json")
 	if stream {
 		req.Header.Set("Accept", "text/event-stream")
+	}
+	// Orchestrator-configured auth/headers override forwarded ones.
+	for k, v := range outHeaders {
+		req.Header.Set(k, v)
 	}
 
 	slog.InfoContext(r.Context(), "chat orchestrator request", "curl", curlPreview(req, modifiedBody))
@@ -696,7 +782,7 @@ func (h *WebhookHandler) forwardOrchestratorChat(
 			}
 		}
 		if isSuccess {
-			h.persistStreamedReply(conversationID, "reply", captured.Bytes())
+			h.persistStreamedReply(conversationID, outputField, captured.Bytes())
 		}
 		return
 	}
@@ -706,8 +792,7 @@ func (h *WebhookHandler) forwardOrchestratorChat(
 	if isSuccess {
 		var respMap map[string]any
 		if json.Unmarshal(respBytes, &respMap) == nil {
-			outputField := "reply"
-			h.storeMessage(conversationID, db.MessageRoleAssistant, respMap[outputField], respMap["attachments"], respMap["data"])
+			h.storeMessage(conversationID, db.MessageRoleAssistant, pluckField(respMap, outputField), respMap["attachments"], respMap["data"])
 		}
 	}
 

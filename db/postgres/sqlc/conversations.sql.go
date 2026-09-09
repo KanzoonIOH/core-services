@@ -44,10 +44,13 @@ func (q *Queries) CloseConversation(ctx context.Context, arg CloseConversationPa
 
 const countConversations = `-- name: CountConversations :one
 SELECT count(*) FROM conversations_view
+WHERE
+    $1::UUID IS null
+    OR user_id = $1::UUID
 `
 
-func (q *Queries) CountConversations(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countConversations)
+func (q *Queries) CountConversations(ctx context.Context, userID *uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countConversations, userID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -78,7 +81,8 @@ SELECT
     coalesce(a.name, o.name, '') AS agent_name,
     c.started_at,
     c.ended_at,
-    c.is_active
+    c.is_active,
+    c.user_id
 FROM conversations_view AS c
 LEFT JOIN agents AS a ON c.agent_id = a.id
 LEFT JOIN orchestrators AS o ON c.agent_id = o.id
@@ -92,6 +96,7 @@ type SelectConversationByIdRow struct {
 	StartedAt time.Time  `json:"started_at"`
 	EndedAt   *time.Time `json:"ended_at"`
 	IsActive  bool       `json:"is_active"`
+	UserID    *uuid.UUID `json:"user_id"`
 }
 
 func (q *Queries) SelectConversationById(ctx context.Context, id uuid.UUID) (SelectConversationByIdRow, error) {
@@ -104,6 +109,7 @@ func (q *Queries) SelectConversationById(ctx context.Context, id uuid.UUID) (Sel
 		&i.StartedAt,
 		&i.EndedAt,
 		&i.IsActive,
+		&i.UserID,
 	)
 	return i, err
 }
@@ -134,13 +140,17 @@ LEFT JOIN LATERAL (
     ORDER BY m.created_at DESC
     LIMIT 1
 ) AS lm ON true
+WHERE
+    $1::UUID IS null
+    OR c.user_id = $1::UUID
 ORDER BY coalesce(lm.created_at, c.started_at) DESC
-LIMIT $2 OFFSET $1
+LIMIT $3 OFFSET $2
 `
 
 type SelectConversationsParams struct {
-	Offset int32 `json:"offset"`
-	Limit  int32 `json:"limit"`
+	UserID *uuid.UUID `json:"user_id"`
+	Offset int32      `json:"offset"`
+	Limit  int32      `json:"limit"`
 }
 
 type SelectConversationsRow struct {
@@ -156,7 +166,7 @@ type SelectConversationsRow struct {
 }
 
 func (q *Queries) SelectConversations(ctx context.Context, arg SelectConversationsParams) ([]SelectConversationsRow, error) {
-	rows, err := q.db.Query(ctx, selectConversations, arg.Offset, arg.Limit)
+	rows, err := q.db.Query(ctx, selectConversations, arg.UserID, arg.Offset, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -186,17 +196,18 @@ func (q *Queries) SelectConversations(ctx context.Context, arg SelectConversatio
 }
 
 const upsertConversation = `-- name: UpsertConversation :exec
-INSERT INTO conversations (id, agent_id)
-VALUES ($1, $2)
+INSERT INTO conversations (id, agent_id, user_id)
+VALUES ($1, $2, $3)
 ON CONFLICT (id) DO NOTHING
 `
 
 type UpsertConversationParams struct {
-	ID      uuid.UUID `json:"id"`
-	AgentID uuid.UUID `json:"agent_id"`
+	ID      uuid.UUID  `json:"id"`
+	AgentID uuid.UUID  `json:"agent_id"`
+	UserID  *uuid.UUID `json:"user_id"`
 }
 
 func (q *Queries) UpsertConversation(ctx context.Context, arg UpsertConversationParams) error {
-	_, err := q.db.Exec(ctx, upsertConversation, arg.ID, arg.AgentID)
+	_, err := q.db.Exec(ctx, upsertConversation, arg.ID, arg.AgentID, arg.UserID)
 	return err
 }

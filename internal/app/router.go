@@ -133,6 +133,7 @@ func AppRouter(conn *pgxpool.Pool, kafka *lib.KafkaProducer, ch *lib.ClickHouseC
 				r.Delete("/{id}", orchestratorHandler.Delete)
 			})
 			r.Post("/uploads/image", uploadHandler.Image)
+			r.Post("/uploads/document", uploadHandler.Document)
 			r.Route("/tags", func(r chi.Router) {
 				r.Get("/", tagHandler.Read)
 				r.Patch("/{id}", tagHandler.Update)

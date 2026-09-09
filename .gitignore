@@ -3,3 +3,6 @@ vault
 tmp
 
 .env
+
+*.tar.gz
+asdf.json

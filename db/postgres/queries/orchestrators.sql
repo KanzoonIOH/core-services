@@ -1,5 +1,5 @@
 -- name: InsertOrchestrator :one
-INSERT INTO orchestrators (name, description, is_active, orchestrator_agent_id, routing_guide, persona, guardrail, webhook_uri)
+INSERT INTO orchestrators (name, description, is_active, orchestrator_agent_id, routing_guide, persona, guardrail, webhook_uri, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, webhook_stream_enabled, persona_enabled, guardrail_enabled)
 VALUES (
     sqlc.arg(name),
     sqlc.narg(description),
@@ -8,10 +8,17 @@ VALUES (
     sqlc.arg(routing_guide),
     sqlc.arg(persona),
     sqlc.arg(guardrail),
-    sqlc.arg(webhook_uri)
+    sqlc.arg(webhook_uri),
+    sqlc.arg(webhook_input_field),
+    sqlc.arg(webhook_output_field),
+    sqlc.arg(webhook_body_fields),
+    sqlc.arg(webhook_header_fields),
+    sqlc.arg(webhook_stream_enabled),
+    sqlc.arg(persona_enabled),
+    sqlc.arg(guardrail_enabled)
 )
 RETURNING
-    id, name, description, is_active, orchestrator_agent_id, routing_guide, persona, guardrail, image, webhook_uri, created_at, updated_at;
+    id, name, description, is_active, orchestrator_agent_id, routing_guide, persona, guardrail, image, webhook_uri, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, webhook_stream_enabled, persona_enabled, guardrail_enabled, created_at, updated_at;
 
 -- name: InsertOrchestratorAgent :one
 INSERT INTO orchestrator_agents (orchestrator_id, agent_id, tool_name, description)
@@ -30,17 +37,28 @@ SET
     name = sqlc.arg(name),
     description = sqlc.narg(description),
     is_active = sqlc.arg(is_active),
-    routing_guide = sqlc.arg(routing_guide),
-    persona = sqlc.arg(persona),
-    guardrail = sqlc.arg(guardrail),
+    -- Omitted (NULL) keeps the stored text; an empty string clears it. These
+    -- are generated upstream at create time and are expensive to lose.
+    routing_guide = COALESCE(sqlc.narg(routing_guide), routing_guide),
+    persona = COALESCE(sqlc.narg(persona), persona),
+    guardrail = COALESCE(sqlc.narg(guardrail), guardrail),
     image = sqlc.narg(image),
     webhook_uri = sqlc.arg(webhook_uri),
+    webhook_input_field = sqlc.arg(webhook_input_field),
+    webhook_output_field = sqlc.arg(webhook_output_field),
+    -- NULL means "field omitted by the caller": keep what is stored. An empty
+    -- JSON array clears it. Stops partial clients from wiping stored auth.
+    webhook_body_fields = COALESCE(sqlc.narg(webhook_body_fields), webhook_body_fields),
+    webhook_header_fields = COALESCE(sqlc.narg(webhook_header_fields), webhook_header_fields),
+    webhook_stream_enabled = COALESCE(sqlc.narg(webhook_stream_enabled), webhook_stream_enabled),
+    persona_enabled = COALESCE(sqlc.narg(persona_enabled), persona_enabled),
+    guardrail_enabled = COALESCE(sqlc.narg(guardrail_enabled), guardrail_enabled),
     updated_at = NOW()
 WHERE
     deleted_at IS NULL
     AND id = sqlc.arg(id)
 RETURNING
-    id, name, description, is_active, orchestrator_agent_id, routing_guide, persona, guardrail, image, webhook_uri, created_at, updated_at;
+    id, name, description, is_active, orchestrator_agent_id, routing_guide, persona, guardrail, image, webhook_uri, webhook_input_field, webhook_output_field, webhook_body_fields, webhook_header_fields, webhook_stream_enabled, persona_enabled, guardrail_enabled, created_at, updated_at;
 
 -- name: SoftDeleteOrchestrator :execrows
 UPDATE orchestrators

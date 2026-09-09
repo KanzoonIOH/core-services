@@ -22,7 +22,7 @@ type Querier interface {
 	CountAgentsByMcpId(ctx context.Context) (int64, error)
 	CountAllKnowledges(ctx context.Context, search *string) (int64, error)
 	CountApiKeys(ctx context.Context) (int64, error)
-	CountConversations(ctx context.Context) (int64, error)
+	CountConversations(ctx context.Context, userID *uuid.UUID) (int64, error)
 	CountKnowledges(ctx context.Context, arg CountKnowledgesParams) (int64, error)
 	CountKnowledgesByAgentId(ctx context.Context, arg CountKnowledgesByAgentIdParams) (int64, error)
 	CountMcpToolsByMcpId(ctx context.Context, mcpID uuid.UUID) (int64, error)
